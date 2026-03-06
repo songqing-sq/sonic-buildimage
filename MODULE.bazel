@@ -1,0 +1,34 @@
+module(name = "sonic", version = "1.0")
+
+bazel_dep(name = "sonic_rules", version = "0.0.1")
+#git_override(
+#    module_name = "sonic_rules",
+#    remote = "https://github.com/songqing-sq/sonic_rules.git",
+#    commit = "b2a21478d331e5ae3ad0257dc4f25d928c7a9932",
+#)
+local_path_override(
+    module_name = "sonic_rules",
+    path = "sonic_rules"
+)
+
+bazel_dep(name = "sonic-sairedis", version = "1.0")
+local_path_override(
+    module_name = "sonic-sairedis",
+    path = "src/sonic-sairedis"
+)
+
+bazel_dep(name = "sonic-swss-common", version = "1.0")
+local_path_override(
+    module_name = "sonic-swss-common",
+    path = "src/sonic-swss-common"
+)
+
+bazel_dep(name = "sonic-swss", version = "1.0")
+local_path_override(
+    module_name = "sonic-swss",
+    path = "src/sonic-swss"
+)
+
+bazel_dep(name = "rules_distroless", version = "0.6.2")
+
+bazel_dep(name = "platforms", version = "1.0.0")

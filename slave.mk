@@ -905,12 +905,40 @@ $(addprefix $(DEBS_PATH)/, $(SONIC_EXTRA_DEBS)) : $(DEBS_PATH)/% : .platform $$(
 
 SONIC_TARGET_LIST += $(addprefix $(DEBS_PATH)/, $(SONIC_EXTRA_DEBS))
 
+# Build project with bazel
+# Add new package for build:
+#     SOME_NEW_DEB = some_new_deb.deb
+#     $(SOME_NEW_DEB)_SRC_PATH = $(SRC_PATH)/project_name
+#     $(SOME_NEW_DEB)_DEPENDS = $(SOME_OTHER_DEB1) $(SOME_OTHER_DEB2) ...
+#     SONIC_BAZEL_DEBS += $(SOME_NEW_DEB)
+$(addprefix $(DEBS_PATH)/, $(SONIC_BAZEL_DEBS)) : $(DEBS_PATH)/% : .platform $$(addsuffix -install,$$(addprefix $(DEBS_PATH)/,$$($$*_DEPENDS)))
+	$(HEADER)
+	# Build project and take package
+	# pushd $($*_SRC_PATH) $(LOG)
+	pushd $($*_SRC_PATH)
+	if [ $(SONIC_DEBUGGING_ON) == y ]; then
+		/usr/bin/bazel build -c dbg -s $(addprefix //:, $* $($*_DERIVED_DEBS) $($*_EXTRA_DEBS)) $(LOG)
+	else
+		/usr/bin/bazel build -c opt -s $(addprefix //:, $* $($*_DERIVED_DEBS) $($*_EXTRA_DEBS)) $(LOG)
+	fi
+
+	popd
+
+	$(foreach deb, $* $($*_DERIVED_DEBS), \
+		find $($*_SRC_PATH)/bazel-bin/ -name "$(deb)" $(LOG) && \
+   		find $($*_SRC_PATH)/bazel-bin/ -name "$(deb)" -exec mv {} $(DEBS_PATH)/ \; $(LOG) ;)
+
+		$(FOOTER)
+
+SONIC_TARGET_LIST += $(addprefix $(DEBS_PATH)/, $(SONIC_BAZEL_DEBS))
+
 # Targets for installing debian packages prior to build one that depends on them
 SONIC_INSTALL_DEBS = $(addsuffix -install,$(addprefix $(DEBS_PATH)/, \
 			$(SONIC_ONLINE_DEBS) \
 			$(SONIC_COPY_DEBS) \
 			$(SONIC_MAKE_DEBS) \
 			$(SONIC_DPKG_DEBS) \
+			$(SONIC_BAZEL_DEBS) \
 			$(SONIC_PYTHON_STDEB_DEBS) \
 			$(SONIC_DERIVED_DEBS) \
 			$(SONIC_EXTRA_DEBS)))
@@ -1750,6 +1778,7 @@ SONIC_CLEAN_DEBS = $(addsuffix -clean,$(addprefix $(DEBS_PATH)/, \
 		   $(SONIC_COPY_DEBS) \
 		   $(SONIC_MAKE_DEBS) \
 		   $(SONIC_DPKG_DEBS) \
+		   $(SONIC_BAZEL_DEBS) \
 		   $(SONIC_DERIVED_DEBS) \
 		   $(SONIC_EXTRA_DEBS)))
 

@@ -426,7 +426,7 @@ RFS_DEP_FILES := $(wildcard \
 
 
 # Set the target path for each target.
-$(foreach pkg, $(SONIC_MAKE_DEBS) $(SONIC_DPKG_DEBS) $(SONIC_ONLINE_DEBS) $(SONIC_COPY_DEBS), \
+$(foreach pkg, $(SONIC_MAKE_DEBS) $(SONIC_DPKG_DEBS) $(SONIC_BAZEL_DEBS) $(SONIC_ONLINE_DEBS) $(SONIC_COPY_DEBS), \
         $(eval $(pkg)_DST_PATH := $(if $($(pkg)_DST_PATH), $($(pkg)_DST_PATH), $(DEBS_PATH))) \
 		$(eval $(DEBS_PATH)/$(pkg)_TARGET := $(pkg)) )
 
@@ -458,7 +458,7 @@ $(foreach pkg, $(SONIC_RFS_TARGETS), \
         $(eval $(TARGET_PATH)/$(pkg)_TARGET := $(pkg)) )
 
 # define the DEP files(.dep and .smdep) and SHA files (.sha and smsha) for each target
-$(foreach pkg, $(SONIC_MAKE_DEBS) $(SONIC_DPKG_DEBS) $(SONIC_ONLINE_DEBS) $(SONIC_COPY_DEBS) \
+$(foreach pkg, $(SONIC_MAKE_DEBS) $(SONIC_DPKG_DEBS) $(SONIC_BAZEL_DEBS) $(SONIC_ONLINE_DEBS) $(SONIC_COPY_DEBS) \
         $(SONIC_MAKE_FILES) $(SONIC_PYTHON_STDEB_DEBS) $(SONIC_PYTHON_WHEELS) \
         $(SONIC_DOCKER_IMAGES) $(SONIC_DOCKER_DBG_IMAGES) $(SONIC_INSTALL_PKGS) $(SONIC_RFS_TARGETS), \
         $(eval $(pkg)_MOD_SRC_PATH:=$(if $($(pkg)_SRC_PATH),$($(pkg)_SRC_PATH),$($(pkg)_PATH))) \
@@ -555,7 +555,7 @@ $(addsuffix .$(3),$(addprefix $(2)/, $(1))) :: $(2)/%.$(3) :
 	$$(eval $$*_FLAGS_DIFF := $$(filter-out $$($$*_FILE_FLAGS),$$($$*_DEP_FLAGS_ALL)) $$(filter-out $$($$*_DEP_FLAGS_ALL),$$($$*_FILE_FLAGS)))
 	@$$(if $$(MDEBUG), $$(info FLAGS: $$@, DEP:$$?))
 endef
-$(eval $(call FLAGS_DEP_RULES, $(SONIC_MAKE_DEBS) $(SONIC_DPKG_DEBS) $(SONIC_ONLINE_DEBS) $(SONIC_COPY_DEBS), $(DEBS_PATH),flags,$(BLDENV)) )
+$(eval $(call FLAGS_DEP_RULES, $(SONIC_MAKE_DEBS) $(SONIC_DPKG_DEBS) $(SONIC_BAZEL_DEBS) $(SONIC_ONLINE_DEBS) $(SONIC_COPY_DEBS), $(DEBS_PATH),flags,$(BLDENV)) )
 $(eval $(call FLAGS_DEP_RULES, $(SONIC_MAKE_FILES), $(FILES_PATH),flags,$(BLDENV)))
 $(eval $(call FLAGS_DEP_RULES, $(SONIC_PYTHON_STDEB_DEBS), $(PYTHON_DEBS_PATH),flags))
 $(eval $(call FLAGS_DEP_RULES, $(SONIC_PYTHON_WHEELS), $(PYTHON_WHEELS_PATH),flags))
@@ -598,7 +598,7 @@ $(addsuffix .$(3),$(addprefix $(2)/, $(1))) : $(2)/%.$(3) : \
 	@( cd $$($$*_MOD_SRC_PATH) ; cat $$($$*_BASE_PATH)/$$@  |xargs git hash-object ) >$$@.smsha
 	@$$(if $$(MDEBUG), $$(info SMDEP:$$@, MOD:$$?))
 endef
-$(eval $(call SMSHA_DEP_RULES, $(SONIC_MAKE_DEBS) $(SONIC_DPKG_DEBS) $(SONIC_ONLINE_DEBS) $(SONIC_COPY_DEBS), $(DEBS_PATH),smdep))
+$(eval $(call SMSHA_DEP_RULES, $(SONIC_MAKE_DEBS) $(SONIC_DPKG_DEBS) $(SONIC_BAZEL_DEBS) $(SONIC_ONLINE_DEBS) $(SONIC_COPY_DEBS), $(DEBS_PATH),smdep))
 $(eval $(call SMSHA_DEP_RULES, $(SONIC_MAKE_FILES), $(FILES_PATH),smdep))
 $(eval $(call SMSHA_DEP_RULES, $(SONIC_PYTHON_STDEB_DEBS), $(PYTHON_DEBS_PATH),smdep))
 $(eval $(call SMSHA_DEP_RULES, $(SONIC_PYTHON_WHEELS), $(PYTHON_WHEELS_PATH),smdep))
@@ -652,7 +652,7 @@ $(addsuffix .$(3),$(addprefix $(2)/, $(1))) : $(2)/%.$(3) : \
 	@rm -f $$@.tmp $$@.sha.tmp
 	@$$(if $$(MDEBUG), $$(info DEP: $$@, MOD:$$?))
 endef
-$(eval $(call SHA_DEP_RULES, $(SONIC_MAKE_DEBS) $(SONIC_DPKG_DEBS) $(SONIC_ONLINE_DEBS) $(SONIC_COPY_DEBS), $(DEBS_PATH),dep))
+$(eval $(call SHA_DEP_RULES, $(SONIC_MAKE_DEBS) $(SONIC_DPKG_DEBS) $(SONIC_BAZEL_DEBS) $(SONIC_ONLINE_DEBS) $(SONIC_COPY_DEBS), $(DEBS_PATH),dep))
 $(eval $(call SHA_DEP_RULES, $(SONIC_MAKE_FILES), $(FILES_PATH),dep))
 $(eval $(call SHA_DEP_RULES, $(SONIC_PYTHON_STDEB_DEBS), $(PYTHON_DEBS_PATH),dep))
 $(eval $(call SHA_DEP_RULES, $(SONIC_PYTHON_WHEELS), $(PYTHON_WHEELS_PATH),dep))
@@ -670,6 +670,7 @@ SONIC_CACHE_CLEAN_DEBS = $(addsuffix -clean,$(addprefix $(DEBS_PATH)/, \
            $(SONIC_COPY_DEBS) \
            $(SONIC_MAKE_DEBS) \
            $(SONIC_DPKG_DEBS) \
+           $(SONIC_BAZEL_DEBS) \
            $(SONIC_DERIVED_DEBS) \
            $(SONIC_EXTRA_DEBS)))
 $(SONIC_CACHE_CLEAN_DEBS) :: $(DEBS_PATH)/%-clean : .platform $$(addsuffix -clean,$$(addprefix $(DEBS_PATH)/,$$($$*_MAIN_DEB)))
