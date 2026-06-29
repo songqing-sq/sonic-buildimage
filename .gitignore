@@ -132,5 +132,8 @@ sources.list.*
 # Bazel auto-generated lockfile (regenerated on every build).
 MODULE.bazel.lock
 
+# Local docs
+/docs/
+
 # Generated mirror configs
 apt-retries-count

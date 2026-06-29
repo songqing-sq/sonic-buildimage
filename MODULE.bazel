@@ -22,7 +22,7 @@ bazel_dep(name = "bazel_lib", version = "3.1.1")
 bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
 git_override(
     module_name = "rules_distroless",
-    commit = "815b4b3372642c5a9c2a48f932b1e2371fead4cb",
+    commit = "579be0a0adcf7945f354fde25af382614126900e",
     remote = "https://github.com/songqing-sq/rules_distroless.git",
 )
 
