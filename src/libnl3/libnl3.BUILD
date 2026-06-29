@@ -1,0 +1,637 @@
+load("@rules_flex//flex:flex.bzl", "flex")
+load("@rules_bison//bison:bison.bzl", "bison")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@sonic_build_infra//shared_library:shared_library.bzl", "sonic_shared_library", "sonic_shared_library_versioned")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+LIBNL_VERSION = "3.7.0-0.2+b1sonic1"
+LIBNL_SOVERSION = "200.26.0"
+LIBNL_COPTS = [
+    "-std=gnu11",
+    "-Wall",
+    "-D_GNU_SOURCE",
+#    "-I{REPO_DIR}/include/linux-private",
+    "-Wno-unused-parameter",
+    "-Wno-sign-compare",
+    "-Wno-format-truncation",
+    "-Wno-maybe-uninitialized",
+    "-Wno-return-type",
+]
+
+# =============================================================================
+# Generated headers
+# =============================================================================
+
+genrule(
+    name = "defs_h",
+    srcs = ["lib/defs.h.in"],
+    outs = ["lib/defs.h"],
+    cmd = """
+        sed \\
+            -e 's|#undef DISABLE_PTHREADS|/* #undef DISABLE_PTHREADS */|' \\
+            -e 's|#undef HAVE_DLFCN_H|#define HAVE_DLFCN_H 1|' \\
+            -e 's|#undef HAVE_INTTYPES_H|#define HAVE_INTTYPES_H 1|' \\
+            -e 's|#undef HAVE_LIBPTHREAD|#define HAVE_LIBPTHREAD 1|' \\
+            -e 's|#undef HAVE_STDINT_H|#define HAVE_STDINT_H 1|' \\
+            -e 's|#undef HAVE_STDIO_H|#define HAVE_STDIO_H 1|' \\
+            -e 's|#undef HAVE_STDLIB_H|#define HAVE_STDLIB_H 1|' \\
+            -e 's|#undef HAVE_STRERROR_L|#define HAVE_STRERROR_L 1|' \\
+            -e 's|#undef HAVE_STRINGS_H|#define HAVE_STRINGS_H 1|' \\
+            -e 's|#undef HAVE_STRING_H|#define HAVE_STRING_H 1|' \\
+            -e 's|#undef HAVE_SYS_STAT_H|#define HAVE_SYS_STAT_H 1|' \\
+            -e 's|#undef HAVE_SYS_TYPES_H|#define HAVE_SYS_TYPES_H 1|' \\
+            -e 's|#undef HAVE_UNISTD_H|#define HAVE_UNISTD_H 1|' \\
+            -e 's|#undef LT_OBJDIR|#define LT_OBJDIR ".libs/"|' \\
+            -e 's|#undef NL_DEBUG|/* #undef NL_DEBUG */|' \\
+            -e 's/#undef PACKAGE$$/#define PACKAGE "libnl"/' \\
+            -e 's|#undef PACKAGE_BUGREPORT|#define PACKAGE_BUGREPORT "http://www.infradead.org/~tgr/libnl/"|' \\
+            -e 's|#undef PACKAGE_NAME|#define PACKAGE_NAME "libnl"|' \\
+            -e 's|#undef PACKAGE_STRING|#define PACKAGE_STRING "libnl 3.7.0"|' \\
+            -e 's|#undef PACKAGE_TARNAME|#define PACKAGE_TARNAME "libnl"|' \\
+            -e 's|#undef PACKAGE_URL|#define PACKAGE_URL "http://www.infradead.org/~tgr/libnl/"|' \\
+            -e 's|#undef PACKAGE_VERSION|#define PACKAGE_VERSION "3.7.0"|' \\
+            -e 's|#undef STDC_HEADERS|#define STDC_HEADERS 1|' \\
+            -e 's|#undef VERSION|#define VERSION "3.7.0"|' \\
+            $(SRCS) > $(OUTS) && \\
+        echo '#define SYSCONFDIR "/etc/libnl"' >> $(OUTS)
+    """,
+)
+
+# =============================================================================
+# Flex/Bison generated sources for libnl-route-3
+# =============================================================================
+
+flex(
+    name = "pktloc_grammar",
+    src = "lib/route/pktloc_grammar.l",
+)
+
+bison(
+    name = "pktloc_syntax",
+    src = "lib/route/pktloc_syntax.y",
+)
+
+flex(
+    name = "ematch_grammar",
+    src = "lib/route/cls/ematch_grammar.l",
+)
+
+bison(
+    name = "ematch_syntax",
+    src = "lib/route/cls/ematch_syntax.y",
+)
+
+# =============================================================================
+# Header libraries
+# =============================================================================
+
+filegroup(
+    name = "etc_files",
+    srcs = [
+        "etc/classid",
+        "etc/pktloc",
+    ],
+)
+
+cc_library(
+    name = "private_headers",
+    hdrs = glob([
+        "include/netlink-private/**/*.h",
+        "include/linux-private/**/*.h"
+    ]) + [":defs_h"],
+    includes = ["include", "include/linux-private", "lib"],
+    #strip_include_prefix = "include",
+)
+
+# =============================================================================
+# Core library: libnl-3
+# =============================================================================
+
+sonic_shared_library_versioned(
+    name = "libnl_3",
+    srcs = glob(["lib/*.c"]),
+    hdrs = glob(["include/netlink/**/*.h"]),
+    strip_include_prefix = "include",
+    copts = LIBNL_COPTS,
+    implementation_deps = [
+        ":private_headers",
+    ],
+    soversion = "200",
+    version = LIBNL_SOVERSION,
+    output_name = "libnl-3",
+    version_script = "libnl-3.sym",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Generic Netlink library: libnl-genl-3
+# =============================================================================
+
+sonic_shared_library_versioned(
+    name = "libnl_genl_3",
+    srcs = glob(["lib/genl/*.c"]),
+    copts = LIBNL_COPTS,
+    deps = [
+        ":libnl_3",
+    ],
+    implementation_deps = [
+        ":private_headers",
+    ],
+    soversion = "200",
+    version = LIBNL_SOVERSION,
+    output_name = "libnl-genl-3",
+    dynamic_deps = [":libnl_3_shared"],
+    version_script = "libnl-genl-3.sym",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Route library: libnl-route-3
+# =============================================================================
+
+sonic_shared_library_versioned(
+    name = "libnl_route_3",
+    srcs = glob([
+        "lib/route/*.c",
+        "lib/route/**/*.c",
+        "lib/fib_lookup/*.c",
+    ]) + [
+        ":pktloc_grammar",
+        ":ematch_grammar",
+        ":pktloc_syntax",
+        ":ematch_syntax",
+    ],
+    copts = LIBNL_COPTS,
+    deps = [
+        ":libnl_3",
+    ],
+    implementation_deps = [
+        ":private_headers",
+    ],
+    soversion = "200",
+    version = LIBNL_SOVERSION,
+    output_name = "libnl-route-3",
+    dynamic_deps = [":libnl_3_shared"],
+    version_script = "libnl-route-3.sym",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Netfilter library: libnl-nf-3
+# =============================================================================
+
+sonic_shared_library_versioned(
+    name = "libnl_nf_3",
+    srcs = glob(["lib/netfilter/*.c"]),
+    copts = LIBNL_COPTS + [ "-Wno-pedantic",],
+    deps = [
+        ":libnl_3",
+        ":libnl_route_3",
+    ],
+    implementation_deps = [
+        ":private_headers",
+    ],
+    soversion = "200",
+    version = LIBNL_SOVERSION,
+    output_name = "libnl-nf-3",
+    dynamic_deps = [
+        ":libnl_3_shared",
+        ":libnl_route_3_shared",
+    ],
+    version_script = "libnl-nf-3.sym",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# CLI library: libnl-cli-3
+# =============================================================================
+
+sonic_shared_library_versioned(
+    name = "libnl_cli_3",
+    srcs = glob(["src/lib/*.c"]),
+    copts = LIBNL_COPTS,
+    defines = [
+        'PKGLIBDIR=\\"/usr/lib/x86_64-linux-gnu/libnl\\"',
+    ],
+    deps = [
+        ":libnl_3",
+        ":libnl_genl_3",
+        ":libnl_nf_3",
+        ":libnl_route_3",
+    ],
+    implementation_deps = [
+        ":private_headers",
+    ],
+    soversion = "200",
+    version = LIBNL_SOVERSION,
+    output_name = "libnl-cli-3",
+    dynamic_deps = [
+        ":libnl_3_shared",
+        ":libnl_genl_3_shared",
+        ":libnl_nf_3_shared",
+        ":libnl_route_3_shared",
+    ],
+    version_script = "libnl-cli-3.sym",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# CLI plugin shared objects
+# =============================================================================
+
+CLI_PLUGIN_COPTS = LIBNL_COPTS
+CLI_PLUGIN_DEPS = [":libnl_3", ":libnl_cli_3", ":libnl_route_3"]
+CLI_PLUGIN_DYNAMIC_DEPS = [":libnl_3_shared", ":libnl_cli_3_shared", ":libnl_route_3_shared"]
+
+sonic_shared_library(
+    name = "libnl_cli_cls_basic",
+    srcs = ["lib/cli/cls/basic.c"],
+    copts = CLI_PLUGIN_COPTS,
+    deps = CLI_PLUGIN_DEPS,
+    dynamic_deps = CLI_PLUGIN_DYNAMIC_DEPS,
+    output_name = "basic",
+)
+
+sonic_shared_library(
+    name = "libnl_cli_cls_cgroup",
+    srcs = ["lib/cli/cls/cgroup.c"],
+    copts = CLI_PLUGIN_COPTS,
+    deps = CLI_PLUGIN_DEPS,
+    dynamic_deps = CLI_PLUGIN_DYNAMIC_DEPS,
+    output_name = "cgroup",
+)
+
+sonic_shared_library(
+    name = "libnl_cli_qdisc_bfifo",
+    srcs = ["lib/cli/qdisc/bfifo.c"],
+    copts = CLI_PLUGIN_COPTS,
+    deps = CLI_PLUGIN_DEPS,
+    dynamic_deps = CLI_PLUGIN_DYNAMIC_DEPS,
+    output_name = "bfifo",
+)
+
+sonic_shared_library(
+    name = "libnl_cli_qdisc_blackhole",
+    srcs = ["lib/cli/qdisc/blackhole.c"],
+    copts = CLI_PLUGIN_COPTS,
+    deps = CLI_PLUGIN_DEPS,
+    dynamic_deps = CLI_PLUGIN_DYNAMIC_DEPS,
+    output_name = "blackhole",
+)
+
+sonic_shared_library(
+    name = "libnl_cli_qdisc_fq_codel",
+    srcs = ["lib/cli/qdisc/fq_codel.c"],
+    copts = CLI_PLUGIN_COPTS,
+    deps = CLI_PLUGIN_DEPS,
+    dynamic_deps = CLI_PLUGIN_DYNAMIC_DEPS,
+    output_name = "fq_codel",
+)
+
+sonic_shared_library(
+    name = "libnl_cli_qdisc_hfsc",
+    srcs = ["lib/cli/qdisc/hfsc.c"],
+    copts = CLI_PLUGIN_COPTS,
+    deps = CLI_PLUGIN_DEPS,
+    dynamic_deps = CLI_PLUGIN_DYNAMIC_DEPS,
+    output_name = "hfsc",
+)
+
+sonic_shared_library(
+    name = "libnl_cli_qdisc_htb",
+    srcs = ["lib/cli/qdisc/htb.c"],
+    copts = CLI_PLUGIN_COPTS,
+    deps = CLI_PLUGIN_DEPS,
+    dynamic_deps = CLI_PLUGIN_DYNAMIC_DEPS,
+    output_name = "htb",
+)
+
+sonic_shared_library(
+    name = "libnl_cli_qdisc_ingress",
+    srcs = ["lib/cli/qdisc/ingress.c"],
+    copts = CLI_PLUGIN_COPTS,
+    deps = CLI_PLUGIN_DEPS,
+    dynamic_deps = CLI_PLUGIN_DYNAMIC_DEPS,
+    output_name = "ingress",
+)
+
+sonic_shared_library(
+    name = "libnl_cli_qdisc_pfifo",
+    srcs = ["lib/cli/qdisc/pfifo.c"],
+    copts = CLI_PLUGIN_COPTS,
+    deps = CLI_PLUGIN_DEPS,
+    dynamic_deps = CLI_PLUGIN_DYNAMIC_DEPS,
+    output_name = "pfifo",
+)
+
+sonic_shared_library(
+    name = "libnl_cli_qdisc_plug",
+    srcs = ["lib/cli/qdisc/plug.c"],
+    copts = CLI_PLUGIN_COPTS,
+    deps = CLI_PLUGIN_DEPS,
+    dynamic_deps = CLI_PLUGIN_DYNAMIC_DEPS,
+    output_name = "plug",
+)
+
+# =============================================================================
+# .deb Packages
+# =============================================================================
+
+# libnl-3-200 (main runtime library)
+sonic_deb(
+    name = "libnl-3-200_3.7.0-0.2+b1sonic1.deb",
+    package = "libnl-3-200",
+    version = LIBNL_VERSION,
+    maintainer = "SONiC Maintainers",
+    description = "libnl generic netlink library",
+    content = {
+        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_3_files"],
+        "/etc/libnl-3/*:*:0644": [":etc_files"],
+    },
+    #content_targets = [":libnl_3_shared"],
+    gen_dbg = True,
+    homepage = "https://www.infradead.org/~tgr/libnl/",
+    visibility = ["//visibility:public"],
+)
+
+# libnl-3-dev (development files for core library)
+sonic_deb(
+    name = "libnl-3-dev_3.7.0-0.2+b1sonic1.deb",
+    package = "libnl-3-dev",
+    version = LIBNL_VERSION,
+    maintainer = "SONiC Maintainers",
+    description = "development library and header files for libnl-3",
+    content = {
+        "/usr/include/libnl3:include/:0644": [":libnl_3_hdr_files"],
+        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_3_dev_link"],
+        "/usr/lib/x86_64-linux-gnu/pkgconfig:0644": [
+            ":libnl3_pc_generated",
+        ],
+    },
+    depends = ["libnl-3-200 (= {})".format(LIBNL_VERSION)],
+    visibility = ["//visibility:public"],
+)
+
+# libnl-genl-3-200 (generic netlink runtime library)
+sonic_deb(
+    name = "libnl-genl-3-200_3.7.0-0.2+b1sonic1.deb",
+    package = "libnl-genl-3-200",
+    version = LIBNL_VERSION,
+    maintainer = "SONiC Maintainers",
+    description = "libnl generic netlink library",
+    content = {
+        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_genl_3_files"],
+    },
+    content_targets = [":libnl_genl_3_shared"],
+    depends = ["libnl-3-200 (= {})".format(LIBNL_VERSION)],
+    gen_dbg = True,
+    homepage = "https://www.infradead.org/~tgr/libnl/",
+    visibility = ["//visibility:public"],
+)
+
+# libnl-genl-3-dev (development files for genl library)
+sonic_deb(
+    name = "libnl-genl-3-dev_3.7.0-0.2+b1sonic1.deb",
+    package = "libnl-genl-3-dev",
+    version = LIBNL_VERSION,
+    maintainer = "SONiC Maintainers",
+    description = "development library and header files for libnl-genl-3",
+    content = {
+        "/usr/lib/x86_64-linux-gnu/pkgconfig:0644": [
+            ":libnl3_genl_pc_generated",
+        ],
+        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_genl_3_dev_link"],
+    },
+    depends = [
+        "libnl-genl-3-200 (= {})".format(LIBNL_VERSION),
+        "libnl-3-dev (= {})".format(LIBNL_VERSION),
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# libnl-route-3-200 (route runtime library)
+sonic_deb(
+    name = "libnl-route-3-200_3.7.0-0.2+b1sonic1.deb",
+    package = "libnl-route-3-200",
+    version = LIBNL_VERSION,
+    maintainer = "SONiC Maintainers",
+    description = "libnl route library",
+    content = {
+        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_route_3_files"],
+    },
+    content_targets = [":libnl_route_3_shared"],
+    depends = ["libnl-3-200 (= {})".format(LIBNL_VERSION)],
+    gen_dbg = True,
+    homepage = "https://www.infradead.org/~tgr/libnl/",
+    visibility = ["//visibility:public"],
+)
+
+# libnl-route-3-dev (development files for route library)
+sonic_deb(
+    name = "libnl-route-3-dev_3.7.0-0.2+b1sonic1.deb",
+    package = "libnl-route-3-dev",
+    version = LIBNL_VERSION,
+    maintainer = "SONiC Maintainers",
+    description = "development library and header files for libnl-route-3",
+    content = {
+        "/usr/lib/x86_64-linux-gnu/pkgconfig:0644": [
+            ":libnl3_route_pc_generated",
+        ],
+        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_route_3_dev_link"],
+    },
+    depends = [
+        "libnl-route-3-200 (= {})".format(LIBNL_VERSION),
+        "libnl-3-dev (= {})".format(LIBNL_VERSION),
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# libnl-nf-3-200 (netfilter runtime library)
+sonic_deb(
+    name = "libnl-nf-3-200_3.7.0-0.2+b1sonic1.deb",
+    package = "libnl-nf-3-200",
+    version = LIBNL_VERSION,
+    maintainer = "SONiC Maintainers",
+    description = "libnl netfilter library",
+    content = {
+        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_nf_3_files"],
+    },
+    depends = ["libnl-route-3-200 (= {})".format(LIBNL_VERSION)],
+    gen_dbg = True,
+    homepage = "https://www.infradead.org/~tgr/libnl/",
+    visibility = ["//visibility:public"],
+)
+
+# libnl-nf-3-dev (development files for netfilter library)
+sonic_deb(
+    name = "libnl-nf-3-dev_3.7.0-0.2+b1sonic1.deb",
+    package = "libnl-nf-3-dev",
+    version = LIBNL_VERSION,
+    maintainer = "SONiC Maintainers",
+    description = "development library and header files for libnl-nf-3",
+    content = {
+        "/usr/lib/x86_64-linux-gnu/pkgconfig:0644": [
+            ":libnl3_nf_pc_generated",
+        ],
+        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_nf_3_dev_link"],
+    },
+    depends = [
+        "libnl-nf-3-200 (= {})".format(LIBNL_VERSION),
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# libnl-cli-3-200 (CLI runtime library + plugins)
+sonic_deb(
+    name = "libnl-cli-3-200_3.7.0-0.2+b1sonic1.deb",
+    package = "libnl-cli-3-200",
+    version = LIBNL_VERSION,
+    maintainer = "SONiC Maintainers",
+    description = "libnl CLI library",
+    content = {
+        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_cli_3_files"],
+        "/usr/lib/x86_64-linux-gnu/libnl-3/cli/cls:*:0644": [
+            ":libnl_cli_cls_basic_shared",
+            ":libnl_cli_cls_cgroup_shared",
+        ],
+        "/usr/lib/x86_64-linux-gnu/libnl-3/cli/qdisc:*:0644": [
+            ":libnl_cli_qdisc_bfifo_shared",
+            ":libnl_cli_qdisc_blackhole_shared",
+            ":libnl_cli_qdisc_fq_codel_shared",
+            ":libnl_cli_qdisc_hfsc_shared",
+            ":libnl_cli_qdisc_htb_shared",
+            ":libnl_cli_qdisc_ingress_shared",
+            ":libnl_cli_qdisc_pfifo_shared",
+            ":libnl_cli_qdisc_plug_shared",
+        ],
+    },
+    depends = [
+        "libnl-genl-3-200 (= {})".format(LIBNL_VERSION),
+        "libnl-nf-3-200 (= {})".format(LIBNL_VERSION),
+        "libnl-route-3-200 (= {})".format(LIBNL_VERSION),
+    ],
+    gen_dbg = True,
+    homepage = "https://www.infradead.org/~tgr/libnl/",
+    visibility = ["//visibility:public"],
+)
+
+# libnl-cli-3-dev (development files for CLI library)
+sonic_deb(
+    name = "libnl-cli-3-dev_3.7.0-0.2+b1sonic1.deb",
+    package = "libnl-cli-3-dev",
+    version = LIBNL_VERSION,
+    maintainer = "SONiC Maintainers",
+    description = "development library and header files for libnl-cli-3",
+    content = {
+        "/usr/lib/x86_64-linux-gnu/pkgconfig:0644": [
+            ":libnl3_cli_pc_generated",
+        ],
+        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_cli_3_dev_link"],
+    },
+    depends = [
+        "libnl-cli-3-200 (= {})".format(LIBNL_VERSION),
+        "libnl-genl-3-dev (= {})".format(LIBNL_VERSION),
+        "libnl-nf-3-dev (= {})".format(LIBNL_VERSION),
+        "libnl-route-3-dev (= {})".format(LIBNL_VERSION),
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# pkgconfig files
+# =============================================================================
+
+write_file(
+    name = "libnl3_pc_generated",
+    out = "libnl-3.0.pc",
+    content = [
+        "prefix=/usr",
+        "exec_prefix=$${prefix}",
+        "libdir=$${prefix}/lib/x86_64-linux-gnu",
+        "includedir=$${prefix}/include/libnl3",
+        "",
+        "Name: libnl-3.0",
+        "Description: Convenience library for netlink sockets",
+        "Version: 3.7.0",
+        "Libs: -L$${libdir} -lnl-3",
+        "Libs.private: -lpthread -lm",
+        "Cflags: -I$${includedir}",
+        "",
+    ],
+)
+
+write_file(
+    name = "libnl3_genl_pc_generated",
+    out = "libnl-genl-3.0.pc",
+    content = [
+        "prefix=/usr",
+        "exec_prefix=$${prefix}",
+        "libdir=$${prefix}/lib/x86_64-linux-gnu",
+        "includedir=$${prefix}/include/libnl3",
+        "",
+        "Name: libnl-genl-3.0",
+        "Description: Generic Netlink Library",
+        "Version: 3.7.0",
+        "Requires: libnl-3.0 >= 3.7.0",
+        "Libs: -L$${libdir} -lnl-genl-3",
+        "Cflags: -I$${includedir}",
+        "",
+    ],
+)
+
+write_file(
+    name = "libnl3_route_pc_generated",
+    out = "libnl-route-3.0.pc",
+    content = [
+        "prefix=/usr",
+        "exec_prefix=$${prefix}",
+        "libdir=$${prefix}/lib/x86_64-linux-gnu",
+        "includedir=$${prefix}/include/libnl3",
+        "",
+        "Name: libnl-route-3.0",
+        "Description: Routing/link Library",
+        "Version: 3.7.0",
+        "Requires: libnl-3.0 >= 3.7.0",
+        "Libs: -L$${libdir} -lnl-route-3",
+        "Cflags: -I$${includedir}",
+        "",
+    ],
+)
+
+write_file(
+    name = "libnl3_nf_pc_generated",
+    out = "libnl-nf-3.0.pc",
+    content = [
+        "prefix=/usr",
+        "exec_prefix=$${prefix}",
+        "libdir=$${prefix}/lib/x86_64-linux-gnu",
+        "includedir=$${prefix}/include/libnl3",
+        "",
+        "Name: libnl-nf-3.0",
+        "Description: Netfilter Netlink Library",
+        "Version: 3.7.0",
+        "Requires: libnl-3.0 >= 3.7.0",
+        "Libs: -L$${libdir} -lnl-nf-3",
+        "Cflags: -I$${includedir}",
+        "",
+    ],
+)
+
+write_file(
+    name = "libnl3_cli_pc_generated",
+    out = "libnl-cli-3.0.pc",
+    content = [
+        "prefix=/usr",
+        "exec_prefix=$${prefix}",
+        "libdir=$${prefix}/lib/x86_64-linux-gnu",
+        "includedir=$${prefix}/include/libnl3",
+        "",
+        "Name: libnl-cli-3.0",
+        "Description: CLI Netlink Library",
+        "Version: 3.7.0",
+        "Requires: libnl-3.0 >= 3.7.0 libnl-route-3.0 >= 3.7.0 libnl-genl-3.0 >= 3.7.0 libnl-nf-3.0 >= 3.7.0",
+        "Libs: -L$${libdir} -lnl-cli-3",
+        "Cflags: -I$${includedir}",
+        "",
+    ],
+)

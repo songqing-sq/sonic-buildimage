@@ -127,5 +127,10 @@ htmlcov/
 sources.list.*
 !sources.list*.j2
 
+# Bazel symlinks
+/bazel-*
+# Bazel auto-generated lockfile (regenerated on every build).
+MODULE.bazel.lock
+
 # Generated mirror configs
 apt-retries-count

@@ -1,0 +1,400 @@
+# Re-export targets from the sonic_http_archive source repo.
+# sonic_http_archive generates BUILD.bazel in @libnl3_src;
+# this file makes them visible as @libnl3//:target.
+
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
+alias(
+    name = "defs_h",
+    actual = "@libnl3_src//:defs_h",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "pktloc_grammar",
+    actual = "@libnl3_src//:pktloc_grammar",
+)
+
+alias(
+    name = "pktloc_syntax",
+    actual = "@libnl3_src//:pktloc_syntax",
+)
+
+alias(
+    name = "ematch_grammar",
+    actual = "@libnl3_src//:ematch_grammar",
+)
+
+alias(
+    name = "ematch_syntax",
+    actual = "@libnl3_src//:ematch_syntax",
+)
+
+alias(
+    name = "public_headers",
+    actual = "@libnl3_src//:public_headers",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "public_headers_compat",
+    actual = "@libnl3_src//:public_headers_compat",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "public_header_files",
+    actual = "@libnl3_src//:public_header_files",
+)
+
+alias(
+    name = "linux_private_headers",
+    actual = "@libnl3_src//:linux_private_headers",
+)
+
+alias(
+    name = "private_headers",
+    actual = "@libnl3_src//:private_headers",
+)
+
+alias(
+    name = "libnl_3",
+    actual = "@libnl3_src//:libnl_3",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_3_shared",
+    actual = "@libnl3_src//:libnl_3_shared",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_3_hdrs",
+    actual = "@libnl3_src//:libnl_3_hdrs",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_3_files",
+    actual = "@libnl3_src//:libnl_3_files",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_genl_3",
+    actual = "@libnl3_src//:libnl_genl_3",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_genl_3_shared",
+    actual = "@libnl3_src//:libnl_genl_3_shared",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_genl_3_files",
+    actual = "@libnl3_src//:libnl_genl_3_files",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_route_3",
+    actual = "@libnl3_src//:libnl_route_3",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_route_3_shared",
+    actual = "@libnl3_src//:libnl_route_3_shared",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_route_3_files",
+    actual = "@libnl3_src//:libnl_route_3_files",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_nf_3",
+    actual = "@libnl3_src//:libnl_nf_3",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_nf_3_shared",
+    actual = "@libnl3_src//:libnl_nf_3_shared",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_nf_3_files",
+    actual = "@libnl3_src//:libnl_nf_3_files",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_cli_3",
+    actual = "@libnl3_src//:libnl_cli_3",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_cli_3_shared",
+    actual = "@libnl3_src//:libnl_cli_3_shared",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl_cli_3_files",
+    actual = "@libnl3_src//:libnl_cli_3_files",
+    visibility = ["//visibility:public"],
+)
+
+# CLI plugins
+alias(
+    name = "libnl_cli_cls_basic",
+    actual = "@libnl3_src//:libnl_cli_cls_basic",
+)
+
+alias(
+    name = "libnl_cli_cls_basic_shared",
+    actual = "@libnl3_src//:libnl_cli_cls_basic_shared",
+)
+
+alias(
+    name = "libnl_cli_cls_cgroup",
+    actual = "@libnl3_src//:libnl_cli_cls_cgroup",
+)
+
+alias(
+    name = "libnl_cli_cls_cgroup_shared",
+    actual = "@libnl3_src//:libnl_cli_cls_cgroup_shared",
+)
+
+alias(
+    name = "libnl_cli_qdisc_bfifo",
+    actual = "@libnl3_src//:libnl_cli_qdisc_bfifo",
+)
+
+alias(
+    name = "libnl_cli_qdisc_bfifo_shared",
+    actual = "@libnl3_src//:libnl_cli_qdisc_bfifo_shared",
+)
+
+alias(
+    name = "libnl_cli_qdisc_blackhole",
+    actual = "@libnl3_src//:libnl_cli_qdisc_blackhole",
+)
+
+alias(
+    name = "libnl_cli_qdisc_blackhole_shared",
+    actual = "@libnl3_src//:libnl_cli_qdisc_blackhole_shared",
+)
+
+alias(
+    name = "libnl_cli_qdisc_fq_codel",
+    actual = "@libnl3_src//:libnl_cli_qdisc_fq_codel",
+)
+
+alias(
+    name = "libnl_cli_qdisc_fq_codel_shared",
+    actual = "@libnl3_src//:libnl_cli_qdisc_fq_codel_shared",
+)
+
+alias(
+    name = "libnl_cli_qdisc_hfsc",
+    actual = "@libnl3_src//:libnl_cli_qdisc_hfsc",
+)
+
+alias(
+    name = "libnl_cli_qdisc_hfsc_shared",
+    actual = "@libnl3_src//:libnl_cli_qdisc_hfsc_shared",
+)
+
+alias(
+    name = "libnl_cli_qdisc_htb",
+    actual = "@libnl3_src//:libnl_cli_qdisc_htb",
+)
+
+alias(
+    name = "libnl_cli_qdisc_htb_shared",
+    actual = "@libnl3_src//:libnl_cli_qdisc_htb_shared",
+)
+
+alias(
+    name = "libnl_cli_qdisc_ingress",
+    actual = "@libnl3_src//:libnl_cli_qdisc_ingress",
+)
+
+alias(
+    name = "libnl_cli_qdisc_ingress_shared",
+    actual = "@libnl3_src//:libnl_cli_qdisc_ingress_shared",
+)
+
+alias(
+    name = "libnl_cli_qdisc_pfifo",
+    actual = "@libnl3_src//:libnl_cli_qdisc_pfifo",
+)
+
+alias(
+    name = "libnl_cli_qdisc_pfifo_shared",
+    actual = "@libnl3_src//:libnl_cli_qdisc_pfifo_shared",
+)
+
+alias(
+    name = "libnl_cli_qdisc_plug",
+    actual = "@libnl3_src//:libnl_cli_qdisc_plug",
+)
+
+alias(
+    name = "libnl_cli_qdisc_plug_shared",
+    actual = "@libnl3_src//:libnl_cli_qdisc_plug_shared",
+)
+
+# pkgconfig
+alias(
+    name = "libnl3_pc_generated",
+    actual = "@libnl3_src//:libnl3_pc_generated",
+)
+
+alias(
+    name = "libnl3_genl_pc_generated",
+    actual = "@libnl3_src//:libnl3_genl_pc_generated",
+)
+
+alias(
+    name = "libnl3_route_pc_generated",
+    actual = "@libnl3_src//:libnl3_route_pc_generated",
+)
+
+alias(
+    name = "libnl3_nf_pc_generated",
+    actual = "@libnl3_src//:libnl3_nf_pc_generated",
+)
+
+alias(
+    name = "libnl3_cli_pc_generated",
+    actual = "@libnl3_src//:libnl3_cli_pc_generated",
+)
+
+# .deb packages
+alias(
+    name = "libnl-3-200_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-3-200_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+# _data / _statusd subtargets (generated by sonic_deb) — consumed directly by
+# OCI image flatten() layers so the SONiC-patched libnl3 lands in the image
+# instead of the Debian stock @bookworm//libnl-3-200.
+alias(
+    name = "libnl-3-200_3.7.0-0.2+b1sonic1.deb_data",
+    actual = "@libnl3_src//:libnl-3-200_3.7.0-0.2+b1sonic1.deb_data",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
+    actual = "@libnl3_src//:libnl-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-3-dev_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-3-dev_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-genl-3-200_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-genl-3-200_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-genl-3-dev_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-genl-3-dev_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-route-3-200_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-route-3-200_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-route-3-200_3.7.0-0.2+b1sonic1.deb_data",
+    actual = "@libnl3_src//:libnl-route-3-200_3.7.0-0.2+b1sonic1.deb_data",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-route-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
+    actual = "@libnl3_src//:libnl-route-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-route-3-dev_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-route-3-dev_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-nf-3-200_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-nf-3-200_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-nf-3-dev_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-nf-3-dev_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-cli-3-200_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-cli-3-200_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-cli-3-dev_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-cli-3-dev_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+# Debug symbol packages (generated by gen_dbg=True)
+alias(
+    name = "libnl-3-200-dbgsym_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-3-200-dbgsym_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-genl-3-200-dbgsym_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-genl-3-200-dbgsym_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-route-3-200-dbgsym_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-route-3-200-dbgsym_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-nf-3-200-dbgsym_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-nf-3-200-dbgsym_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-cli-3-200-dbgsym_3.7.0-0.2+b1sonic1.deb",
+    actual = "@libnl3_src//:libnl-cli-3-200-dbgsym_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)

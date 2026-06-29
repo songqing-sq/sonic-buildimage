@@ -1,34 +1,49 @@
-module(name = "sonic", version = "1.0")
+module(name = "sonic-buildimage")
 
-bazel_dep(name = "sonic_rules", version = "0.0.1")
-#git_override(
-#    module_name = "sonic_rules",
-#    remote = "https://github.com/songqing-sq/sonic_rules.git",
-#    commit = "b2a21478d331e5ae3ad0257dc4f25d928c7a9932",
-#)
-local_path_override(
-    module_name = "sonic_rules",
-    path = "sonic_rules"
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "rules_oci", version = "2.2.6")
+bazel_dep(name = "tar.bzl", version = "0.8.1")
+git_override(
+    module_name = "tar.bzl",
+    commit = "9b76e660363ab2465d89d3aadbbc1f7afa02e65c",
+    remote = "https://github.com/bazel-contrib/tar.bzl",
 )
 
-bazel_dep(name = "sonic-sairedis", version = "1.0")
-local_path_override(
-    module_name = "sonic-sairedis",
-    path = "src/sonic-sairedis"
+# Register extension so that we can use bsdtar in genrules.
+toolchains = use_extension("@tar.bzl//tar:extensions.bzl", "toolchains")
+use_repo(toolchains, "bsd_tar_toolchains")
+
+register_toolchains("@bsd_tar_toolchains//:all")
+
+bazel_dep(name = "bazel_lib", version = "3.1.1")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+git_override(
+    module_name = "rules_distroless",
+    commit = "815b4b3372642c5a9c2a48f932b1e2371fead4cb",
+    remote = "https://github.com/songqing-sq/rules_distroless.git",
 )
 
-bazel_dep(name = "sonic-swss-common", version = "1.0")
+bazel_dep(name = "aspect_rules_py", version = "1.8.4")
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(python_version = "3.11.3")
+
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
 local_path_override(
-    module_name = "sonic-swss-common",
-    path = "src/sonic-swss-common"
+    module_name = "sonic-build-infra",
+    path = "sonic_rules",
 )
 
-bazel_dep(name = "sonic-swss", version = "1.0")
-local_path_override(
-    module_name = "sonic-swss",
-    path = "src/sonic-swss"
+register_toolchains(
+    "@sonic_build_infra//toolchains/gcc:linux_x86_64",
+    "@sonic_build_infra//toolchains/gcc:cross_aarch64",
 )
 
-bazel_dep(name = "rules_distroless", version = "0.6.2")
-
-bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "libnl3", version = "3.7.0")
+local_path_override(
+    module_name = "libnl3",
+    path = "src/libnl3",
+)

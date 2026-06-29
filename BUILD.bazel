@@ -1,0 +1,9 @@
+# Minimal BUILD file to make root directory a Bazel package.
+# This file exists solely to allow label resolution for repository rule templates.
+# Do not add targets here.
+
+exports_files(["libyang.BUILD"])
+
+# ONIE image config files consumed by //platform/*:sonic-*-bin via the
+# sonic_onie_image macro.
+exports_files(["onie-image.conf", "onie-image-arm64.conf"])
