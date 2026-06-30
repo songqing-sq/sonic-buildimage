@@ -47,3 +47,15 @@ local_path_override(
     module_name = "libnl3",
     path = "src/libnl3",
 )
+
+bazel_dep(name = "libyang3", version = "3.12.2")
+local_path_override(
+    module_name = "libyang3",
+    path = "src/libyang3",
+)
+
+bazel_dep(name = "libyang3-py3", version = "3.1.0")
+local_path_override(
+    module_name = "libyang3-py3",
+    path = "src/libyang3-py3",
+)

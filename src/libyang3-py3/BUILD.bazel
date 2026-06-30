@@ -1,0 +1,126 @@
+load("@aspect_rules_py//py/unstable:defs.bzl", "py_venv")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+load(":cffi_codegen.bzl", "libyang_cffi_emit")
+load(":headers_tree.bzl", "libyang_headers_tree")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "3.1.0"
+FULL_VERSION = "3.1.0-1"
+
+# Export inputs so MODULE.bazel can reference them from http_archive patches.
+exports_files([
+    "patch/0001-debian.patch",
+    "patch/0002-pr134-json-string-datatypes.patch",
+    "patch/0003-pr132-backlinks.patch",
+    "patch/0004-pr141-test-crash.patch",
+    "libyang3_py3.BUILD",
+    "pyproject.toml",
+    "uv.lock",
+])
+
+# =============================================================================
+# Codegen step: cdefs.h + source.c → _libyang.c via cffi.FFI.emit_c_code().
+# =============================================================================
+# cffi is venv-gated by the @libyang3_py3_pip hub, so we can't reach it from
+# under an exec transition (py_venv_binary or tools=[...]). We instead build
+# a non-transitioned py_venv with cffi inside and invoke its python directly
+# from a custom rule — same trick son624's sdist_build_from_src uses.
+py_venv(
+    name = "cffi_venv",
+    deps = ["@libyang3_py3_pip//cffi"],
+)
+
+libyang_cffi_emit(
+    name = "_libyang",
+    venv = ":cffi_venv",
+    cdefs = "@libyang_python_src//:cffi/cdefs.h",
+    source = "@libyang_python_src//:cffi/source.c",
+)
+
+# =============================================================================
+# Native extension: compile _libyang.c → _libyang.cpython-311-<multiarch>.so
+# =============================================================================
+# Mirrors what cffi/setuptools would do via build_ext, but using Bazel
+# cc rules so the toolchain stays hermetic (gcc 14.3 + trixie sysroot).
+# Rewrap libyang3's headers under a `libyang/` include prefix so the cffi
+# source's `#include <libyang/libyang.h>` resolves. The libyang3 build
+# exposes its headers at the top of src/ (e.g. src/libyang.h); the
+# libyang-dev .deb relocates them to /usr/include/libyang/ at install. We
+# replicate that layout into a tree-artifact directory and give it to
+# cc_library as an include path.
+libyang_headers_tree(
+    name = "libyang_headers_tree",
+    hdrs = ["@libyang3//:yang_hdr_files"],
+)
+
+cc_library(
+    name = "yang_hdrs_prefixed",
+    hdrs = [":libyang_headers_tree"],
+    includes = ["include"],
+)
+
+cc_library(
+    name = "_libyang_obj",
+    srcs = [":_libyang"],
+    copts = [
+        "-Werror",
+        "-std=c99",
+        "-fPIC",
+        "-DPy_LIMITED_API=0",
+    ],
+    deps = [
+        ":yang_hdrs_prefixed",
+        "@libyang3//:yang_hdrs",
+        "@libyang3_py3_deps//libpcre2-dev:libpcre2",
+        "@rules_python//python/cc:current_py_cc_headers",
+    ],
+)
+
+# Shared object with the cpython-311 suffix Python expects. The shared
+# library dynamically links against @libyang3//:yang_shared so the produced
+# .so depends on libyang.so.3 at runtime.
+cc_shared_library(
+    name = "_libyang_so",
+    shared_lib_name = select({
+        "@platforms//cpu:x86_64": "_libyang.cpython-311-x86_64-linux-gnu.so",
+        "@platforms//cpu:aarch64": "_libyang.cpython-311-aarch64-linux-gnu.so",
+    }),
+    dynamic_deps = ["@libyang3//:yang_shared"],
+    deps = [":_libyang_obj"],
+)
+
+# =============================================================================
+# Collect the Python sources from @libyang_python_src
+# =============================================================================
+alias(
+    name = "libyang_py_sources",
+    actual = "@libyang_python_src//:libyang_py_sources",
+)
+
+# =============================================================================
+# python3-libyang deb (matches rules/libyang3-py3.mk:
+#   python3-libyang_3.1.0-1_<arch>.deb)
+# =============================================================================
+sonic_deb(
+    name = "python3-libyang_{}.deb".format(FULL_VERSION),
+    package = "python3-libyang",
+    version = FULL_VERSION,
+    content = {
+        # Python source files (libyang/*.py) → /usr/lib/python3/dist-packages/libyang/
+        "/usr/lib/python3/dist-packages/libyang:*:0644": [":libyang_py_sources"],
+        # Compiled cffi extension → /usr/lib/python3/dist-packages/
+        "/usr/lib/python3/dist-packages:*:0644": [":_libyang_so"],
+    },
+    depends = [
+        "libyang3 (>= 3.12.2)",
+        "libpython3.11",
+        "python3:any",
+    ],
+    maintainer = "SONiC Maintainers",
+    description = "Python 3 CFFI bindings to libyang",
+    homepage = "https://github.com/CESNET/libyang-python",
+    visibility = ["//visibility:public"],
+)

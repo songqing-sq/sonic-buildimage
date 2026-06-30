@@ -1,0 +1,43 @@
+module(
+    name = "libyang3",
+    version = "3.12.2",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "tar.bzl", version = "0.8.1")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+# libpcre2 + libxxhash from the trixie sysroot. Declared in this module
+# so that @libyang3_src (fetched via sonic_http_archive below) can see
+# @libyang3_deps — Bzlmod scopes use_repo() to the declaring module's
+# own repository graph.
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.install(
+    dependency_set = "libyang3_deps",
+    packages = [
+        "libpcre2-dev:amd64",
+        "libpcre2-dev:arm64",
+        "libxxhash-dev:amd64",
+        "libxxhash-dev:arm64",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(apt, "libyang3_deps")
+
+# Upstream libyang v3.12.2 source from GitHub, with the SONiC patch
+# (lyd_validate_noextdeps from pr2362) applied at fetch time.
+sonic_http_archive = use_repo_rule("@sonic_build_infra//sonic_http_archive:sonic_http_archive.bzl", "sonic_http_archive")
+
+sonic_http_archive(
+    name = "libyang3_src",
+    urls = ["https://github.com/CESNET/libyang/archive/refs/tags/v3.12.2.tar.gz"],
+    sha256 = "a2ae94ce43d8b4b084f67c05902f97cbc0ec882d38ef5ddf1d601659f64d5c66",
+    strip_prefix = "libyang-3.12.2",
+    build_file_template = "//:libyang3.BUILD.bazel",
+    patches = [
+        "//patch:0001-pr2362-lyd_validate_noextdeps.patch",
+    ],
+)

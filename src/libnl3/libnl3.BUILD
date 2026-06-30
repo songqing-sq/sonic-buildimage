@@ -210,9 +210,10 @@ sonic_shared_library_versioned(
     name = "libnl_cli_3",
     srcs = glob(["src/lib/*.c"]),
     copts = LIBNL_COPTS,
-    defines = [
-        'PKGLIBDIR=\\"/usr/lib/x86_64-linux-gnu/libnl\\"',
-    ],
+    defines = select({
+        "@platforms//cpu:x86_64": ['PKGLIBDIR=\\"/usr/lib/x86_64-linux-gnu/libnl\\"'],
+        "@platforms//cpu:aarch64": ['PKGLIBDIR=\\"/usr/lib/aarch64-linux-gnu/libnl\\"'],
+    }),
     deps = [
         ":libnl_3",
         ":libnl_genl_3",
@@ -345,10 +346,11 @@ sonic_deb(
     maintainer = "SONiC Maintainers",
     description = "libnl generic netlink library",
     content = {
-        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_3_files"],
+        "${LIBDIR}:*:0644": [":libnl_3_files"],
         "/etc/libnl-3/*:*:0644": [":etc_files"],
     },
     #content_targets = [":libnl_3_shared"],
+    depends = ["libc6 (>= 2.34)"],
     gen_dbg = True,
     homepage = "https://www.infradead.org/~tgr/libnl/",
     visibility = ["//visibility:public"],
@@ -363,8 +365,8 @@ sonic_deb(
     description = "development library and header files for libnl-3",
     content = {
         "/usr/include/libnl3:include/:0644": [":libnl_3_hdr_files"],
-        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_3_dev_link"],
-        "/usr/lib/x86_64-linux-gnu/pkgconfig:0644": [
+        "${LIBDIR}:*:0644": [":libnl_3_dev_link"],
+        "${LIBDIR}/pkgconfig:0644": [
             ":libnl3_pc_generated",
         ],
     },
@@ -380,10 +382,13 @@ sonic_deb(
     maintainer = "SONiC Maintainers",
     description = "libnl generic netlink library",
     content = {
-        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_genl_3_files"],
+        "${LIBDIR}:*:0644": [":libnl_genl_3_files"],
     },
     content_targets = [":libnl_genl_3_shared"],
-    depends = ["libnl-3-200 (= {})".format(LIBNL_VERSION)],
+    depends = [
+        "libnl-3-200 (= {})".format(LIBNL_VERSION),
+        "libc6 (>= 2.4)",
+    ],
     gen_dbg = True,
     homepage = "https://www.infradead.org/~tgr/libnl/",
     visibility = ["//visibility:public"],
@@ -397,10 +402,10 @@ sonic_deb(
     maintainer = "SONiC Maintainers",
     description = "development library and header files for libnl-genl-3",
     content = {
-        "/usr/lib/x86_64-linux-gnu/pkgconfig:0644": [
+        "${LIBDIR}/pkgconfig:0644": [
             ":libnl3_genl_pc_generated",
         ],
-        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_genl_3_dev_link"],
+        "${LIBDIR}:*:0644": [":libnl_genl_3_dev_link"],
     },
     depends = [
         "libnl-genl-3-200 (= {})".format(LIBNL_VERSION),
@@ -417,10 +422,13 @@ sonic_deb(
     maintainer = "SONiC Maintainers",
     description = "libnl route library",
     content = {
-        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_route_3_files"],
+        "${LIBDIR}:*:0644": [":libnl_route_3_files"],
     },
     content_targets = [":libnl_route_3_shared"],
-    depends = ["libnl-3-200 (= {})".format(LIBNL_VERSION)],
+    depends = [
+        "libnl-3-200 (= {})".format(LIBNL_VERSION),
+        "libc6 (>= 2.34)",
+    ],
     gen_dbg = True,
     homepage = "https://www.infradead.org/~tgr/libnl/",
     visibility = ["//visibility:public"],
@@ -434,10 +442,10 @@ sonic_deb(
     maintainer = "SONiC Maintainers",
     description = "development library and header files for libnl-route-3",
     content = {
-        "/usr/lib/x86_64-linux-gnu/pkgconfig:0644": [
+        "${LIBDIR}/pkgconfig:0644": [
             ":libnl3_route_pc_generated",
         ],
-        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_route_3_dev_link"],
+        "${LIBDIR}:*:0644": [":libnl_route_3_dev_link"],
     },
     depends = [
         "libnl-route-3-200 (= {})".format(LIBNL_VERSION),
@@ -454,9 +462,13 @@ sonic_deb(
     maintainer = "SONiC Maintainers",
     description = "libnl netfilter library",
     content = {
-        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_nf_3_files"],
+        "${LIBDIR}:*:0644": [":libnl_nf_3_files"],
     },
-    depends = ["libnl-route-3-200 (= {})".format(LIBNL_VERSION)],
+    depends = [
+        "libnl-3-200 (= {})".format(LIBNL_VERSION),
+        "libnl-route-3-200 (= {})".format(LIBNL_VERSION),
+        "libc6 (>= 2.14)",
+    ],
     gen_dbg = True,
     homepage = "https://www.infradead.org/~tgr/libnl/",
     visibility = ["//visibility:public"],
@@ -470,13 +482,15 @@ sonic_deb(
     maintainer = "SONiC Maintainers",
     description = "development library and header files for libnl-nf-3",
     content = {
-        "/usr/lib/x86_64-linux-gnu/pkgconfig:0644": [
+        "${LIBDIR}/pkgconfig:0644": [
             ":libnl3_nf_pc_generated",
         ],
-        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_nf_3_dev_link"],
+        "${LIBDIR}:*:0644": [":libnl_nf_3_dev_link"],
     },
     depends = [
         "libnl-nf-3-200 (= {})".format(LIBNL_VERSION),
+        "libnl-3-dev (= {})".format(LIBNL_VERSION),
+        "libnl-route-3-dev (= {})".format(LIBNL_VERSION),
     ],
     visibility = ["//visibility:public"],
 )
@@ -489,12 +503,12 @@ sonic_deb(
     maintainer = "SONiC Maintainers",
     description = "libnl CLI library",
     content = {
-        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_cli_3_files"],
-        "/usr/lib/x86_64-linux-gnu/libnl-3/cli/cls:*:0644": [
+        "${LIBDIR}:*:0644": [":libnl_cli_3_files"],
+        "${LIBDIR}/libnl-3/cli/cls:*:0644": [
             ":libnl_cli_cls_basic_shared",
             ":libnl_cli_cls_cgroup_shared",
         ],
-        "/usr/lib/x86_64-linux-gnu/libnl-3/cli/qdisc:*:0644": [
+        "${LIBDIR}/libnl-3/cli/qdisc:*:0644": [
             ":libnl_cli_qdisc_bfifo_shared",
             ":libnl_cli_qdisc_blackhole_shared",
             ":libnl_cli_qdisc_fq_codel_shared",
@@ -506,9 +520,11 @@ sonic_deb(
         ],
     },
     depends = [
+        "libnl-3-200 (= {})".format(LIBNL_VERSION),
         "libnl-genl-3-200 (= {})".format(LIBNL_VERSION),
         "libnl-nf-3-200 (= {})".format(LIBNL_VERSION),
         "libnl-route-3-200 (= {})".format(LIBNL_VERSION),
+        "libc6 (>= 2.34)",
     ],
     gen_dbg = True,
     homepage = "https://www.infradead.org/~tgr/libnl/",
@@ -523,13 +539,14 @@ sonic_deb(
     maintainer = "SONiC Maintainers",
     description = "development library and header files for libnl-cli-3",
     content = {
-        "/usr/lib/x86_64-linux-gnu/pkgconfig:0644": [
+        "${LIBDIR}/pkgconfig:0644": [
             ":libnl3_cli_pc_generated",
         ],
-        "/usr/lib/x86_64-linux-gnu:*:0644": [":libnl_cli_3_dev_link"],
+        "${LIBDIR}:*:0644": [":libnl_cli_3_dev_link"],
     },
     depends = [
         "libnl-cli-3-200 (= {})".format(LIBNL_VERSION),
+        "libnl-3-dev (= {})".format(LIBNL_VERSION),
         "libnl-genl-3-dev (= {})".format(LIBNL_VERSION),
         "libnl-nf-3-dev (= {})".format(LIBNL_VERSION),
         "libnl-route-3-dev (= {})".format(LIBNL_VERSION),
@@ -541,13 +558,21 @@ sonic_deb(
 # pkgconfig files
 # =============================================================================
 
+# Platform-aware "libdir=" line shared by all .pc files. write_file.content
+# accepts list concatenation, so we splice this single-element select() into
+# each content list to pick the right multiarch dir per target arch.
+_LIBDIR_LINE_SELECT = select({
+    "@platforms//cpu:x86_64": ["libdir=$${prefix}/lib/x86_64-linux-gnu"],
+    "@platforms//cpu:aarch64": ["libdir=$${prefix}/lib/aarch64-linux-gnu"],
+})
+
 write_file(
     name = "libnl3_pc_generated",
     out = "libnl-3.0.pc",
     content = [
         "prefix=/usr",
         "exec_prefix=$${prefix}",
-        "libdir=$${prefix}/lib/x86_64-linux-gnu",
+    ] + _LIBDIR_LINE_SELECT + [
         "includedir=$${prefix}/include/libnl3",
         "",
         "Name: libnl-3.0",
@@ -566,7 +591,7 @@ write_file(
     content = [
         "prefix=/usr",
         "exec_prefix=$${prefix}",
-        "libdir=$${prefix}/lib/x86_64-linux-gnu",
+    ] + _LIBDIR_LINE_SELECT + [
         "includedir=$${prefix}/include/libnl3",
         "",
         "Name: libnl-genl-3.0",
@@ -585,7 +610,7 @@ write_file(
     content = [
         "prefix=/usr",
         "exec_prefix=$${prefix}",
-        "libdir=$${prefix}/lib/x86_64-linux-gnu",
+    ] + _LIBDIR_LINE_SELECT + [
         "includedir=$${prefix}/include/libnl3",
         "",
         "Name: libnl-route-3.0",
@@ -604,7 +629,7 @@ write_file(
     content = [
         "prefix=/usr",
         "exec_prefix=$${prefix}",
-        "libdir=$${prefix}/lib/x86_64-linux-gnu",
+    ] + _LIBDIR_LINE_SELECT + [
         "includedir=$${prefix}/include/libnl3",
         "",
         "Name: libnl-nf-3.0",
@@ -623,7 +648,7 @@ write_file(
     content = [
         "prefix=/usr",
         "exec_prefix=$${prefix}",
-        "libdir=$${prefix}/lib/x86_64-linux-gnu",
+    ] + _LIBDIR_LINE_SELECT + [
         "includedir=$${prefix}/include/libnl3",
         "",
         "Name: libnl-cli-3.0",

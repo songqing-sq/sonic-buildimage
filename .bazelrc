@@ -13,6 +13,6 @@ common:aarch64 --platforms=@@sonic-build-infra+//platform:aarch64_trixie
 build --workspace_status_command=scripts/workspace_status.sh
 build --stamp
 # === Remote Cache ===
-common --remote_cache=grpc://11.159.94.16:9092
-common --experimental_remote_downloader=grpc://11.159.94.16:9092
+common --remote_cache=grpc://11.159.98.184:9092
+common --experimental_remote_downloader=grpc://11.159.98.184:9092
 common --experimental_remote_downloader_local_fallback
