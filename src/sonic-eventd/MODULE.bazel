@@ -1,0 +1,46 @@
+module(
+    name = "sonic-eventd",
+    version = "1.0.0-0",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+bazel_dep(name = "sonic-swss-common", version = "1.0.0")
+bazel_dep(name = "libnl3", version = "3.7.0")
+bazel_dep(name = "libyang3", version = "3.12.2")
+
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie", "trixie-updates"],
+    uris = ["https://deb.debian.org/debian"],
+)
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://security.debian.org/debian-security"],
+)
+apt.install(
+    dependency_set = "eventd_deps",
+    packages = [
+        # Runtime + dev libs the eventd binaries actually link.
+        # Boost 1.83 (trixie's shipped version); swss-common already brings
+        # in libboost-serialization1.83 but eventd additionally uses
+        # boost::thread + boost::system.
+        "libevent-dev:amd64",
+        "libevent-dev:arm64",
+        "libboost-thread1.83-dev:amd64",
+        "libboost-thread1.83-dev:arm64",
+        "libboost-system1.83-dev:amd64",
+        "libboost-system1.83-dev:arm64",
+        "liblua5.1-0-dev:amd64",
+        "liblua5.1-0-dev:arm64",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(apt, "eventd_deps")

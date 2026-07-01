@@ -1,0 +1,209 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.0.0-0"
+
+# CFLAGS = -Wall -std=c++17 -fPIE (from Makefile line 20).
+COPTS = [
+    "-Wall",
+    "-std=c++17",
+    "-fPIE",
+]
+
+# The Make link line (LIBS in Makefile):
+#   -lhiredis -lswsscommon -lzmq -lboost_serialization -llua5.1
+# plus per-binary Bazel adds -levent / -lboost_thread / -lboost_system for
+# the events_service side. -lpthread / -luuid come transitively from libswsscommon.
+# hiredis / zmq / boost_serialization / uuid are already carried by the
+# swsscommon shared library and its dev-package deps; only the libraries
+# that eventd itself calls directly need to be repeated here.
+LINKOPTS = [
+    "-lpthread",
+]
+
+# ------ eventd binary (Make: OBJS = src/eventd.o + src/main.o) ------
+cc_binary(
+    name = "eventd",
+    srcs = [
+        "src/eventd.cpp",
+        "src/eventd.h",
+        "src/main.cpp",
+    ],
+    copts = COPTS,
+    includes = ["src"],
+    linkopts = LINKOPTS,
+    dynamic_deps = [
+        "@sonic-swss-common//:swsscommon_shared",
+        "@libnl3//:libnl_3_shared",
+        "@libnl3//:libnl_nf_3_shared",
+        "@libnl3//:libnl_route_3_shared",
+        "@libyang3//:yang_shared",
+    ],
+    deps = [
+        "@sonic-swss-common//:swsscommon",
+        "@eventd_deps//liblua5.1-0-dev:lua5.1",
+    ],
+)
+
+# ------ eventdb binary (Make: EVENTDB_OBJS) ------
+# New in son629 (not present in son624's Bazel port). Backing store for the
+# event history table read/consumed by CLI + eventctl.
+cc_binary(
+    name = "eventdb",
+    srcs = [
+        "src/eventconsume.cpp",
+        "src/eventconsume.h",
+        "src/eventdb.cpp",
+        "src/eventutils.cpp",
+        "src/eventutils.h",
+        "src/loghandler.cpp",
+        "src/loghandler.h",
+    ],
+    copts = COPTS,
+    includes = ["src"],
+    linkopts = LINKOPTS,
+    dynamic_deps = [
+        "@sonic-swss-common//:swsscommon_shared",
+        "@libnl3//:libnl_3_shared",
+        "@libnl3//:libnl_nf_3_shared",
+        "@libnl3//:libnl_route_3_shared",
+        "@libyang3//:yang_shared",
+    ],
+    deps = [
+        "@sonic-swss-common//:swsscommon",
+        "@eventd_deps//liblua5.1-0-dev:lua5.1",
+    ],
+)
+
+# ------ events_tool binary (Make: TOOL_OBJS) ------
+cc_binary(
+    name = "events_tool",
+    srcs = ["tools/events_tool.cpp"],
+    copts = COPTS,
+    linkopts = LINKOPTS,
+    dynamic_deps = [
+        "@sonic-swss-common//:swsscommon_shared",
+        "@libnl3//:libnl_3_shared",
+        "@libnl3//:libnl_nf_3_shared",
+        "@libnl3//:libnl_route_3_shared",
+        "@libyang3//:yang_shared",
+    ],
+    deps = [
+        "@sonic-swss-common//:swsscommon",
+        "@eventd_deps//liblua5.1-0-dev:lua5.1",
+    ],
+)
+
+# ------ rsyslog_plugin binary (Make: RSYSLOG-PLUGIN_OBJS) ------
+cc_binary(
+    name = "rsyslog_plugin",
+    srcs = [
+        "rsyslog_plugin/main.cpp",
+        "rsyslog_plugin/rsyslog_plugin.cpp",
+        "rsyslog_plugin/rsyslog_plugin.h",
+        "rsyslog_plugin/syslog_parser.cpp",
+        "rsyslog_plugin/syslog_parser.h",
+        "rsyslog_plugin/timestamp_formatter.cpp",
+        "rsyslog_plugin/timestamp_formatter.h",
+    ],
+    copts = COPTS,
+    includes = ["rsyslog_plugin"],
+    linkopts = LINKOPTS,
+    dynamic_deps = [
+        "@sonic-swss-common//:swsscommon_shared",
+        "@libnl3//:libnl_3_shared",
+        "@libnl3//:libnl_nf_3_shared",
+        "@libnl3//:libnl_route_3_shared",
+        "@libyang3//:yang_shared",
+    ],
+    deps = [
+        "@sonic-swss-common//:swsscommon",
+        "@eventd_deps//liblua5.1-0-dev:lua5.1",
+    ],
+)
+
+# ------ sonic-eventd .deb (main) ------
+# debian/sonic-eventd.install lists:
+#   usr/bin/eventd
+#   usr/bin/eventdb
+#   usr/bin/events_tool
+#   usr/bin/events_publish_tool.py
+#   etc/evprofile/default.json
+#   etc/eventd.json
+sonic_deb(
+    name = "sonic-eventd_{}.deb".format(VERSION),
+    package = "sonic-eventd",
+    version = VERSION,
+    content = {
+        "/usr/bin:*:0755": [
+            ":eventd",
+            ":eventdb",
+            ":events_tool",
+            "tools/events_publish_tool.py",
+        ],
+        "/etc:*:0644": [
+            "etc/eventd.json",
+        ],
+        "/etc/evprofile:*:0644": [
+            "var/evprofile/default.json",
+        ],
+    },
+    depends = [
+        # Mirrors Make's dpkg-shlibdeps output: eventd/eventdb/events_tool
+        # directly link libswsscommon, libzmq, libboost_serialization plus the
+        # C++ / libc runtime. libhiredis / liblua5.1 come transitively via
+        # libswsscommon and don't need to appear here.
+        "libboost-serialization1.83.0 (>= 1.83.0)",
+        "libc6 (>= 2.38)",
+        "libgcc-s1 (>= 3.0)",
+        "libstdc++6 (>= 13.1)",
+        "libswsscommon (>= 1.0.0)",
+        "libzmq5 (>= 4.0.1+dfsg)",
+    ],
+    maintainer = "Renuka Manavalan <remanava@microsoft.com>",
+    description = "SONiC event service",
+    section = "devel",
+    priority = "optional",
+    homepage = "https://github.com/Azure/sonic-buildimage",
+    gen_dbg = True,
+    visibility = ["//visibility:public"],
+)
+
+# ------ sonic-rsyslog-plugin .deb ------
+# debian/sonic-rsyslog-plugin.install lists:
+#   usr/bin/rsyslog_plugin
+#   usr/bin/events_monit_test.py
+#   etc/monit/conf.d/monit_events
+sonic_deb(
+    name = "sonic-rsyslog-plugin_{}.deb".format(VERSION),
+    package = "sonic-rsyslog-plugin",
+    version = VERSION,
+    content = {
+        "/usr/bin:*:0755": [
+            ":rsyslog_plugin",
+            "tools/events_monit_test.py",
+        ],
+        "/etc/monit/conf.d:*:0644": [
+            "tools/monit_events",
+        ],
+    },
+    depends = [
+        # Mirrors Make's dpkg-shlibdeps output: rsyslog_plugin directly links
+        # libswsscommon + liblua5.1 + C++/libc runtime. Other libs come
+        # transitively via libswsscommon.
+        "libc6 (>= 2.38)",
+        "libgcc-s1 (>= 3.0)",
+        "liblua5.1-0 (>= 5.1.3)",
+        "libstdc++6 (>= 13.1)",
+        "libswsscommon (>= 1.0.0)",
+    ],
+    maintainer = "Renuka Manavalan <remanava@microsoft.com>",
+    description = "SONiC rsyslog plugin service",
+    section = "devel",
+    priority = "optional",
+    homepage = "https://github.com/Azure/sonic-buildimage",
+    gen_dbg = True,
+    visibility = ["//visibility:public"],
+)

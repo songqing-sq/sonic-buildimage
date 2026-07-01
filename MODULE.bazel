@@ -18,6 +18,26 @@ use_repo(toolchains, "bsd_tar_toolchains")
 
 register_toolchains("@bsd_tar_toolchains//:all")
 
+# --- Rust ---
+# rules_rust registration must be in the root MODULE.bazel because
+# register_toolchains only takes effect from the root module; leaf modules
+# that produce Rust artifacts (sonic-swss-common Rust crates,
+# sonic-supervisord-utilities-rs) rely on this toolchain being present.
+# Rust 1.86.0 is the version verified by upstream sonic-swss-common workspace
+# and by son624's dash-ha migration. aarch64-unknown-linux-gnu is added as an
+# extra target triple so we can cross-compile to arm64 SONiC images.
+bazel_dep(name = "rules_rust", version = "0.61.0")
+
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2021",
+    extra_target_triples = ["aarch64-unknown-linux-gnu"],
+    versions = ["1.86.0"],
+)
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
 bazel_dep(name = "bazel_lib", version = "3.1.1")
 bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
 git_override(
@@ -157,4 +177,16 @@ bazel_dep(name = "sonic-swss-common", version = "1.0.0")
 local_path_override(
     module_name = "sonic-swss-common",
     path = "src/sonic-swss-common",
+)
+
+bazel_dep(name = "sonic-eventd", version = "1.0.0-0")
+local_path_override(
+    module_name = "sonic-eventd",
+    path = "src/sonic-eventd",
+)
+
+bazel_dep(name = "sonic-supervisord-utilities-rs", version = "1.0.0")
+local_path_override(
+    module_name = "sonic-supervisord-utilities-rs",
+    path = "src/sonic-supervisord-utilities-rs",
 )

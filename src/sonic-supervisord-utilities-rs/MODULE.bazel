@@ -1,0 +1,48 @@
+module(
+    name = "sonic-supervisord-utilities-rs",
+    version = "1.0.0",
+)
+
+bazel_dep(name = "rules_rust", version = "0.61.0")
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "sonic-swss-common", version = "1.0.0")
+
+# swss-common Rust crate (../sonic-swss-common/crates/swss-common) is used
+# via bzlmod inter-module deps rather than Cargo's `path = ...` (which
+# crate_universe can't cross). Cargo.toml still lists it as a path dep so
+# `cargo build` works standalone; in the Bazel graph we substitute it with
+# `@sonic-swss-common//crates/swss-common:swss_common` in BUILD.bazel.
+
+# Enumerate crate.io deps. crate_universe reads Cargo.lock and produces per-crate
+# repos. The local `swss-common` path dep is deliberately not resolved here —
+# it will be pulled in as a direct Bazel target dep from the rust_binary.
+crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
+
+# Use from_specs mode instead of from_cargo: we need to skip the swss-common
+# path-dep (which crate_universe can't cross module boundaries for) and pull
+# it in via Bazel target reference from BUILD.bazel. from_specs also doesn't
+# need Cargo.lock, so we don't have to sync it.
+# Direct deps mirror Cargo.toml [dependencies] section, minus swss-common.
+crate.spec(package = "clap", version = "4.0", features = ["derive"])
+crate.spec(package = "log", version = "0.4")
+crate.spec(package = "syslog", version = "6.0")
+crate.spec(package = "nix", version = "0.27", features = ["signal", "process"])
+crate.spec(package = "thiserror", version = "1.0")
+crate.spec(package = "mio", version = "0.8", features = ["os-poll", "os-ext"])
+# time is pulled transitively by syslog 6.x. Latest versions (0.3.52+) use
+# nightly `integer_sign_cast`; pin to 0.3.36 which builds on Rust 1.86 stable.
+crate.spec(package = "time", version = "=0.3.36")
+crate.from_specs(name = "supervisord_rs_crates")
+use_repo(crate, "supervisord_rs_crates")
+
+# NOTE: libswsscommon.so's transitive DT_NEEDED chain (libkrb5support /
+# libcom_err / libboost_serialization / libhiredis / libzmq / libssl /
+# libpcre2 / etc.) is NOT resolved at link time — we pass
+# -Wl,--allow-shlib-undefined via rustc_flags in BUILD.bazel so ld tolerates
+# them. ld.so resolves the closure at runtime via libswsscommon.so's own
+# DT_NEEDED. Pulling all these into a hermetic sysroot would be invasive and
+# trixie's libkrb5-dev has a broken package split that rules_distroless
+# can't currently handle.

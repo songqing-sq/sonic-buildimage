@@ -1,0 +1,93 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.0.0"
+
+exports_files(["Cargo.toml"])
+
+# from_specs mode emits one target per direct dep, not the aliases/all_crate_deps
+# generator. List each crate explicitly. The set mirrors Cargo.toml
+# [dependencies] section, minus `swss-common` (which is a cross-module path
+# dep we substitute with @sonic-swss-common//crates/swss-common:swss_common).
+_DIRECT_CRATES = [
+    "@supervisord_rs_crates//:clap",
+    "@supervisord_rs_crates//:log",
+    "@supervisord_rs_crates//:syslog",
+    "@supervisord_rs_crates//:nix",
+    "@supervisord_rs_crates//:thiserror",
+    "@supervisord_rs_crates//:mio",
+]
+
+# Library part: src/lib.rs + modules referenced by the binary.
+rust_library(
+    name = "sonic_supervisord_utilities_rs_lib",
+    srcs = [
+        "src/childutils.rs",
+        "src/lib.rs",
+        "src/proc_exit_listener.rs",
+    ],
+    crate_name = "sonic_supervisord_utilities_rs",
+    edition = "2021",
+    deps = _DIRECT_CRATES + [
+        "@sonic-swss-common//crates/swss-common:swss_common",
+    ],
+)
+
+# Binary: supervisor-proc-exit-listener-rs (Cargo.toml [[bin]] section).
+# debian/install ships it at /usr/bin/supervisor-proc-exit-listener-rs.
+#
+# `experimental_use_cc_common_link = 1` is CRITICAL when linking Rust binaries
+# against Bazel cc_library dependencies (like libswsscommon): the default rust
+# linker mode emits version-stripped `-lX` flags for every propagated
+# `.so.N` dependency, requiring unversioned `libX.so` symlinks in the sysroot
+# — which trixie's package split doesn't reliably provide (libkrb5-dev's
+# unversioned .so lives in a `mit-krb5/` subdir the -L path doesn't search).
+# The cc_common linker mode uses proper `-l:libX.so.N` (with colon), matching
+# what Bazel does for cc_binary, so the exact versioned filename is found.
+rust_binary(
+    name = "supervisor-proc-exit-listener-rs",
+    srcs = ["src/bin/supervisor_proc_exit_listener.rs"],
+    edition = "2021",
+    # `experimental_use_cc_common_link = 1` is CRITICAL when linking Rust
+    # binaries against Bazel cc_library dependencies (like libswsscommon):
+    # the default rust linker mode emits version-stripped `-lX` flags for
+    # every propagated `.so.N` dependency, requiring unversioned `libX.so`
+    # symlinks in the sysroot — which trixie's package split doesn't reliably
+    # provide (libkrb5-dev's unversioned .so lives in `mit-krb5/` subdir the
+    # -L path doesn't search). cc_common linker mode uses `-l:libX.so.N`
+    # (with colon), matching cc_binary, so the exact versioned filename is
+    # found.
+    experimental_use_cc_common_link = 1,
+    deps = _DIRECT_CRATES + [
+        ":sonic_supervisord_utilities_rs_lib",
+        "@sonic-swss-common//crates/swss-common:swss_common",
+    ],
+)
+
+# Debian package.
+# debian/install: `target/release/supervisor-proc-exit-listener-rs usr/bin`
+sonic_deb(
+    name = "sonic-supervisord-utilities-rs_{}.deb".format(VERSION),
+    package = "sonic-supervisord-utilities-rs",
+    version = VERSION,
+    content = {
+        "/usr/bin:*:0755": [":supervisor-proc-exit-listener-rs"],
+    },
+    depends = [
+        # Aligned with Make dpkg-shlibdeps output (byte-identical to Make deb).
+        # Rust binaries statically link libstd but at runtime dlopen glibc &
+        # libswsscommon. The binary FFI-calls libswsscommon.so.0 (via bindgen
+        # in swss-common crate's build.rs).
+        "libc6 (>= 2.34)",
+        "libgcc-s1 (>= 4.2)",
+        "libswsscommon (>= 1.0.0)",
+    ],
+    maintainer = "SONiC Team <sonic-dev@lists.sonicfoundation.dev>",
+    description = "SONiC supervisor process exit listener in Rust\n Rust implementation of SONiC supervisord utilities that provides process\n monitoring and alerting functionality for SONiC containers. This is a\n performance-focused port of the original Python sonic-supervisord-utilities\n package.",
+    section = "net",
+    priority = "optional",
+    gen_dbg = True,
+    visibility = ["//visibility:public"],
+)
