@@ -190,3 +190,50 @@ local_path_override(
     module_name = "sonic-supervisord-utilities-rs",
     path = "src/sonic-supervisord-utilities-rs",
 )
+
+bazel_dep(name = "sonic-sairedis", version = "1.0.0")
+local_path_override(
+    module_name = "sonic-sairedis",
+    path = "src/sonic-sairedis",
+)
+
+# SAI is a git submodule vendored under src/sonic-sairedis/SAI. Since Bzlmod
+# local_path_override paths from a non-root module are resolved relative to
+# the source root, the override for `sai` must be declared here (root) with
+# the workspace-relative path.
+bazel_dep(name = "sai", version = "0.0.0")
+local_path_override(
+    module_name = "sai",
+    path = "src/sonic-sairedis/SAI",
+)
+
+# sonic-sairedis apt deps must be declared in the root module because
+# rules_distroless apt repos created in submodules via local_path_override
+# aren't visible from the root (Bzlmod use_repo visibility limitation).
+# Trixie-aligned with sonic_rules' sysroot.
+sairedis_apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+sairedis_apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie", "trixie-updates"],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+sairedis_apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+sairedis_apt.install(
+    dependency_set = "sairedis_deps",
+    packages = [
+        "libhiredis-dev:amd64",
+        "libhiredis-dev:arm64",
+        "libzmq3-dev:amd64",
+        "libzmq3-dev:arm64",
+        "zlib1g-dev:amd64",
+        "zlib1g-dev:arm64",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(sairedis_apt, "sairedis_deps")
