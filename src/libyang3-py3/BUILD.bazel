@@ -3,7 +3,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
 load(":cffi_codegen.bzl", "libyang_cffi_emit")
-load(":headers_tree.bzl", "libyang_headers_tree")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -41,26 +40,14 @@ libyang_cffi_emit(
 )
 
 # =============================================================================
-# Native extension: compile _libyang.c → _libyang.cpython-311-<multiarch>.so
+# Native extension: compile _libyang.c → _libyang.cpython-313-<multiarch>.so
 # =============================================================================
 # Mirrors what cffi/setuptools would do via build_ext, but using Bazel
 # cc rules so the toolchain stays hermetic (gcc 14.3 + trixie sysroot).
 # Rewrap libyang3's headers under a `libyang/` include prefix so the cffi
-# source's `#include <libyang/libyang.h>` resolves. The libyang3 build
-# exposes its headers at the top of src/ (e.g. src/libyang.h); the
-# libyang-dev .deb relocates them to /usr/include/libyang/ at install. We
-# replicate that layout into a tree-artifact directory and give it to
-# cc_library as an include path.
-libyang_headers_tree(
-    name = "libyang_headers_tree",
-    hdrs = ["@libyang3//:yang_hdr_files"],
-)
-
-cc_library(
-    name = "yang_hdrs_prefixed",
-    hdrs = [":libyang_headers_tree"],
-    includes = ["include"],
-)
+# source's `#include <libyang/libyang.h>` resolves. Implementation lives in
+# @libyang3//:yang_hdrs_prefixed so multiple downstream modules
+# (libyang3-py3, sonic-swss-common, ...) share one source of truth.
 
 cc_library(
     name = "_libyang_obj",
@@ -72,21 +59,21 @@ cc_library(
         "-DPy_LIMITED_API=0",
     ],
     deps = [
-        ":yang_hdrs_prefixed",
+        "@libyang3//:yang_hdrs_prefixed",
         "@libyang3//:yang_hdrs",
         "@libyang3_py3_deps//libpcre2-dev:libpcre2",
         "@rules_python//python/cc:current_py_cc_headers",
     ],
 )
 
-# Shared object with the cpython-311 suffix Python expects. The shared
+# Shared object with the cpython-313 suffix Python expects. The shared
 # library dynamically links against @libyang3//:yang_shared so the produced
 # .so depends on libyang.so.3 at runtime.
 cc_shared_library(
     name = "_libyang_so",
     shared_lib_name = select({
-        "@platforms//cpu:x86_64": "_libyang.cpython-311-x86_64-linux-gnu.so",
-        "@platforms//cpu:aarch64": "_libyang.cpython-311-aarch64-linux-gnu.so",
+        "@platforms//cpu:x86_64": "_libyang.cpython-313-x86_64-linux-gnu.so",
+        "@platforms//cpu:aarch64": "_libyang.cpython-313-aarch64-linux-gnu.so",
     }),
     dynamic_deps = ["@libyang3//:yang_shared"],
     deps = [":_libyang_obj"],
@@ -98,6 +85,80 @@ cc_shared_library(
 alias(
     name = "libyang_py_sources",
     actual = "@libyang_python_src//:libyang_py_sources",
+)
+
+# =============================================================================
+# egg-info directory. Make's pybuild auto-generates a libyang-3.1.0-py3.13.egg-info/
+# under /usr/lib/python3/dist-packages/ with 5 files (PKG-INFO,
+# dependency_links.txt, not-zip-safe, requires.txt, top_level.txt).
+# We materialise them via a custom rule that emits each file as a tree
+# artifact, then ship them via sonic_deb.
+# =============================================================================
+genrule(
+    name = "egg_info_gen",
+    srcs = ["@libyang_python_src//:README.rst"],
+    outs = [
+        "egg-info/dependency_links.txt",
+        "egg-info/not-zip-safe",
+        "egg-info/requires.txt",
+        "egg-info/top_level.txt",
+        "egg-info/PKG-INFO",
+    ],
+    cmd = """
+set -e
+outdir=$$(dirname $(location egg-info/PKG-INFO))
+# dependency_links.txt: blank line (setuptools default for no extra-index)
+printf '\\n' > $(location egg-info/dependency_links.txt)
+# not-zip-safe: empty marker file (setuptools writes a single newline)
+printf '\\n' > $(location egg-info/not-zip-safe)
+# requires.txt: extras-conditional cffi dep
+cat > $(location egg-info/requires.txt) << 'EOF'
+
+[:platform_python_implementation != "PyPy"]
+cffi
+EOF
+# top_level.txt: importable module names
+cat > $(location egg-info/top_level.txt) << 'EOF'
+_libyang
+libyang
+EOF
+# PKG-INFO: setuptools-rendered metadata followed by README.rst body.
+{
+cat << 'EOF'
+Metadata-Version: 2.2
+Name: libyang
+Version: 3.1.0
+Summary: CFFI bindings to libyang
+Home-page: https://github.com/CESNET/libyang-python
+Author: Robin Jarry
+Author-email: robin@jarry.cc
+License: MIT
+Keywords: libyang,cffi
+Classifier: Development Status :: 4 - Beta
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: Unix
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Software Development :: Libraries
+Requires-Python: >=3.6
+License-File: LICENSE
+Requires-Dist: cffi; platform_python_implementation != "PyPy"
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+EOF
+cat $(location @libyang_python_src//:README.rst)
+} > $(location egg-info/PKG-INFO)
+""",
 )
 
 # =============================================================================
@@ -113,11 +174,19 @@ sonic_deb(
         "/usr/lib/python3/dist-packages/libyang:*:0644": [":libyang_py_sources"],
         # Compiled cffi extension → /usr/lib/python3/dist-packages/
         "/usr/lib/python3/dist-packages:*:0644": [":_libyang_so"],
+        # egg-info dir generated by Make's pybuild — needed for dh_python3
+        # compatibility (`pkg_resources` lookups expect this directory).
+        "/usr/lib/python3/dist-packages/libyang-3.1.0-py3.13.egg-info:egg-info/:0644": [":egg_info_gen"],
     },
     depends = [
-        "libyang3 (>= 3.12.2)",
-        "libpython3.11",
+        # Mirrors dh_python3-generated Depends in the Make recipe (Python
+        # 3.13 ABI range, libc6 from the cffi-built extension, libyang3
+        # for the underlying C library).
+        "python3 (<< 3.14)",
+        "python3 (>= 3.13~)",
         "python3:any",
+        "libc6 (>= 2.4)",
+        "libyang3 (>= 3.12.2)",
     ],
     maintainer = "SONiC Maintainers",
     description = "Python 3 CFFI bindings to libyang",

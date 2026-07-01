@@ -21,6 +21,7 @@ exports_files([
     "cffi/build.py",
     "cffi/cdefs.h",
     "cffi/source.c",
+    "README.rst",
 ])
 
 filegroup(

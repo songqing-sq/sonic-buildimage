@@ -1,7 +1,7 @@
 load("@rules_flex//flex:flex.bzl", "flex")
 load("@rules_bison//bison:bison.bzl", "bison")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
-load("@sonic_build_infra//shared_library:shared_library.bzl", "sonic_shared_library", "sonic_shared_library_versioned")
+load("@sonic_build_infra//shared_library:shared_library.bzl", "sonic_shared_library", "sonic_shared_library_versioned", "static_archive")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
 
 LIBNL_VERSION = "3.7.0-0.2+b1sonic1"
@@ -335,6 +335,30 @@ sonic_shared_library(
 )
 
 # =============================================================================
+# Static archives — extract the libtool-style `.a` static libraries for the
+# -dev binary packages. Debian's libnl-3-dev (and friends) ships these
+# alongside the .so symlinks; without them, downstream code that statically
+# links against libnl will fail to find the `.a`.
+# =============================================================================
+static_archive(name = "libnl_3_static", lib = ":libnl_3", output_name = "libnl-3")
+static_archive(name = "libnl_genl_3_static", lib = ":libnl_genl_3", output_name = "libnl-genl-3")
+static_archive(name = "libnl_route_3_static", lib = ":libnl_route_3", output_name = "libnl-route-3")
+static_archive(name = "libnl_nf_3_static", lib = ":libnl_nf_3", output_name = "libnl-nf-3")
+static_archive(name = "libnl_cli_3_static", lib = ":libnl_cli_3", output_name = "libnl-cli-3")
+
+# CLI plugin static archives (mirrors debian/libnl-cli-3-dev.install).
+static_archive(name = "libnl_cli_cls_basic_static", lib = ":libnl_cli_cls_basic", output_name = "basic")
+static_archive(name = "libnl_cli_cls_cgroup_static", lib = ":libnl_cli_cls_cgroup", output_name = "cgroup")
+static_archive(name = "libnl_cli_qdisc_bfifo_static", lib = ":libnl_cli_qdisc_bfifo", output_name = "bfifo")
+static_archive(name = "libnl_cli_qdisc_blackhole_static", lib = ":libnl_cli_qdisc_blackhole", output_name = "blackhole")
+static_archive(name = "libnl_cli_qdisc_fq_codel_static", lib = ":libnl_cli_qdisc_fq_codel", output_name = "fq_codel")
+static_archive(name = "libnl_cli_qdisc_hfsc_static", lib = ":libnl_cli_qdisc_hfsc", output_name = "hfsc")
+static_archive(name = "libnl_cli_qdisc_htb_static", lib = ":libnl_cli_qdisc_htb", output_name = "htb")
+static_archive(name = "libnl_cli_qdisc_ingress_static", lib = ":libnl_cli_qdisc_ingress", output_name = "ingress")
+static_archive(name = "libnl_cli_qdisc_pfifo_static", lib = ":libnl_cli_qdisc_pfifo", output_name = "pfifo")
+static_archive(name = "libnl_cli_qdisc_plug_static", lib = ":libnl_cli_qdisc_plug", output_name = "plug")
+
+# =============================================================================
 # .deb Packages
 # =============================================================================
 
@@ -346,11 +370,13 @@ sonic_deb(
     maintainer = "SONiC Maintainers",
     description = "libnl generic netlink library",
     content = {
-        "${LIBDIR}:*:0644": [":libnl_3_files"],
+        # Debian's libnl-3-200.install moves the .so.* files from
+        # /usr/lib/<multiarch>/ to /lib/<multiarch>/. We mirror that.
+        "${LIBDIR_BASE}:*:0644": [":libnl_3_files"],
         "/etc/libnl-3/*:*:0644": [":etc_files"],
     },
     #content_targets = [":libnl_3_shared"],
-    depends = ["libc6 (>= 2.34)"],
+    depends = ["libc6 (>= 2.38)"],
     gen_dbg = True,
     homepage = "https://www.infradead.org/~tgr/libnl/",
     visibility = ["//visibility:public"],
@@ -365,7 +391,12 @@ sonic_deb(
     description = "development library and header files for libnl-3",
     content = {
         "/usr/include/libnl3:include/:0644": [":libnl_3_hdr_files"],
-        "${LIBDIR}:*:0644": [":libnl_3_dev_link"],
+        # debian/libnl-3-dev.install moves the .so symlink + .a static
+        # archive to /lib/<multiarch>/.
+        "${LIBDIR_BASE}:*:0644": [
+            ":libnl_3_dev_link_direct",
+            ":libnl_3_static",
+        ],
         "${LIBDIR}/pkgconfig:0644": [
             ":libnl3_pc_generated",
         ],
@@ -382,7 +413,8 @@ sonic_deb(
     maintainer = "SONiC Maintainers",
     description = "libnl generic netlink library",
     content = {
-        "${LIBDIR}:*:0644": [":libnl_genl_3_files"],
+        # debian/libnl-genl-3-200.install moves the .so.* to /lib/<multiarch>/.
+        "${LIBDIR_BASE}:*:0644": [":libnl_genl_3_files"],
     },
     content_targets = [":libnl_genl_3_shared"],
     depends = [
@@ -405,11 +437,15 @@ sonic_deb(
         "${LIBDIR}/pkgconfig:0644": [
             ":libnl3_genl_pc_generated",
         ],
-        "${LIBDIR}:*:0644": [":libnl_genl_3_dev_link"],
+        # debian/libnl-genl-3-dev.install moves .so + .a to /lib/<multiarch>/.
+        "${LIBDIR_BASE}:*:0644": [
+            ":libnl_genl_3_dev_link_direct",
+            ":libnl_genl_3_static",
+        ],
     },
     depends = [
-        "libnl-genl-3-200 (= {})".format(LIBNL_VERSION),
         "libnl-3-dev (= {})".format(LIBNL_VERSION),
+        "libnl-genl-3-200 (= {})".format(LIBNL_VERSION),
     ],
     visibility = ["//visibility:public"],
 )
@@ -427,7 +463,7 @@ sonic_deb(
     content_targets = [":libnl_route_3_shared"],
     depends = [
         "libnl-3-200 (= {})".format(LIBNL_VERSION),
-        "libc6 (>= 2.34)",
+        "libc6 (>= 2.38)",
     ],
     gen_dbg = True,
     homepage = "https://www.infradead.org/~tgr/libnl/",
@@ -445,11 +481,14 @@ sonic_deb(
         "${LIBDIR}/pkgconfig:0644": [
             ":libnl3_route_pc_generated",
         ],
-        "${LIBDIR}:*:0644": [":libnl_route_3_dev_link"],
+        "${LIBDIR}:*:0644": [
+            ":libnl_route_3_dev_link_direct",
+            ":libnl_route_3_static",
+        ],
     },
     depends = [
-        "libnl-route-3-200 (= {})".format(LIBNL_VERSION),
         "libnl-3-dev (= {})".format(LIBNL_VERSION),
+        "libnl-route-3-200 (= {})".format(LIBNL_VERSION),
     ],
     visibility = ["//visibility:public"],
 )
@@ -485,12 +524,15 @@ sonic_deb(
         "${LIBDIR}/pkgconfig:0644": [
             ":libnl3_nf_pc_generated",
         ],
-        "${LIBDIR}:*:0644": [":libnl_nf_3_dev_link"],
+        "${LIBDIR}:*:0644": [
+            ":libnl_nf_3_dev_link_direct",
+            ":libnl_nf_3_static",
+        ],
     },
     depends = [
-        "libnl-nf-3-200 (= {})".format(LIBNL_VERSION),
         "libnl-3-dev (= {})".format(LIBNL_VERSION),
         "libnl-route-3-dev (= {})".format(LIBNL_VERSION),
+        "libnl-nf-3-200 (= {})".format(LIBNL_VERSION),
     ],
     visibility = ["//visibility:public"],
 )
@@ -524,7 +566,7 @@ sonic_deb(
         "libnl-genl-3-200 (= {})".format(LIBNL_VERSION),
         "libnl-nf-3-200 (= {})".format(LIBNL_VERSION),
         "libnl-route-3-200 (= {})".format(LIBNL_VERSION),
-        "libc6 (>= 2.34)",
+        "libc6 (>= 2.38)",
     ],
     gen_dbg = True,
     homepage = "https://www.infradead.org/~tgr/libnl/",
@@ -542,14 +584,33 @@ sonic_deb(
         "${LIBDIR}/pkgconfig:0644": [
             ":libnl3_cli_pc_generated",
         ],
-        "${LIBDIR}:*:0644": [":libnl_cli_3_dev_link"],
+        "${LIBDIR}:*:0644": [
+            ":libnl_cli_3_dev_link_direct",
+            ":libnl_cli_3_static",
+        ],
+        # cls/qdisc plugin static archives. Note Debian uses libnl/cli/ here
+        # (NOT libnl-3/cli/ like the shared .so plugins do).
+        "${LIBDIR}/libnl/cli/cls:*:0644": [
+            ":libnl_cli_cls_basic_static",
+            ":libnl_cli_cls_cgroup_static",
+        ],
+        "${LIBDIR}/libnl/cli/qdisc:*:0644": [
+            ":libnl_cli_qdisc_bfifo_static",
+            ":libnl_cli_qdisc_blackhole_static",
+            ":libnl_cli_qdisc_fq_codel_static",
+            ":libnl_cli_qdisc_hfsc_static",
+            ":libnl_cli_qdisc_htb_static",
+            ":libnl_cli_qdisc_ingress_static",
+            ":libnl_cli_qdisc_pfifo_static",
+            ":libnl_cli_qdisc_plug_static",
+        ],
     },
     depends = [
-        "libnl-cli-3-200 (= {})".format(LIBNL_VERSION),
         "libnl-3-dev (= {})".format(LIBNL_VERSION),
         "libnl-genl-3-dev (= {})".format(LIBNL_VERSION),
         "libnl-nf-3-dev (= {})".format(LIBNL_VERSION),
         "libnl-route-3-dev (= {})".format(LIBNL_VERSION),
+        "libnl-cli-3-200 (= {})".format(LIBNL_VERSION),
     ],
     visibility = ["//visibility:public"],
 )

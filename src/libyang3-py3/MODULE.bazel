@@ -12,8 +12,9 @@ bazel_dep(name = "libyang3", version = "3.12.2")
 bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
 bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
 
-python = use_extension("@rules_python//python/extensions:python.bzl", "python")
-python.toolchain(python_version = "3.11.3")
+# Python toolchain: use root MODULE's 3.13.4 default (matches trixie's
+# system Python 3.13.5 ABI). The cffi-built _libyang extension gets the
+# cpython-313 ABI suffix to match Make's output.
 
 # libpcre2-dev is needed transitively: libyang's public tree_data.h does
 # `#include <pcre2.h>`. The auto-generated yang_hdrs cc_library in libyang3

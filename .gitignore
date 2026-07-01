@@ -122,6 +122,9 @@ htmlcov/
 # Dev tools
 .vscode/
 .idea/
+.qoder/
+
+sonic-slave-*
 
 # Debian mirror Sources
 sources.list.*

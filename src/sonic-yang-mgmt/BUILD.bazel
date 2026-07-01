@@ -1,0 +1,106 @@
+load("@aspect_rules_py//py:defs.bzl", "py_library")
+load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@tar.bzl", "tar")
+
+package(default_visibility = ["//visibility:public"])
+
+# Pure-Python sources of sonic_yang_mgmt. setup.py declares
+# py_modules=['sonic_yang', 'sonic_yang_ext', 'sonic_yang_path'].
+py_library(
+    name = "sources",
+    srcs = [
+        "sonic_yang.py",
+        "sonic_yang_ext.py",
+        "sonic_yang_path.py",
+    ],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+# Test files shipped inside the wheel (Make's include_package_data=True
+# captures everything under tests/, including data .json and .yang files).
+py_library(
+    name = "tests_pkg",
+    srcs = glob([
+        "tests/**/*.py",
+        "tests/**/*.json",
+        "tests/**/*.yang",
+    ]),
+    imports = ["."],
+)
+
+# Wheel's top_level.txt records top-level importable names: the three
+# py_modules + the `tests` package.
+genrule(
+    name = "top_level_txt",
+    outs = ["top_level.txt"],
+    cmd = """printf 'sonic_yang\\nsonic_yang_ext\\nsonic_yang_path\\ntests\\n' > $@""",
+)
+
+# Wheel artifact (mirrors rules/sonic-yang-mgmt-py3.mk).
+# install_requires from setup.py: ijson, jsonpointer, jsondiff, tabulate.
+# Note: son629's setup.py uses libyang3 (`import libyang`) and does NOT
+# require xmltodict (unlike son624 which carried that legacy dep).
+py_wheel(
+    name = "wheel",
+    distribution = "sonic_yang_mgmt",
+    version = "1.0",
+    summary = "Package contains Python Library for YANG for sonic.",
+    author = "lnos-coders",
+    author_email = "lnos-coders@linkedin.com",
+    license = "GNU General Public License v3",
+    python_requires = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*",
+    classifiers = [
+        "Development Status :: 2 - Pre-Alpha",
+        "Intended Audience :: Developers",
+        "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+        "Natural Language :: English",
+        "Programming Language :: Python :: 2",
+        "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+    ],
+    requires = [
+        "ijson>=3.2.3",
+        "jsonpointer>=1.9",
+        "jsondiff>=1.2.0",
+        "tabulate==0.9.0",
+    ],
+    description_file = "README.rst",
+    extra_distinfo_files = {
+        "AUTHORS.rst": "AUTHORS.rst",
+        "LICENSE": "LICENSE",
+        ":top_level_txt": "top_level.txt",
+    },
+    data_files = {
+        "sonic-cfg-help": "scripts/sonic-cfg-help",
+    },
+    strip_path_prefixes = ["src/sonic-yang-mgmt"],
+    deps = [
+        ":sources",
+        ":tests_pkg",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Tar layer for OCI image: lays the .py files out under Debian system Python
+# dist-packages, and the sonic-cfg-help script under /usr/local/bin.
+tar(
+    name = "install",
+    srcs = [
+        "sonic_yang.py",
+        "sonic_yang_ext.py",
+        "sonic_yang_path.py",
+        "sonic-cfg-help",
+    ],
+    mtree = [
+        "./usr/lib/python3/dist-packages/sonic_yang.py uid=0 gid=0 mode=0644 type=file content=$(location sonic_yang.py)",
+        "./usr/lib/python3/dist-packages/sonic_yang_ext.py uid=0 gid=0 mode=0644 type=file content=$(location sonic_yang_ext.py)",
+        "./usr/lib/python3/dist-packages/sonic_yang_path.py uid=0 gid=0 mode=0644 type=file content=$(location sonic_yang_path.py)",
+        "./usr/local/bin/sonic-cfg-help uid=0 gid=0 mode=0755 type=file content=$(location sonic-cfg-help)",
+    ],
+    visibility = ["//visibility:public"],
+)

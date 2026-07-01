@@ -1,0 +1,201 @@
+load("@aspect_rules_py//py/unstable:defs.bzl", "py_venv_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sonic_build_infra//shared_library:shared_library.bzl", "sonic_shared_library_versioned")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["uv.lock"])
+
+VERSION = "1.0.0"
+
+# =============================================================================
+# Jinja2 codegen tool (render_schema.py).
+#
+# The upstream Makefile.am calls render_schema.py 4 times in BUILT_SOURCES to
+# turn schema/NextHopGroupFull.json + 4 Jinja2 templates into:
+#   - src/nexthopgroupfull.h       (mode=header)
+#   - src/nexthopgroupfull.cpp     (mode=source)
+#   - src/nexthopgroupfull_json.h  (mode=json_bindings)
+#   - src/c_nexthopgroupfull.h     (mode=c_header)
+#
+# We mirror that here. Jinja2 lives in @pip_tools (sonic_rules's pip hub).
+# =============================================================================
+py_venv_binary(
+    name = "render_schema",
+    srcs = ["scripts/render_schema.py"],
+    main = "scripts/render_schema.py",
+    venv = "default",
+    deps = ["@sonic_fib_pip//jinja2"],
+)
+
+# render_schema.py args: <schema.json> <template_dir> <out_file> <mode>
+# It picks the .j2 file under <template_dir> by mode (nexthopgroupfull.h.j2,
+# nexthopgroupfull.cpp.j2, nexthopgroupfull_json.h.j2, c_nexthopgroupfull.h.j2).
+_TEMPLATES = [
+    "templates/nexthopgroupfull.h.j2",
+    "templates/nexthopgroupfull.cpp.j2",
+    "templates/nexthopgroupfull_json.h.j2",
+    "templates/c_nexthopgroupfull.h.j2",
+]
+
+_CODEGEN_OUTPUTS = {
+    "nexthopgroupfull.h": "header",
+    "nexthopgroupfull.cpp": "source",
+    "nexthopgroupfull_json.h": "json_bindings",
+    "c_nexthopgroupfull.h": "c_header",
+}
+
+[
+    genrule(
+        name = "gen_" + out.replace(".", "_"),
+        srcs = ["schema/NextHopGroupFull.json"] + _TEMPLATES,
+        outs = [out],
+        cmd = "$(execpath :render_schema) " +
+              "$(location schema/NextHopGroupFull.json) " +
+              "$$(dirname $(location templates/nexthopgroupfull.h.j2)) " +
+              "$@ " +
+              mode,
+        tools = [":render_schema"],
+    )
+    for out, mode in _CODEGEN_OUTPUTS.items()
+]
+
+# =============================================================================
+# libnexthopgroup shared library.
+#
+# Mirrors src/Makefile.am's `lib_LTLIBRARIES += src/libnexthopgroup.la` (no
+# `-version-info`, libtool defaults to 0:0:0 → libnexthopgroup.so.0.0.0 with
+# soname libnexthopgroup.so.0).
+# =============================================================================
+LIB_COPTS = [
+    "-DNDEBUG",
+    "-std=c++17",
+    "-Wall",
+    "-Wno-unused-parameter",
+    "-fvisibility=default",
+]
+
+# Generated headers need to live under a `src/` prefix because the .cpp files
+# do `#include "src/nexthopgroupfull.h"`. Bind genrule outputs to the current
+# package via the `include_prefix` of an intermediate cc_library so the
+# `src/...` path resolves.
+cc_library(
+    name = "generated_headers",
+    hdrs = [
+        ":nexthopgroupfull.h",
+        ":nexthopgroupfull_json.h",
+        ":c_nexthopgroupfull.h",
+    ],
+    include_prefix = "src",
+)
+
+sonic_shared_library_versioned(
+    name = "nexthopgroup",
+    srcs = [
+        ":nexthopgroupfull.cpp",
+        "src/nexthopgroup_debug.cpp",
+        "src/c-api/nexthopgroup_capi.cpp",
+    ],
+    hdrs = [
+        "src/nexthopgroup_debug.h",
+        "src/c-api/nexthopgroup_capi.h",
+    ],
+    deps = [
+        ":generated_headers",
+        "@sonic_fib_deps//nlohmann-json3-dev:nlohmann-json3",
+    ],
+    copts = LIB_COPTS,
+    includes = [
+        "src",
+        "src/c-api",
+    ],
+    linkopts = [
+        "-lpthread",
+        "-Wl,-z,now",
+    ],
+    soversion = "0",
+    version = "0.0.0",
+    output_name = "libnexthopgroup",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Public header filegroups for the -dev package.
+#
+# debian/libnexthopgroup-dev.install ships:
+#   usr/include/nexthopgroup/         <- top-level headers
+#   usr/include/nexthopgroup/c-api/   <- C-API headers
+#
+# Top-level set comes from src/Makefile.am's
+#   nexthopgroup_header_HEADERS = nexthopgroupfull.h nexthopgroupfull_json.h
+#                                 nexthopgroup_debug.h c_nexthopgroupfull.h
+# C-API set comes from
+#   nexthopgroup_capi_header_HEADERS = nexthopgroup_capi.h
+# =============================================================================
+filegroup(
+    name = "nexthopgroup_public_hdrs",
+    srcs = [
+        ":nexthopgroupfull.h",
+        ":nexthopgroupfull_json.h",
+        ":c_nexthopgroupfull.h",
+        "src/nexthopgroup_debug.h",
+    ],
+)
+
+filegroup(
+    name = "nexthopgroup_capi_hdrs",
+    srcs = ["src/c-api/nexthopgroup_capi.h"],
+)
+
+# =============================================================================
+# libnexthopgroup_1.0.0_<arch>.deb — runtime shared library (matches Make's
+# rules/sonic-fib.mk + debian/libnexthopgroup.install: usr/lib/*/libnexthopgroup.so.*).
+# =============================================================================
+sonic_deb(
+    name = "libnexthopgroup_{}.deb".format(VERSION),
+    package = "libnexthopgroup",
+    version = VERSION,
+    content = {
+        "${LIBDIR}:*:0644": [":nexthopgroup_files"],
+    },
+    depends = [
+        # Mirrors what dpkg-shlibdeps generates in the Make recipe.
+        "libc6 (>= 2.32)",
+        "libgcc-s1 (>= 3.0)",
+        "libstdc++6 (>= 13.1)",
+    ],
+    maintainer = "SONiC Maintainers",
+    description = "NextHopGroup serialization library for SONiC FIB. " +
+                  "JSON-based serialization for NextHopGroup data structures " +
+                  "used between FRR (zebra) and fpmsyncd.",
+    section = "libs",
+    gen_dbg = True,
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# libnexthopgroup-dev_1.0.0_<arch>.deb — headers + dev .so link
+# Matches debian/libnexthopgroup-dev.install:
+#   usr/include/nexthopgroup/
+#   usr/include/nexthopgroup/c-api/
+#   usr/lib/*/libnexthopgroup.so
+# =============================================================================
+sonic_deb(
+    name = "libnexthopgroup-dev_{}.deb".format(VERSION),
+    package = "libnexthopgroup-dev",
+    version = VERSION,
+    content = {
+        "/usr/include/nexthopgroup:*:0644": [":nexthopgroup_public_hdrs"],
+        "/usr/include/nexthopgroup/c-api:*:0644": [":nexthopgroup_capi_hdrs"],
+        "${LIBDIR}:*:0644": [":nexthopgroup_dev_link_direct"],
+    },
+    depends = [
+        "libnexthopgroup (= {})".format(VERSION),
+        "nlohmann-json3-dev",
+    ],
+    maintainer = "SONiC Maintainers",
+    description = "Development files for libnexthopgroup (NextHopGroup serialization).",
+    section = "libdevel",
+    visibility = ["//visibility:public"],
+)

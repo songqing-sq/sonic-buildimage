@@ -29,6 +29,10 @@ git_override(
 bazel_dep(name = "aspect_rules_py", version = "1.8.4")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    python_version = "3.13.4",
+    is_default = True,
+)
 python.toolchain(python_version = "3.11.3")
 
 bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
@@ -58,4 +62,28 @@ bazel_dep(name = "libyang3-py3", version = "3.1.0")
 local_path_override(
     module_name = "libyang3-py3",
     path = "src/libyang3-py3",
+)
+
+bazel_dep(name = "sonic-fib", version = "1.0.0")
+local_path_override(
+    module_name = "sonic-fib",
+    path = "src/libraries/sonic-fib",
+)
+
+bazel_dep(name = "sonic-yang-models", version = "1.0")
+local_path_override(
+    module_name = "sonic-yang-models",
+    path = "src/sonic-yang-models",
+)
+
+bazel_dep(name = "sonic-yang-mgmt", version = "1.0")
+local_path_override(
+    module_name = "sonic-yang-mgmt",
+    path = "src/sonic-yang-mgmt",
+)
+
+bazel_dep(name = "sonic-swss-common", version = "1.0.0")
+local_path_override(
+    module_name = "sonic-swss-common",
+    path = "src/sonic-swss-common",
 )

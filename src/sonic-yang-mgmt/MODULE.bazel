@@ -1,0 +1,8 @@
+module(name = "sonic-yang-mgmt", version = "1.0")
+
+bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "aspect_rules_py", version = "1.8.4")
+bazel_dep(name = "tar.bzl", version = "0.8.1")
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(python_version = "3.11.3")
