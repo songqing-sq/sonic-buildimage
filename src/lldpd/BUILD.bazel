@@ -1,0 +1,101 @@
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.0.16-1+deb12u1"
+
+# =============================================================================
+# Aliases: re-export targets from @lldpd_src into //src/lldpd.
+# =============================================================================
+alias(
+    name = "lldpctl",
+    actual = "@lldpd_src//:lldpctl",
+)
+
+alias(
+    name = "lldpctl_shared",
+    actual = "@lldpd_src//:lldpctl_shared",
+)
+
+alias(
+    name = "lldpctl_files",
+    actual = "@lldpd_src//:lldpctl_files",
+)
+
+alias(
+    name = "lldpctl_dev_link",
+    actual = "@lldpd_src//:lldpctl_dev_link",
+)
+
+alias(
+    name = "public_headers",
+    actual = "@lldpd_src//:public_headers",
+)
+
+alias(
+    name = "lldpd_bin",
+    actual = "@lldpd_src//:lldpd",
+)
+
+alias(
+    name = "lldpcli",
+    actual = "@lldpd_src//:lldpcli",
+)
+
+alias(
+    name = "lldpctl_pc",
+    actual = "@lldpd_src//:lldpctl_pc",
+)
+
+# =============================================================================
+# lldpd - Main package: daemon, CLI, versioned liblldpctl runtime library.
+# Mirrors what Debian's lldpd binary package contains under SONiC's setup
+# (debian/lldpd.install puts /usr/lib/*/*.so.* in this package; there is no
+# separate liblldpctl4 runtime package).
+# =============================================================================
+sonic_deb(
+    name = "lldpd_{}.deb".format(VERSION),
+    package = "lldpd",
+    version = VERSION,
+    content = {
+        "/usr/sbin:*:0755": [
+            ":lldpd_bin",
+            ":lldpcli",
+        ],
+        "${LIBDIR}:*:0644": [":lldpctl_files"],
+    },
+    depends = [
+        "libc6 (>= 2.34)",
+        "libcap2 (>= 1:2.10)",
+        "libevent-2.1-7t64 (>= 2.1.8-stable)",
+        "libreadline8t64 (>= 6.0)",
+        "libsnmp40t64 (>= 5.9.3+dfsg)",
+        "libxml2 (>= 2.9.0)",
+    ],
+    maintainer = "SONiC Maintainers",
+    description = "implementation of IEEE 802.1ab (LLDP)\n LLDP (Link Layer Discovery Protocol) is an industry standard protocol\n designed to supplant proprietary Link-Layer protocols such as EDP or\n CDP. The goal of LLDP is to provide an inter-vendor compatible\n mechanism to deliver Link-Layer notifications to adjacent network\n devices.\n .\n This daemon is also able to deal with CDP, FDP, SONMP and EDP\n protocols. It also handles LLDP-MED extension.",
+    section = "net",
+    homepage = "https://lldpd.github.io/",
+    gen_dbg = True,
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# liblldpctl-dev - Development files: headers, .so symlink, pkgconfig.
+# =============================================================================
+sonic_deb(
+    name = "liblldpctl-dev_{}.deb".format(VERSION),
+    package = "liblldpctl-dev",
+    version = VERSION,
+    content = {
+        "/usr/include:*:0644": [":public_headers"],
+        "${LIBDIR}": [":lldpctl_dev_link"],
+        "${LIBDIR}/pkgconfig": [":lldpctl_pc"],
+    },
+    depends = ["lldpd (= {})".format(VERSION)],
+    maintainer = "SONiC Maintainers",
+    description = "implementation of IEEE 802.1ab (development files)\n LLDP (Link Layer Discovery Protocol) is an industry standard protocol\n designed to supplant proprietary Link-Layer protocols such as EDP or\n CDP. The goal of LLDP is to provide an inter-vendor compatible\n mechanism to deliver Link-Layer notifications to adjacent network\n devices.\n .\n This package contains the headers and library needed to use liblldpctl.",
+    section = "libdevel",
+    homepage = "https://lldpd.github.io/",
+    visibility = ["//visibility:public"],
+)

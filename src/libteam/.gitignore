@@ -2,3 +2,7 @@
 !.gitignore
 !Makefile
 !patch
+!MODULE.bazel
+!BUILD.bazel
+!libteam.BUILD
+!config.h.tpl

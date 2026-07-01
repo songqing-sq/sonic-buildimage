@@ -137,3 +137,8 @@ MODULE.bazel.lock
 
 # Generated mirror configs
 apt-retries-count
+
+# Other
+sonic-slave-*
+.qoder/
+logs/

@@ -3,3 +3,6 @@
 !Makefile
 !patch/
 !patch/*
+!BUILD.bazel
+!lldpd.BUILD
+!MODULE.bazel

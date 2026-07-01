@@ -47,3 +47,74 @@ local_path_override(
     module_name = "libnl3",
     path = "src/libnl3",
 )
+
+bazel_dep(name = "lldpd", version = "1.0.16-1+deb12u1")
+local_path_override(
+    module_name = "lldpd",
+    path = "src/lldpd",
+)
+
+# lldpd apt deps must be declared in the root module because rules_distroless
+# apt repos created in submodules via local_path_override aren't visible from
+# the root (Bzlmod use_repo visibility limitation). Trixie-aligned with
+# sonic_rules' sysroot.
+lldpd_apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+lldpd_apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie", "trixie-updates"],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+lldpd_apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+lldpd_apt.install(
+    dependency_set = "lldpd_deps",
+    packages = [
+        "libsnmp-dev",
+        "libxml2-dev",
+        "libreadline-dev",
+        "libcap-dev",
+        "libbsd-dev",
+        "libevent-dev",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(lldpd_apt, "lldpd_deps")
+
+bazel_dep(name = "libteam", version = "1.31-1")
+local_path_override(
+    module_name = "libteam",
+    path = "src/libteam",
+)
+
+# libteam apt deps must be declared in the root module because rules_distroless
+# apt repos created in submodules via local_path_override aren't visible from
+# the root (Bzlmod use_repo visibility limitation). Trixie-aligned with
+# sonic_rules' sysroot.
+libteam_apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+libteam_apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie", "trixie-updates"],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+libteam_apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+libteam_apt.install(
+    dependency_set = "libteam_deps",
+    packages = [
+        "libdaemon-dev",
+        "libjansson-dev",
+        "libdbus-1-dev",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(libteam_apt, "libteam_deps")

@@ -1,0 +1,88 @@
+module(
+    name = "libteam",
+    version = "1.31-1",
+)
+
+# =============================================================================
+# Dependencies
+# =============================================================================
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+bazel_dep(name = "libnl3", version = "3.7.0")
+
+LIBTEAM_VERSION = "1.31"
+
+# =============================================================================
+# Source download (upstream libteam 1.31 orig tarball from Debian pool).
+# Only the orig tarball is fetched; we don't pull debian/ because we don't run
+# dpkg-buildpackage. Bazel builds the .debs natively via sonic_deb.
+#
+# SONiC StGit patches from src/libteam/patch/series are applied via
+# sonic_http_archive's patch_tool="patch" (-p1) path — same as lldpd. Bazel's
+# native patcher rejects git-format markers; system patch is lenient.
+# =============================================================================
+sonic_http_archive = use_repo_rule(
+    "@sonic_build_infra//sonic_http_archive:sonic_http_archive.bzl",
+    "sonic_http_archive",
+)
+
+sonic_http_archive(
+    name = "libteam_src",
+    build_file_template = "//:libteam.BUILD",
+    sha256 = "a39c636a71c30c631a9dcf1f175597dabb19594e4fb4a3129eb5a58d1701d486",
+    strip_prefix = "libteam-{}".format(LIBTEAM_VERSION),
+    urls = ["https://deb.debian.org/debian/pool/main/libt/libteam/libteam_{}.orig.tar.xz".format(LIBTEAM_VERSION)],
+    patch_tool = "patch",
+    # Mirrors src/libteam/patch/series (uncommented entries only).
+    patches = [
+        "//:patch/0001-libteam-Temporarily-remove-redundant-debug-messages.patch",
+        "//:patch/0002-teamd-lacp-runner-will-send-lacp-update-right-after-.patch",
+        "//:patch/0003-libteam-Add-fallback-support-for-single-member-port-.patch",
+        "//:patch/0005-Increase-default-buffer-size-from-98304-to-2097152.patch",
+        "//:patch/0006-teamd-Administratively-shutdown-port-channel-has-mem.patch",
+        "//:patch/0008-libteam-Add-warm_reboot-mode.patch",
+        "//:patch/0011-Remove-extensive-debug-output.patch",
+        "//:patch/0012-Increase-min_ports-upper-limit-to-1024.patch",
+        "//:patch/0013-set-port-to-disabled-state-during-removal.patch",
+        "//:patch/0014-dont-move-the-port-state-from-disabled-when-admin-state-is-down.patch",
+        "//:patch/0015-add-support-for-custom-retry.patch",
+        "//:patch/0016-block-retry-count-changes.patch",
+        "//:patch/0017-Specify-netlink-recv-buffer-size-to-avoid-a-syscall.patch",
+        "//:patch/0018-Replace-FD_SET-select-with-poll-to-avoid-FD_SETSIZE-abort.patch",
+    ],
+    extra_files = ["//:config.h.tpl"],
+)
+
+# =============================================================================
+# apt build-deps. Per Bzlmod use_repo visibility limitation (see
+# README.buildsystem.md / lldpd doc), apt repos created here are NOT visible
+# from the root module. The root MODULE.bazel mirrors this block under
+# `libteam_apt` and `@libteam_deps`; this block remains so the module is
+# self-describing when consumed via a future registry. Trixie-aligned.
+# =============================================================================
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie", "trixie-updates"],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+apt.install(
+    dependency_set = "libteam_deps",
+    packages = [
+        "libdaemon-dev",
+        "libjansson-dev",
+        "libdbus-1-dev",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(apt, "libteam_deps")
