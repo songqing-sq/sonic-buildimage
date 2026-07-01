@@ -47,6 +47,12 @@ apt.sources_list(
     ],
     uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
 )
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
 apt.install(
     dependency_set = "lldpd_deps",
     packages = [
@@ -60,6 +66,7 @@ apt.install(
     suites = [
         "trixie",
         "trixie-updates",
+        "trixie-security",
     ],
 )
 use_repo(apt, "lldpd_deps")
