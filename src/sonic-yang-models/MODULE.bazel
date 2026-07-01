@@ -1,0 +1,23 @@
+module(name = "sonic-yang-models", version = "1.0")
+
+bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "aspect_rules_py", version = "1.8.4")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "tar.bzl", version = "0.8.1")
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(python_version = "3.11.3")
+
+# Jinja2 for rendering yang-templates/*.yang.j2 into the py and cvl variants.
+uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
+uv.declare_hub(hub_name = "sonic_yang_models_pip")
+uv.declare_venv(
+    hub_name = "sonic_yang_models_pip",
+    venv_name = "default",
+)
+uv.lockfile(
+    src = "//:uv.lock",
+    hub_name = "sonic_yang_models_pip",
+    venv_name = "default",
+)
+use_repo(uv, "sonic_yang_models_pip")

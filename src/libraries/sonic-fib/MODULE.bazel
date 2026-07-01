@@ -1,0 +1,47 @@
+module(
+    name = "sonic-fib",
+    version = "1.0.0",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "aspect_rules_py", version = "1.8.4")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(python_version = "3.11.3")
+
+# Build-time deps:
+#   * nlohmann-json3-dev — header-only JSON library, included by the
+#     generated nexthopgroupfull_json.h (Jinja2-rendered).
+# The library only links libpthread (libc system dep), so no runtime libs
+# come from apt.
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.install(
+    dependency_set = "sonic_fib_deps",
+    packages = [
+        "nlohmann-json3-dev:amd64",
+        "nlohmann-json3-dev:arm64",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(apt, "sonic_fib_deps")
+
+# Jinja2 codegen tool for render_schema.py. The pip_tools hub in
+# sonic_rules is scoped to that module and not visible from here, so we
+# declare our own uv hub with jinja2.
+uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
+uv.declare_hub(hub_name = "sonic_fib_pip")
+uv.declare_venv(
+    hub_name = "sonic_fib_pip",
+    venv_name = "default",
+)
+uv.lockfile(
+    src = "//:uv.lock",
+    hub_name = "sonic_fib_pip",
+    venv_name = "default",
+)
+use_repo(uv, "sonic_fib_pip")

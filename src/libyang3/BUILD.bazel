@@ -1,0 +1,183 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+load(":headers_tree.bzl", "libyang_headers_tree")
+
+package(default_visibility = ["//visibility:public"])
+
+# =============================================================================
+# Aliases to expose targets from the sonic_http_archive
+# =============================================================================
+alias(
+    name = "yang",
+    actual = "@libyang3_src//:yang",
+)
+
+alias(
+    name = "yang_shared",
+    actual = "@libyang3_src//:yang_shared",
+)
+
+alias(
+    name = "yang_hdrs",
+    actual = "@libyang3_src//:yang_hdrs",
+)
+
+alias(
+    name = "yang_hdr_files",
+    actual = "@libyang3_src//:yang_hdr_files",
+)
+
+alias(
+    name = "yang_public_hdrs",
+    actual = "@libyang3_src//:yang_public_hdrs",
+)
+
+alias(
+    name = "yang_metadata_hdr",
+    actual = "@libyang3_src//:yang_metadata_hdr",
+)
+
+alias(
+    name = "yang_version_link",
+    actual = "@libyang3_src//:yang_version_link",
+)
+
+alias(
+    name = "yang_dev_link",
+    actual = "@libyang3_src//:yang_dev_link",
+)
+
+alias(
+    name = "yang_files",
+    actual = "@libyang3_src//:yang_files",
+)
+
+alias(
+    name = "yanglint",
+    actual = "@libyang3_src//:yanglint",
+)
+
+alias(
+    name = "yangre",
+    actual = "@libyang3_src//:yangre",
+)
+
+alias(
+    name = "yang_modules",
+    actual = "@libyang3_src//:yang_modules",
+)
+
+alias(
+    name = "libyang_pc",
+    actual = "@libyang3_src//:libyang_pc",
+)
+
+# =============================================================================
+# yang_hdrs_prefixed - libyang headers re-laid under `libyang/` include prefix
+# for downstream consumers that do `#include <libyang/libyang.h>`.
+#
+# Background: upstream installs headers to `/usr/include/libyang/*.h`, but
+# Bazel ships them at `@libyang3_src//:src/*.h`. Downstream cc_library users
+# (libyang3-py3, sonic-swss-common, etc.) include via `<libyang/...>`, so we
+# materialize a tree artifact at `include/libyang/<file>.h` and expose it as
+# a cc_library with `includes = ["include"]`.
+# =============================================================================
+libyang_headers_tree(
+    name = "libyang_headers_tree",
+    hdrs = [":yang_hdr_files"],
+)
+
+cc_library(
+    name = "yang_hdrs_prefixed",
+    hdrs = [":libyang_headers_tree"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+
+
+# =============================================================================
+# Version
+# =============================================================================
+VERSION = "3.12.2"
+FULL_VERSION = "3.12.2-1"
+
+# =============================================================================
+# libyang3 - Main runtime library package
+# =============================================================================
+sonic_deb(
+    name = "libyang3_{}.deb".format(FULL_VERSION),
+    package = "libyang3",
+    version = FULL_VERSION,
+    content = {
+        "${LIBDIR}:*:0644": [":yang_files"],
+        "/usr/share/yang/modules/libyang:models:0644": [":yang_modules"],
+    },
+    content_targets = [":yang_shared"],
+    # Mirrors what `dpkg-shlibdeps` produces against the Debian shipped
+    # libyang3 3.12.2-1 (verified by `dpkg-deb -I` on the Debian binary).
+    depends = [
+        "libc6 (>= 2.38)",
+        "libpcre2-8-0 (>= 10.22)",
+        "libxxhash0 (>= 0.7.0)",
+    ],
+    maintainer = "SONiC Maintainers",
+    description = "YANG data modelling language parser and toolkit (C library)",
+    gen_dbg = True,
+    homepage = "https://github.com/CESNET/libyang",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# libyang-dev - Development package
+# =============================================================================
+sonic_deb(
+    name = "libyang-dev_{}.deb".format(FULL_VERSION),
+    package = "libyang-dev",
+    version = FULL_VERSION,
+    content = {
+        "${LIBDIR}:*:0644": [":yang_dev_link"],
+        # 21 public headers (20 from upstream ${headers} + version.h/ly_config.h
+        # from ${gen_headers}). plugins_exts/metadata.h is handled separately
+        # below to match Debian's flattened install layout.
+        "/usr/include/libyang:src/:0644": [":yang_public_hdrs"],
+        "/usr/include/libyang:src/plugins_exts/:0644": [":yang_metadata_hdr"],
+        "${LIBDIR}/pkgconfig:0644": [":libyang_pc"],
+    },
+    # libpcre2-dev is needed because libyang's public tree_data.h does
+    # `#include <pcre2.h>`; downstream cc consumers (e.g. libyang3-py3)
+    # would otherwise fail to find pcre2.h. Matches Debian's debian/control.
+    depends = [
+        "libpcre2-dev",
+        "libyang3 (= {})".format(FULL_VERSION),
+    ],
+    maintainer = "SONiC Maintainers",
+    description = "Headers and development files for libyang",
+    homepage = "https://github.com/CESNET/libyang",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# libyang3-tools - Command-line tools package
+# =============================================================================
+sonic_deb(
+    name = "libyang3-tools_{}.deb".format(FULL_VERSION),
+    package = "libyang3-tools",
+    version = FULL_VERSION,
+    content = {
+        "/usr/bin:*:0755": [
+            ":yanglint",
+            ":yangre",
+        ],
+    },
+    # Use >= so the tools can be installed against a newer libyang3 micro
+    # version, matching Debian's policy.
+    depends = [
+        "libc6 (>= 2.38)",
+        "libyang3 (>= {})".format(VERSION),
+    ],
+    maintainer = "SONiC Maintainers",
+    description = "Command-line tools for libyang (yanglint, yangre)",
+    gen_dbg = True,
+    homepage = "https://github.com/CESNET/libyang",
+    visibility = ["//visibility:public"],
+)

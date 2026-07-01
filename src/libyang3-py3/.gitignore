@@ -1,0 +1,5 @@
+# Bazel build byproducts and dh_make local extraction (from http_archive)
+libyang-python/
+libyang-python_*.buildinfo
+libyang-python_*.changes
+libyang-python_*.deb
