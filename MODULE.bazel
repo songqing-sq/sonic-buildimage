@@ -5,6 +5,8 @@ bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "rules_oci", version = "2.2.6")
+bazel_dep(name = "protobuf", version = "29.0")
+bazel_dep(name = "grpc", version = "1.71.0", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "tar.bzl", version = "0.8.1")
 git_override(
     module_name = "tar.bzl",
@@ -78,70 +80,11 @@ local_path_override(
     path = "src/lldpd",
 )
 
-# lldpd apt deps must be declared in the root module because rules_distroless
-# apt repos created in submodules via local_path_override aren't visible from
-# the root (Bzlmod use_repo visibility limitation). Trixie-aligned with
-# sonic_rules' sysroot.
-lldpd_apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
-lldpd_apt.sources_list(
-    architectures = ["amd64", "arm64"],
-    components = ["main"],
-    suites = ["trixie", "trixie-updates"],
-    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
-)
-lldpd_apt.sources_list(
-    architectures = ["amd64", "arm64"],
-    components = ["main"],
-    suites = ["trixie-security"],
-    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
-)
-lldpd_apt.install(
-    dependency_set = "lldpd_deps",
-    packages = [
-        "libsnmp-dev",
-        "libxml2-dev",
-        "libreadline-dev",
-        "libcap-dev",
-        "libbsd-dev",
-        "libevent-dev",
-    ],
-    suites = ["trixie", "trixie-updates", "trixie-security"],
-)
-use_repo(lldpd_apt, "lldpd_deps")
-
 bazel_dep(name = "libteam", version = "1.31-1")
 local_path_override(
     module_name = "libteam",
     path = "src/libteam",
 )
-
-# libteam apt deps must be declared in the root module because rules_distroless
-# apt repos created in submodules via local_path_override aren't visible from
-# the root (Bzlmod use_repo visibility limitation). Trixie-aligned with
-# sonic_rules' sysroot.
-libteam_apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
-libteam_apt.sources_list(
-    architectures = ["amd64", "arm64"],
-    components = ["main"],
-    suites = ["trixie", "trixie-updates"],
-    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
-)
-libteam_apt.sources_list(
-    architectures = ["amd64", "arm64"],
-    components = ["main"],
-    suites = ["trixie-security"],
-    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
-)
-libteam_apt.install(
-    dependency_set = "libteam_deps",
-    packages = [
-        "libdaemon-dev",
-        "libjansson-dev",
-        "libdbus-1-dev",
-    ],
-    suites = ["trixie", "trixie-updates", "trixie-security"],
-)
-use_repo(libteam_apt, "libteam_deps")
 
 bazel_dep(name = "libyang3", version = "3.12.2")
 local_path_override(
@@ -189,4 +132,76 @@ bazel_dep(name = "sonic-supervisord-utilities-rs", version = "1.0.0")
 local_path_override(
     module_name = "sonic-supervisord-utilities-rs",
     path = "src/sonic-supervisord-utilities-rs",
+)
+
+bazel_dep(name = "redis-dump-load-py3", version = "1.1")
+local_path_override(
+    module_name = "redis-dump-load-py3",
+    path = "src/redis-dump-load",
+)
+
+bazel_dep(name = "sonic-py-swsssdk", version = "2.0.1")
+local_path_override(
+    module_name = "sonic-py-swsssdk",
+    path = "src/sonic-py-swsssdk",
+)
+
+bazel_dep(name = "sonic-py-common", version = "1.0")
+local_path_override(
+    module_name = "sonic-py-common",
+    path = "src/sonic-py-common",
+)
+
+bazel_dep(name = "sonic-config-engine", version = "1.0")
+local_path_override(
+    module_name = "sonic-config-engine",
+    path = "src/sonic-config-engine",
+)
+
+bazel_dep(name = "sonic-platform-common", version = "1.0")
+local_path_override(
+    module_name = "sonic-platform-common",
+    path = "src/sonic-platform-common",
+)
+
+bazel_dep(name = "sonic-utilities", version = "1.2")
+local_path_override(
+    module_name = "sonic-utilities",
+    path = "src/sonic-utilities",
+)
+
+bazel_dep(name = "sonic-host-services", version = "1.0")
+local_path_override(
+    module_name = "sonic-host-services",
+    path = "src/sonic-host-services",
+)
+
+bazel_dep(name = "sonic-containercfgd", version = "1.0")
+local_path_override(
+    module_name = "sonic-containercfgd",
+    path = "src/sonic-containercfgd",
+)
+
+bazel_dep(name = "sonic-supervisord-utilities", version = "1.0")
+local_path_override(
+    module_name = "sonic-supervisord-utilities",
+    path = "src/sonic-supervisord-utilities",
+)
+
+bazel_dep(name = "sonic-platform-daemons", version = "1.0")
+local_path_override(
+    module_name = "sonic-platform-daemons",
+    path = "src/sonic-platform-daemons",
+)
+
+bazel_dep(name = "system-health", version = "1.0")
+local_path_override(
+    module_name = "system-health",
+    path = "src/system-health",
+)
+
+bazel_dep(name = "lm-sensors", version = "3.6.0-7.1")
+local_path_override(
+    module_name = "lm-sensors",
+    path = "src/lm-sensors",
 )

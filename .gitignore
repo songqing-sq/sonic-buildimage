@@ -50,6 +50,25 @@ platform/*/docker-*/*manifest*
 
 # Installer-related files and directories
 installer/x86_64/platforms/
+installer/platforms/
+
+# Build-generated top-level files
+database-chassis.service
+fsroot.docker.trixie/
+
+# Build-extracted source trees (dget/dpkg-source artifacts)
+src/bash/bash-*/
+src/dash-sai/DASH/
+src/iproute2/iproute2-*/
+src/iproute2/*.dsc
+src/makedumpfile/makedumpfile-*/
+src/makedumpfile/*.dsc
+src/p4lang/p4lang-*[0-9]/
+src/p4lang/*.dsc
+src/rasdaemon/rasdaemon/
+
+# Installer platform assets
+installer/platforms_asic
 
 # Misc. files
 asic_config_checksum
@@ -70,6 +89,10 @@ src/**/debian/autoreconf.*
 src/**/debian/build/
 src/**/debian/files
 src/**/debian/stamp-autotools-files
+
+# Python build artifacts
+src/**/build/
+src/**/*.egg-info/
 
 # checksum file to detect sonic-frr patch-set changes
 src/sonic-frr/.sonic-frr-patch-*.sha1

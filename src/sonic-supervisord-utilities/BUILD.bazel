@@ -1,0 +1,52 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@tar.bzl//:tar.bzl", "tar")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.0"
+
+# setup.py: packages=[] (no Python packages), scripts=['scripts/supervisor-proc-exit-listener']
+# The wheel contains ONLY the script + dist-info metadata.
+
+py_wheel(
+    name = "wheel",
+    distribution = "sonic-supervisord-utilities",
+    version = VERSION,
+    author = "SONiC Team",
+    author_email = "linuxnetdev@microsoft.com",
+    summary = "SONiC supervisord utilities",
+    homepage = "https://github.com/Azure/sonic-buildimage",
+    license = "Apache 2.0",
+    classifiers = [
+        "Development Status :: 4 - Beta",
+        "Environment :: No Input/Output (Daemon)",
+        "Intended Audience :: Developers",
+        "Intended Audience :: Information Technology",
+        "Intended Audience :: System Administrators",
+        "License :: OSI Approved :: Apache Software License",
+        "Natural Language :: English",
+        "Operating System :: POSIX :: Linux",
+        "Programming Language :: Python :: 3.7",
+        "Topic :: System :: Hardware",
+    ],
+    requires = [
+        "supervisor",
+        "sonic-py-common",
+    ],
+    data_files = {
+        "scripts/supervisor-proc-exit-listener": "scripts/supervisor-proc-exit-listener",
+    },
+    strip_path_prefixes = ["src/sonic-supervisord-utilities/"],
+    visibility = ["//visibility:public"],
+)
+
+# Install tar layer (OCI image consumer).
+tar(
+    name = "install",
+    srcs = ["scripts/supervisor-proc-exit-listener"],
+    mtree = [
+        "./usr/local/bin/supervisor-proc-exit-listener uid=0 gid=0 mode=0755 type=file content=$(location scripts/supervisor-proc-exit-listener)",
+    ],
+    visibility = ["//visibility:public"],
+)

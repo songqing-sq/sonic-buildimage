@@ -23,7 +23,7 @@ apt.install(
         "libxxhash-dev:amd64",
         "libxxhash-dev:arm64",
     ],
-    suites = ["trixie", "trixie-updates", "trixie-security"],
+    suites = ["trixie", "trixie-updates"],
 )
 use_repo(apt, "libyang3_deps")
 

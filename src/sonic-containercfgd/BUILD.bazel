@@ -1,0 +1,102 @@
+load("@aspect_rules_py//py:defs.bzl", "py_library")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@tar.bzl", "tar")
+
+package(default_visibility = ["//visibility:public"])
+
+# rules/sonic-containercfgd.mk uses SONIC_CONTAINERCFGD (no explicit version
+# in .mk); setup.py `version='1.0'` is the source of truth.
+VERSION = "1.0"
+
+# setup.py packages=['containercfgd', 'tests']. Only *.py (no data files).
+_PY_SRCS = glob([
+    "containercfgd/*.py",
+    "tests/*.py",
+])
+
+py_library(
+    name = "sources",
+    srcs = _PY_SRCS,
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+# bdist_wheel emits top_level.txt.
+write_file(
+    name = "top_level_txt",
+    out = "top_level.txt",
+    content = [
+        "containercfgd",
+        "tests",
+        "",
+    ],
+)
+
+# Wheel artifact: sonic_containercfgd-1.0-py3-none-any.whl
+py_wheel(
+    name = "wheel",
+    distribution = "sonic-containercfgd",
+    version = VERSION,
+    author = "SONiC Team",
+    author_email = "linuxnetdev@microsoft.com",
+    summary = "SONiC container config daemon package",
+    homepage = "https://github.com/Azure/sonic-buildimage",
+    license = "Apache 2.0",
+    classifiers = [
+        "Development Status :: 4 - Beta",
+        "Environment :: No Input/Output (Daemon)",
+        "Intended Audience :: Developers",
+        "Intended Audience :: Information Technology",
+        "Intended Audience :: System Administrators",
+        "License :: OSI Approved :: Apache Software License",
+        "Natural Language :: English",
+        "Operating System :: POSIX :: Linux",
+        "Programming Language :: Python :: 3.7",
+        "Topic :: System :: Hardware",
+    ],
+    requires = [
+        "sonic_py_common",
+    ],
+    entry_points = {
+        "console_scripts": [
+            "containercfgd = containercfgd.containercfgd:main",
+        ],
+    },
+    extra_distinfo_files = {
+        ":top_level_txt": "top_level.txt",
+    },
+    deps = [":sources"],
+    visibility = ["//visibility:public"],
+)
+
+# Console-script shim generated at pip install time.
+write_file(
+    name = "containercfgd_script",
+    out = "containercfgd",
+    content = [
+        "#!/usr/bin/python3",
+        "# -*- coding: utf-8 -*-",
+        "import re",
+        "import sys",
+        "from containercfgd.containercfgd import main",
+        "if __name__ == '__main__':",
+        "    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])",
+        "    sys.exit(main())",
+    ],
+)
+
+# Install tar layer (OCI image consumer).
+tar(
+    name = "install",
+    srcs = _PY_SRCS + [":containercfgd_script"],
+    mtree = [
+        "./usr/lib/python3/dist-packages/containercfgd/__init__.py uid=0 gid=0 mode=0644 type=file content=$(location containercfgd/__init__.py)",
+        "./usr/lib/python3/dist-packages/containercfgd/containercfgd.py uid=0 gid=0 mode=0644 type=file content=$(location containercfgd/containercfgd.py)",
+        "./usr/lib/python3/dist-packages/tests/conftest.py uid=0 gid=0 mode=0644 type=file content=$(location tests/conftest.py)",
+        "./usr/lib/python3/dist-packages/tests/test_config_daemon.py uid=0 gid=0 mode=0644 type=file content=$(location tests/test_config_daemon.py)",
+        "./usr/lib/python3/dist-packages/tests/test_syslog_config.py uid=0 gid=0 mode=0644 type=file content=$(location tests/test_syslog_config.py)",
+        "./usr/local/bin/containercfgd uid=0 gid=0 mode=0755 type=file content=$(location :containercfgd_script)",
+    ],
+    visibility = ["//visibility:public"],
+)

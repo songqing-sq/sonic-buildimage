@@ -1,0 +1,227 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "3.6.0-7.1"
+
+# =============================================================================
+# lm-sensors family: Approach A (apt repackage) for lm-sensors, libsensors5,
+# fancontrol + Approach B (cc rebuild) for sensord.
+#
+# The SONiC patches (patch/series) only modify debian/ packaging files to
+# re-enable sensord as a separate binary package. No source code changes.
+# Trixie apt ships lm-sensors/libsensors5/fancontrol but NOT sensord.
+# =============================================================================
+
+# --- Approach A: apt repackage for lm-sensors, libsensors5, fancontrol ---
+
+[
+    genrule(
+        name = "{}_md5sums".format(pkg),
+        srcs = ["@lm_sensors_apt//{}:control".format(pkg)],
+        outs = ["{}.md5sums".format(pkg)],
+        cmd = "tar -xf $(SRCS) -O ./md5sums > $@",
+    )
+    for pkg in [
+        "lm-sensors",
+        "libsensors5",
+    ]
+]
+
+# Fancontrol needs path rewrite: Debian trixie apt puts the system-sleep hook at
+# /usr/lib/systemd/system-sleep/fancontrol (merged-usr), but Make's local
+# .deb (built via dpkg-buildpackage from src/lm-sensors) uses the pre-merged
+# /lib/systemd/system-sleep/fancontrol path. Rewrite the apt data tar to match Make.
+genrule(
+    name = "fancontrol_data_rewritten",
+    srcs = ["@lm_sensors_apt//fancontrol:data"],
+    outs = ["fancontrol_data.tar.gz"],
+    cmd = "\n".join([
+        "TMPDIR=$$(mktemp -d)",
+        "trap \"rm -rf $$TMPDIR\" EXIT",
+        "tar -xf $(SRCS) -C $$TMPDIR",
+        # Move usr/lib/systemd/system-sleep -> lib/systemd/system-sleep
+        "if [ -d $$TMPDIR/usr/lib/systemd/system-sleep ]; then",
+        "  mkdir -p $$TMPDIR/lib/systemd",
+        "  mv $$TMPDIR/usr/lib/systemd/system-sleep $$TMPDIR/lib/systemd/",
+        "  rmdir $$TMPDIR/usr/lib/systemd 2>/dev/null || true",
+        "fi",
+        # Repack, mtime pinned for reproducibility.
+        "tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -czf $@ -C $$TMPDIR .",
+    ]),
+)
+
+# Regenerate md5sums after the path rewrite.
+genrule(
+    name = "fancontrol_md5sums",
+    srcs = [":fancontrol_data_rewritten"],
+    outs = ["fancontrol.md5sums"],
+    cmd = "\n".join([
+        "TMPDIR=$$(mktemp -d)",
+        "trap \"rm -rf $$TMPDIR\" EXIT",
+        "tar -xf $(SRCS) -C $$TMPDIR",
+        "cd $$TMPDIR && find . -type f -not -path './DEBIAN/*' | sed 's|^\\./||' | xargs md5sum > $$OLDPWD/$@",
+    ]),
+)
+
+sonic_deb(
+    name = "lm-sensors_{}.deb".format(VERSION),
+    package = "lm-sensors",
+    version = VERSION,
+    content = {},
+    data = "@lm_sensors_apt//lm-sensors:data",
+    md5sums_file = ":lm-sensors_md5sums",
+    depends = [
+        "libc6 (>= 2.34)",
+        "libsensors-config",
+        "libsensors5 (>= 1:3.6.0)",
+        "perl:any",
+        "kmod",
+    ],
+    maintainer = "SONiC Maintainers",
+    description = "utilities to read temperature/voltage/fan sensors",
+    section = "utils",
+)
+
+sonic_deb(
+    name = "libsensors5_{}.deb".format(VERSION),
+    package = "libsensors5",
+    version = VERSION,
+    content = {},
+    data = "@lm_sensors_apt//libsensors5:data",
+    md5sums_file = ":libsensors5_md5sums",
+    depends = [
+        "libsensors-config",
+        "libc6 (>= 2.34)",
+    ],
+    maintainer = "SONiC Maintainers",
+    description = "library to read temperature/voltage/fan sensors",
+    section = "libs",
+)
+
+sonic_deb(
+    name = "fancontrol_{}_all.deb".format(VERSION),
+    package = "fancontrol",
+    version = VERSION,
+    architecture = "all",
+    content = {},
+    data = ":fancontrol_data_rewritten",
+    md5sums_file = ":fancontrol_md5sums",
+    depends = [
+        "lm-sensors",
+        "lsb-base (>= 3.0-6)",
+    ],
+    maintainer = "SONiC Maintainers",
+    description = "utility to control the fan speed",
+    section = "utils",
+)
+
+# --- Approach B: cc rebuild for sensord ---
+# sensord sources: prog/sensord/{args,chips,lib,rrd,sense,sensord}.c
+# Links against: -lsensors -lrrd
+
+# Headers exposed via cc_library so `#include "lib/sensors.h"` and
+# `#include "version.h"` work whether built from the workspace root
+# (//src/lm-sensors) or via the module alias (@lm-sensors).
+# `includes` is resolved relative to the BUILD file's package.
+cc_library(
+    name = "sensord_hdrs",
+    hdrs = [
+        "lm-sensors-3.6.0/lib/error.h",
+        "lm-sensors-3.6.0/lib/sensors.h",
+        "lm-sensors-3.6.0/version.h",
+        "lm-sensors-3.6.0/prog/sensord/args.h",
+        "lm-sensors-3.6.0/prog/sensord/sensord.h",
+    ],
+    includes = [
+        "lm-sensors-3.6.0",
+        "lm-sensors-3.6.0/prog/sensord",
+    ],
+)
+
+cc_binary(
+    name = "sensord",
+    srcs = [
+        "lm-sensors-3.6.0/prog/sensord/args.c",
+        "lm-sensors-3.6.0/prog/sensord/chips.c",
+        "lm-sensors-3.6.0/prog/sensord/lib.c",
+        "lm-sensors-3.6.0/prog/sensord/rrd.c",
+        "lm-sensors-3.6.0/prog/sensord/sense.c",
+        "lm-sensors-3.6.0/prog/sensord/sensord.c",
+    ],
+    deps = [
+        ":sensord_hdrs",
+        "@lm_sensors_apt//libsensors-dev:libsensors",
+        "@lm_sensors_apt//librrd-dev:librrd",
+    ],
+    # rules_distroless doesn't wire up intra-package .so siblings (e.g.
+    # libbrotli1 ships libbrotlidec.so.1 + libbrotlicommon.so.1, but the
+    # generated cc_import for libbrotlidec doesn't dep on libbrotlicommon
+    # even though DT_NEEDED requires it). The transitive apt packages
+    # (libbrotli1, libglib2.0-0t64, etc.) are also NOT exposed via the
+    # @lm_sensors_apt alias — only top-level requested packages are.
+    # Approach B (explicit sibling deps) would require adding these as
+    # top-level packages in MODULE.bazel's apt.install just to reference
+    # them, which pollutes the deb download graph.
+    # Approach A: let ld skip the check; ld.so resolves at runtime inside
+    # the docker image where dpkg -i libbrotli1 lays down all 3 .so files
+    # in /usr/lib/<multiarch>/. Same pattern as son624 lldpd.
+    linkopts = [
+        "-Wl,--allow-shlib-undefined",
+    ],
+)
+
+# Rename debian/sensord.default -> etc/default/sensord (Debian install strips extension).
+genrule(
+    name = "sensord_default_renamed",
+    srcs = ["lm-sensors-3.6.0/debian/sensord.default"],
+    outs = ["sensord.default.renamed/sensord"],
+    cmd = "cp $< $@",
+)
+
+# Rename debian/sensord.init -> etc/init.d/sensord.
+genrule(
+    name = "sensord_init_renamed",
+    srcs = ["lm-sensors-3.6.0/debian/sensord.init"],
+    outs = ["sensord.init.renamed/sensord"],
+    cmd = "cp $< $@",
+)
+
+sonic_deb(
+    name = "sensord_{}.deb".format(VERSION),
+    package = "sensord",
+    version = VERSION,
+    content = {
+        "/usr/sbin:*:0755": [":sensord"],
+        "/etc/default:*:0644": [":sensord_default_renamed"],
+        "/etc/init.d:*:0755": [":sensord_init_renamed"],
+    },
+    depends = [
+        "libc6 (>= 2.34)",
+        "libsensors5 (>= 1:3.6.0)",
+        "librrd8t64 (>= 1.6.0)",
+        "lm-sensors",
+    ],
+    maintainer = "SONiC Maintainers",
+    description = "hardware sensor information logging daemon",
+    section = "utils",
+)
+
+# Aliases for docker-platform-monitor consumption
+[
+    alias(
+        name = "{}_{}.deb_data".format(pkg, VERSION),
+        actual = "@lm_sensors_apt//{}:data".format(pkg),
+    )
+    for pkg in [
+        "lm-sensors",
+        "libsensors5",
+    ]
+]
+
+alias(
+    name = "fancontrol_{}_all.deb_data".format(VERSION),
+    actual = "@lm_sensors_apt//fancontrol:data",
+)

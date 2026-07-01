@@ -17,13 +17,7 @@ apt.sources_list(
     architectures = ["amd64", "arm64"],
     components = ["main"],
     suites = ["trixie", "trixie-updates"],
-    uris = ["https://deb.debian.org/debian"],
-)
-apt.sources_list(
-    architectures = ["amd64", "arm64"],
-    components = ["main"],
-    suites = ["trixie-security"],
-    uris = ["https://security.debian.org/debian-security"],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
 )
 apt.install(
     dependency_set = "eventd_deps",
@@ -41,6 +35,6 @@ apt.install(
         "liblua5.1-0-dev:amd64",
         "liblua5.1-0-dev:arm64",
     ],
-    suites = ["trixie", "trixie-updates", "trixie-security"],
+    suites = ["trixie", "trixie-updates"],
 )
 use_repo(apt, "eventd_deps")

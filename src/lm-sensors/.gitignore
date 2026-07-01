@@ -3,3 +3,4 @@
 !Makefile
 !patch/
 !patch/*
+!*.bazel

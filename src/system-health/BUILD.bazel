@@ -1,0 +1,45 @@
+load("@aspect_rules_py//py:defs.bzl", "py_library")
+load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@tar.bzl//:tar.bzl", "tar")
+
+package(default_visibility = ["//visibility:public"])
+
+# setup.py: packages=['health_checker', 'tests'], scripts=['scripts/healthd']
+# install_requires=['natsort', 'docker', 'sonic-py-common']
+_HEALTH_CHECKER_SRCS = glob(["health_checker/*.py"])
+_TESTS_SRCS = glob(["tests/*.py"])
+_ALL_SRCS = _HEALTH_CHECKER_SRCS + _TESTS_SRCS
+
+py_library(
+    name = "sources",
+    srcs = _ALL_SRCS,
+    imports = ["."],
+)
+
+py_wheel(
+    name = "wheel",
+    distribution = "system-health",
+    version = "1.0",
+    requires = [
+        "natsort",
+        "docker",
+        "sonic-py-common",
+    ],
+    data_files = {"scripts/healthd": "scripts/healthd"},
+    strip_path_prefixes = ["src/system-health/"],
+    deps = [":sources"],
+)
+
+_PACKAGE_MTREE = [
+    "./usr/lib/python3/dist-packages/" + f +
+    " uid=0 gid=0 mode=0644 type=file content=$(location " + f + ")"
+    for f in _ALL_SRCS
+]
+
+tar(
+    name = "install",
+    srcs = _ALL_SRCS + ["scripts/healthd"],
+    mtree = _PACKAGE_MTREE + [
+        "./usr/local/bin/healthd uid=0 gid=0 mode=0755 type=file content=$(location scripts/healthd)",
+    ],
+)
