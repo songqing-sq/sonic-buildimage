@@ -158,3 +158,9 @@ local_path_override(
     module_name = "sonic-swss-common",
     path = "src/sonic-swss-common",
 )
+
+bazel_dep(name = "sonic-dash-api", version = "1.0.0")
+local_path_override(
+    module_name = "sonic-dash-api",
+    path = "src/sonic-dash-api",
+)
