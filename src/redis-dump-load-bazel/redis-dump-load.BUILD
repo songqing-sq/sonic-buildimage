@@ -7,7 +7,6 @@ package(default_visibility = ["//visibility:public"])
 
 VERSION = "1.1"
 
-# redisdl.py is already patched at fetch time via sonic_http_archive(patches=).
 py_library(
     name = "sources",
     srcs = ["redisdl.py"],

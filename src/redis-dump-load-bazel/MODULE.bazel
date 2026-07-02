@@ -9,8 +9,6 @@ bazel_dep(name = "tar.bzl", version = "0.8.1")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
 
-# Fetch upstream source from GitHub (non-SONiC repo, no fork needed).
-# Patch 0001 (use pipelines when dumping) applied at fetch time.
 sonic_http_archive = use_repo_rule("@sonic_build_infra//sonic_http_archive:sonic_http_archive.bzl", "sonic_http_archive")
 
 sonic_http_archive(

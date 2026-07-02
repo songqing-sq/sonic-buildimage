@@ -158,3 +158,6 @@
 [submodule "sonic_rules"]
 	path = sonic_rules
 	url = https://github.com/songqing-sq/sonic_rules.git
+[submodule "src/redis-dump-load"]
+	path = src/redis-dump-load
+	url = https://github.com/p/redis-dump-load.git
