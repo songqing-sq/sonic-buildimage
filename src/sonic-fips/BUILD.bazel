@@ -1,0 +1,141 @@
+load(":external_deb.bzl", "external_fips_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+# =============================================================================
+# sonic-fips — Microsoft SymCrypt OpenSSL provider + the FIPS-patched
+# upstream deb family that sonic-vs.bin installs when INCLUDE_FIPS=y
+# (default on per Makefile.work).
+#
+# Legacy: rules/sonic-fips.mk + src/sonic-fips/Makefile `curl` these .deb
+# files from https://packages.trafficmanager.net/public/fips/trixie/1.9.4/amd64
+# and `dpkg -i` them into the host filesystem. Only the files in
+# FIPS_BASEIMAGE_INSTALLERS are actually installed in the default build;
+# the remaining derived packages (FIPS_PYTHON_ALL, FIPS_GOLANG_ALL, the
+# rest of FIPS_KRB5_ALL like krb5-multidev/libkrb5-dev) are declared as
+# `add_extra_package` derivations for completeness but are NOT in the base
+# image. See sonic-fips_bazelmig.md for the exclusion rationale.
+#
+# Bazel: each .deb is downloaded via http_file in MODULE.bazel, then
+# `external_fips_deb` (this package's local macro) emits the standard
+# `<filename>.deb` + `<filename>.deb_data` + `<filename>.deb_statusd`
+# trio that the oci_image compose-skill expects.
+# =============================================================================
+
+# OpenSSL 3.5 FIPS family ------------------------------------------------------
+
+external_fips_deb(
+    name = "libssl3t64_3.5.4-1+fips.deb",
+    src = "@fips_libssl3t64//file",
+    package_name = "libssl3t64",
+)
+
+external_fips_deb(
+    name = "libssl-dev_3.5.4-1+fips.deb",
+    src = "@fips_libssl_dev//file",
+    package_name = "libssl-dev",
+)
+
+external_fips_deb(
+    name = "libssl-doc_3.5.4-1+fips_all.deb",
+    src = "@fips_libssl_doc//file",
+    package_name = "libssl-doc",
+)
+
+external_fips_deb(
+    name = "openssl_3.5.4-1+fips.deb",
+    src = "@fips_openssl//file",
+    package_name = "openssl",
+)
+
+# SymCrypt OpenSSL provider ----------------------------------------------------
+# Downloaded prebuilt (matches default SONIC_FIPS_BUILD_FROM_SOURCE=n in
+# src/sonic-fips/Makefile). Building from source via the sonic-fips repo
+# (autotools + jitterentropy + SymCrypt submodule) is deferred — see
+# sonic-fips_bazelmig.md.
+
+external_fips_deb(
+    name = "symcrypt-openssl_1.9.4.deb",
+    src = "@fips_symcrypt_openssl//file",
+    package_name = "symcrypt-openssl",
+)
+
+# OpenSSH 10.0 FIPS family -----------------------------------------------------
+
+external_fips_deb(
+    name = "openssh-client_10.0p1-7+fips.deb",
+    src = "@fips_openssh_client//file",
+    package_name = "openssh-client",
+)
+
+external_fips_deb(
+    name = "ssh_10.0p1-7+fips_all.deb",
+    src = "@fips_ssh//file",
+    package_name = "ssh",
+)
+
+external_fips_deb(
+    name = "openssh-sftp-server_10.0p1-7+fips.deb",
+    src = "@fips_openssh_sftp_server//file",
+    package_name = "openssh-sftp-server",
+)
+
+external_fips_deb(
+    name = "openssh-server_10.0p1-7+fips.deb",
+    src = "@fips_openssh_server//file",
+    package_name = "openssh-server",
+)
+
+# KRB5 1.21.3 FIPS family — only libk5crypto3/libkrb5support0/libkrb5-3/
+# libgssapi-krb5-2 are in FIPS_BASEIMAGE_INSTALLERS.
+# The rest (libkadm5clnt-mit12, libkadm5srv-mit12, libgssrpc4t64,
+# krb5-multidev, libkrb5-dev) are declared in FIPS_KRB5_ALL but NOT
+# installed by the default sonic-vs.bin build. See sonic-fips_bazelmig.md.
+
+external_fips_deb(
+    name = "libk5crypto3_1.21.3-5+fips.deb",
+    src = "@fips_libk5crypto3//file",
+    package_name = "libk5crypto3",
+)
+
+external_fips_deb(
+    name = "libkrb5support0_1.21.3-5+fips.deb",
+    src = "@fips_libkrb5support0//file",
+    package_name = "libkrb5support0",
+)
+
+external_fips_deb(
+    name = "libkrb5-3_1.21.3-5+fips.deb",
+    src = "@fips_libkrb5_3//file",
+    package_name = "libkrb5-3",
+)
+
+external_fips_deb(
+    name = "libgssapi-krb5-2_1.21.3-5+fips.deb",
+    src = "@fips_libgssapi_krb5_2//file",
+    package_name = "libgssapi-krb5-2",
+)
+
+# Aggregation filegroup for downstream consumers (the OCI image composer
+# typically lists each `<deb>_data` + `<deb>_statusd` individually — this
+# is just a convenience for tooling that wants to enumerate everything
+# this module produces).
+filegroup(
+    name = "all_fips_debs",
+    srcs = [
+        ":libssl3t64_3.5.4-1+fips.deb",
+        ":libssl-dev_3.5.4-1+fips.deb",
+        ":libssl-doc_3.5.4-1+fips_all.deb",
+        ":openssl_3.5.4-1+fips.deb",
+        ":symcrypt-openssl_1.9.4.deb",
+        ":openssh-client_10.0p1-7+fips.deb",
+        ":ssh_10.0p1-7+fips_all.deb",
+        ":openssh-sftp-server_10.0p1-7+fips.deb",
+        ":openssh-server_10.0p1-7+fips.deb",
+        ":libk5crypto3_1.21.3-5+fips.deb",
+        ":libkrb5support0_1.21.3-5+fips.deb",
+        ":libkrb5-3_1.21.3-5+fips.deb",
+        ":libgssapi-krb5-2_1.21.3-5+fips.deb",
+    ],
+    visibility = ["//visibility:public"],
+)

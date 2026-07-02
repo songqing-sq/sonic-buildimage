@@ -1,0 +1,58 @@
+module(
+    name = "iproute2",
+    version = "6.15.0-1",
+)
+
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+# =============================================================================
+# iproute2 — upstream Debian trixie package re-wrapped as a SONiC .deb.
+#
+# The legacy SONiC build (src/iproute2/Makefile) fetches the Debian source,
+# stg-imports patch/0001-bridge-fdb-Add-protocol-field-support.patch (EVPN
+# Multihoming protocol field for bridge fdb), bumps the version to
+# 6.15.0-1+sonic.0, and runs `dpkg-buildpackage`. Approach A re-wraps the
+# trixie apt-extracted data tar into a SONiC-named .deb so the docker-base
+# dpkg-install path keeps working without invoking dpkg-buildpackage in the
+# Bazel sandbox.
+#
+# Trade-off: the SONiC EVPN patch (bridge/fdb.c, etc/iproute2/rt_protos,
+# include/uapi/linux/rtnetlink.h, lib/rt_names.c) is NOT applied — this is
+# a functional source patch that Approach A cannot express. See
+# iproute2_bazelmig.md §1 for the impact analysis (EVPN Multihoming
+# bridge-fdb `proto` field lost) and the fallback plan.
+#
+# Trixie snapshot 20260409 ships iproute2 6.15.0-1 (matches SONiC's
+# IPROUTE2_DEBIAN_VERSION exactly). The Bazel .deb is named
+# `iproute2_6.15.0-1_amd64.deb`, not `_6.15.0-1+sonic.0_amd64.deb`.
+# =============================================================================
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = [
+        "trixie",
+        "trixie-updates",
+    ],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+apt.install(
+    dependency_set = "iproute2_apt",
+    packages = ["iproute2"],
+    suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
+)
+apt.lock(
+    into = "iproute2_packages.lock",
+)
+use_repo(apt, "iproute2_apt")

@@ -1,0 +1,78 @@
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "6.15.0-1"
+
+# =============================================================================
+# iproute2 — upstream Debian trixie package re-wrapped as a SONiC .deb.
+#
+# The legacy SONiC build (src/iproute2/Makefile) downloads
+# iproute2_6.15.0-1.{dsc,orig.tar.gz,debian.tar.xz}, initialises a git repo,
+# stg-imports patch/series (bridge-fdb protocol field for EVPN Multihoming),
+# bumps `debian/changelog` to 6.15.0-1+sonic.0, and runs `dpkg-buildpackage`.
+# Approach A re-wraps the trixie apt-extracted data tar into a SONiC-named .deb
+# so docker-base-trixie's dpkg-install path keeps working without invoking
+# dpkg-buildpackage in the Bazel sandbox.
+#
+# Trade-offs vs. legacy (see iproute2_bazelmig.md):
+#   - Version skew: trixie apt ships 6.15.0-1 (matches SONiC pin exactly).
+#     Bazel emits `iproute2_6.15.0-1_amd64.deb`; Make emits
+#     `iproute2_6.15.0-1+sonic.0_amd64.deb` (extra `+sonic.0` version suffix
+#     is only used to make the local build win over the distro package,
+#     not needed here since Bazel provides its own package).
+#   - `0001-bridge-fdb-Add-protocol-field-support.patch` is NOT applied.
+#     `bridge fdb ... proto <PROTO>` display + attach is lost.
+#     Impacted callers: EVPN Multihoming setups relying on rt_protos entries
+#     for control-plane vs data-plane MAC classification.
+# =============================================================================
+
+# Extract the upstream Debian control tar's md5sums file so sonic_deb can bake
+# it into the SONiC-renamed control tar (dpkg_statusd.sh requires ./md5sums).
+genrule(
+    name = "iproute2_md5sums",
+    srcs = ["@iproute2_apt//iproute2:control"],
+    outs = ["iproute2.md5sums"],
+    cmd = "tar -xf $(SRCS) -O ./md5sums > $@",
+)
+
+sonic_deb(
+    name = "iproute2_{}.deb".format(VERSION),
+    package = "iproute2",
+    version = VERSION,
+    # `content` is unused when `data` (a pre-built data tar) is provided;
+    # sonic_deb still requires it positionally.
+    content = {},
+    data = "@iproute2_apt//iproute2:data",
+    md5sums_file = ":iproute2_md5sums",
+    # Depends copied verbatim from trixie snapshot Packages.xz for iproute2
+    # 6.15.0-1. `t64` variants reflect Debian's 64-bit time_t transition.
+    depends = [
+        "debconf (>= 0.5) | debconf-2.0",
+        "libbpf1 (>= 1:0.6.0)",
+        "libc6 (>= 2.38)",
+        "libcap2 (>= 1:2.10)",
+        "libdb5.3t64",
+        "libelf1t64 (>= 0.131)",
+        "libmnl0 (>= 1.0.3-4~)",
+        "libselinux1 (>= 3.1~)",
+        "libtirpc3t64 (>= 1.0.2)",
+        "libxtables12 (>= 1.6.0+snapshot20161117)",
+        "libcap2-bin",
+    ],
+    maintainer = "Debian Kernel Team <debian-kernel@lists.debian.org>",
+    description = "networking and traffic control tools\n The iproute2 suite is a collection of utilities for networking and\n traffic control.\n .\n These tools communicate with the Linux kernel via the (rt)netlink\n interface, providing advanced features not available through the\n legacy net-tools commands 'ifconfig' and 'route'.",
+    section = "net",
+    homepage = "https://wiki.linuxfoundation.org/networking/iproute2",
+    visibility = ["//visibility:public"],
+)
+
+# Re-export the upstream apt-extracted data tar under the canonical `_data`
+# label so callers (e.g. docker-base-trixie) can use the same
+# `<deb>_data` + `<deb>_statusd` pair as other sonic-built debs without needing
+# visibility into the @iproute2_apt extension repo.
+alias(
+    name = "iproute2_{}.deb_data".format(VERSION),
+    actual = "@iproute2_apt//iproute2:data",
+    visibility = ["//visibility:public"],
+)
