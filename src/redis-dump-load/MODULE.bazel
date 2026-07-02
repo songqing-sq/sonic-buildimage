@@ -1,0 +1,25 @@
+module(
+    name = "redis-dump-load-py3",
+    version = "1.1",
+)
+
+bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "aspect_rules_py", version = "1.8.4")
+bazel_dep(name = "tar.bzl", version = "0.8.1")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+
+# Fetch upstream source from GitHub (non-SONiC repo, no fork needed).
+# Patch 0001 (use pipelines when dumping) applied at fetch time.
+sonic_http_archive = use_repo_rule("@sonic_build_infra//sonic_http_archive:sonic_http_archive.bzl", "sonic_http_archive")
+
+sonic_http_archive(
+    name = "redis_dump_load_src",
+    urls = ["https://github.com/p/redis-dump-load/archive/758549795174dc6b3be70810e0e4d6308f80f1a3.tar.gz"],
+    sha256 = "aece61c694f887af8307e8e82d128ca08f2768017d98ef606ca1380f6ceb593e",
+    strip_prefix = "redis-dump-load-758549795174dc6b3be70810e0e4d6308f80f1a3",
+    build_file_template = "//:redis-dump-load.BUILD",
+    patches = [
+        "//patch:0001-Use-pipelines-when-dumping-52.patch",
+    ],
+)

@@ -58,9 +58,6 @@
 [submodule "platform/mellanox/hw-management/hw-mgmt"]
 	path = platform/mellanox/hw-management/hw-mgmt
 	url = https://github.com/Mellanox/hw-mgmt
-[submodule "src/redis-dump-load"]
-	path = src/redis-dump-load
-	url = https://github.com/p/redis-dump-load.git
 [submodule "src/scapy"]
 	path = src/scapy
 	url = https://github.com/secdev/scapy.git

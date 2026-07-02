@@ -205,3 +205,9 @@ local_path_override(
     module_name = "lm-sensors",
     path = "src/lm-sensors",
 )
+
+bazel_dep(name = "asyncsnmp", version = "2.1.0")
+local_path_override(
+    module_name = "asyncsnmp",
+    path = "src/sonic-snmpagent",
+)
