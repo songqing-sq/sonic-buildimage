@@ -40,6 +40,19 @@ use_repo(rust, "rust_toolchains")
 
 register_toolchains("@rust_toolchains//:all")
 
+crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
+crate.from_cargo(
+    name = "watchdog_crates",
+    cargo_lockfile = "//dockers/docker-gnmi-watchdog/watchdog:Cargo.lock",
+    manifests = ["//dockers/docker-gnmi-watchdog/watchdog:Cargo.toml"],
+)
+crate.from_cargo(
+    name = "bmp_watchdog_crates",
+    cargo_lockfile = "//dockers/docker-bmp-watchdog/watchdog:Cargo.lock",
+    manifests = ["//dockers/docker-bmp-watchdog/watchdog:Cargo.toml"],
+)
+use_repo(crate, "watchdog_crates", "bmp_watchdog_crates")
+
 bazel_dep(name = "bazel_lib", version = "3.1.1")
 bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
 git_override(
