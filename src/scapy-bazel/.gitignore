@@ -1,6 +1,6 @@
 *
 !.gitignore
-!Makefile
+!*.bazel
+!*.BUILD
 !patch/
 !patch/*
-!*.bazel

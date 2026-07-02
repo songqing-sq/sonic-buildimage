@@ -205,3 +205,33 @@ local_path_override(
     module_name = "lm-sensors",
     path = "src/lm-sensors",
 )
+
+bazel_dep(name = "socat", version = "1.8.0.3-1")
+local_path_override(
+    module_name = "socat",
+    path = "src/socat",
+)
+
+bazel_dep(name = "iproute2", version = "6.15.0-1")
+local_path_override(
+    module_name = "iproute2",
+    path = "src/iproute2",
+)
+
+bazel_dep(name = "sonic-fips", version = "1.9.4")
+local_path_override(
+    module_name = "sonic-fips",
+    path = "src/sonic-fips",
+)
+
+bazel_dep(name = "scapy", version = "2.6.1.dev0")
+local_path_override(
+    module_name = "scapy",
+    path = "src/scapy-bazel",
+)
+
+bazel_dep(name = "sonic-dbsyncd", version = "2.0.0")
+local_path_override(
+    module_name = "sonic-dbsyncd",
+    path = "src/sonic-dbsyncd",
+)

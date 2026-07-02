@@ -1,0 +1,25 @@
+package(default_visibility = ["//visibility:public"])
+
+# Re-export targets from the sonic_http_archive source repo.
+# sonic_http_archive generates BUILD.bazel in @scapy_src from scapy.BUILD;
+# this file makes those visible as @scapy-py3//:target.
+
+exports_files(glob(["patch/*.patch"]) + ["patch/series", "scapy.BUILD"])
+
+alias(
+    name = "wheel",
+    actual = "@scapy_src//:wheel",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "install",
+    actual = "@scapy_src//:install",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "sources",
+    actual = "@scapy_src//:sources",
+    visibility = ["//visibility:public"],
+)
