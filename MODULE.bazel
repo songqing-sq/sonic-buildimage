@@ -260,3 +260,20 @@ local_path_override(
     module_name = "sonic-dbsyncd",
     path = "src/sonic-dbsyncd",
 )
+
+bazel_dep(name = "sonic-sairedis", version = "1.0.0")
+local_path_override(
+    module_name = "sonic-sairedis",
+    path = "src/sonic-sairedis",
+)
+
+# SAI is a git submodule vendored under src/sonic-sairedis/SAI. Since Bzlmod
+# local_path_override paths from a non-root module are resolved relative to
+# the source root, the override for `sai` must be declared here (root) with
+# the workspace-relative path.
+bazel_dep(name = "sai", version = "0.0.0")
+local_path_override(
+    module_name = "sai",
+    path = "src/sonic-sairedis/SAI",
+)
+

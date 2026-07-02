@@ -168,3 +168,5 @@ apt-retries-count
 sonic-slave-*
 .qoder/
 logs/
+dpkg/
+src/p4lang/p4lang-pi-0.1.1/
