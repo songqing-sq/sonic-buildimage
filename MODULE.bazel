@@ -224,3 +224,9 @@ local_path_override(
     module_name = "asyncsnmp",
     path = "src/sonic-snmpagent",
 )
+
+bazel_dep(name = "sonic-dash-api", version = "1.0.0")
+local_path_override(
+    module_name = "sonic-dash-api",
+    path = "src/sonic-dash-api",
+)
