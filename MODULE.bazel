@@ -291,3 +291,15 @@ local_path_override(
     module_name = "dhcprelay",
     path = "src/dhcprelay",
 )
+
+bazel_dep(name = "isc-dhcp", version = "4.4.3-P1-2", repo_name = "isc_dhcp")
+local_path_override(
+    module_name = "isc-dhcp",
+    path = "src/isc-dhcp",
+)
+
+bazel_dep(name = "sonic-dhcp-utilities", version = "1.0")
+local_path_override(
+    module_name = "sonic-dhcp-utilities",
+    path = "src/sonic-dhcp-utilities",
+)
