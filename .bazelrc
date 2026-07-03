@@ -15,7 +15,6 @@ build --stamp
 # === Remote Cache ===
 common --remote_cache=grpc://11.159.98.184:9092
 common --experimental_remote_downloader=grpc://11.159.98.184:9092
-common --experimental_remote_downloader_local_fallback
 
 # === ### HTTPS ===
 common --repo_env=https_proxy=http://11.161.18.240:3128
