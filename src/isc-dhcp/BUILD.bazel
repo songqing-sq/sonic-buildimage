@@ -1,0 +1,61 @@
+# Re-export targets from the sonic_http_archive source repo.
+# sonic_http_archive generates BUILD.bazel in @isc_dhcp_src;
+# this file makes them visible as @isc_dhcp//:target.
+#
+# Currently exposes the source filegroup and the generated config.h header;
+# cc_library/cc_binary/sonic_deb targets will be added incrementally as the
+# native port progresses (see isc-dhcp.BUILD header for the list).
+
+alias(
+    name = "all_sources",
+    actual = "@isc_dhcp_src//:all_sources",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "config_h",
+    actual = "@isc_dhcp_src//:config_h",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "bind_sources",
+    actual = "@isc_dhcp_bind_src//:all_sources",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libomapi",
+    actual = "@isc_dhcp_src//:libomapi",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libdhcp",
+    actual = "@isc_dhcp_src//:libdhcp",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "dhcrelay",
+    actual = "@isc_dhcp_src//:dhcrelay",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "isc-dhcp-relay_4.4.3-P1-2.deb",
+    actual = "@isc_dhcp_src//:isc-dhcp-relay_4.4.3-P1-2.deb",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "isc-dhcp-relay_4.4.3-P1-2.deb_data",
+    actual = "@isc_dhcp_src//:isc-dhcp-relay_4.4.3-P1-2.deb_data",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "isc-dhcp-relay_4.4.3-P1-2.deb_statusd",
+    actual = "@isc_dhcp_src//:isc-dhcp-relay_4.4.3-P1-2.deb_statusd",
+    visibility = ["//visibility:public"],
+)

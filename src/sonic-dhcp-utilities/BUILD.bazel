@@ -1,0 +1,107 @@
+load("@aspect_rules_py//py:defs.bzl", "py_library")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@tar.bzl", "tar")
+
+# install_requires (third-party pip): psutil, freezegun. Consuming dockers must
+# list these in their pip_layer site_packages. sonic-py-common (sibling SONiC
+# wheel) ships via its own :install tar, not via pip.
+
+# Sources-only library: input for the .whl artifact build. The dhcp_option.csv
+# is declared as `data` so py_wheel packages it alongside the dhcpservd module
+# (mirrors setup.py `package_data`).
+py_library(
+    name = "sources",
+    srcs = glob(["dhcp_utilities/**/*.py"]),
+    data = ["dhcp_utilities/dhcpservd/dhcp_option.csv"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+# Wheel artifact mirroring rules/sonic-dhcp-utilities.mk:
+#   sonic_dhcp_utilities-1.0-py3-none-any.whl
+py_wheel(
+    name = "wheel",
+    distribution = "sonic_dhcp_utilities",
+    version = "1.0",
+    requires = [
+        "psutil",
+        "freezegun",
+    ],
+    entry_points = {
+        "console_scripts": [
+            "dhcprelayd = dhcp_utilities.dhcprelayd.dhcprelayd:main",
+            "dhcpservd = dhcp_utilities.dhcpservd.dhcpservd:main",
+        ],
+    },
+    deps = [":sources"],
+    visibility = ["//visibility:public"],
+)
+
+# Replicates the `dhcprelayd = dhcp_utilities.dhcprelayd.dhcprelayd:main`
+# console script that pip generates at install time.
+write_file(
+    name = "dhcprelayd_console_script",
+    out = "dhcprelayd",
+    content = [
+        "#!/usr/bin/python3",
+        "# -*- coding: utf-8 -*-",
+        "import re",
+        "import sys",
+        "from dhcp_utilities.dhcprelayd.dhcprelayd import main",
+        "if __name__ == '__main__':",
+        "    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])",
+        "    sys.exit(main())",
+    ],
+)
+
+# Replicates the `dhcpservd = dhcp_utilities.dhcpservd.dhcpservd:main` console
+# script that pip generates at install time.
+write_file(
+    name = "dhcpservd_console_script",
+    out = "dhcpservd",
+    content = [
+        "#!/usr/bin/python3",
+        "# -*- coding: utf-8 -*-",
+        "import re",
+        "import sys",
+        "from dhcp_utilities.dhcpservd.dhcpservd import main",
+        "if __name__ == '__main__':",
+        "    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])",
+        "    sys.exit(main())",
+    ],
+)
+
+# Tar layer ready for oci_image consumption: lays out the wheel's full content
+# at the paths pip3 install would use on Debian system Python.
+#   packages       -> /usr/lib/python3/dist-packages/dhcp_utilities/...
+#   package_data   -> /usr/lib/python3/dist-packages/dhcp_utilities/dhcpservd/dhcp_option.csv
+#   console_scripts-> /usr/local/bin/{dhcprelayd,dhcpservd}
+tar(
+    name = "install",
+    srcs = [
+        "dhcp_utilities/common/__init__.py",
+        "dhcp_utilities/common/dhcp_db_monitor.py",
+        "dhcp_utilities/common/utils.py",
+        "dhcp_utilities/dhcprelayd/dhcprelayd.py",
+        "dhcp_utilities/dhcpservd/dhcp_cfggen.py",
+        "dhcp_utilities/dhcpservd/dhcp_lease.py",
+        "dhcp_utilities/dhcpservd/dhcp_option.csv",
+        "dhcp_utilities/dhcpservd/dhcpservd.py",
+        ":dhcprelayd_console_script",
+        ":dhcpservd_console_script",
+    ],
+    mtree = [
+        "./usr/lib/python3/dist-packages/dhcp_utilities/common/__init__.py uid=0 gid=0 mode=0644 type=file content=$(location dhcp_utilities/common/__init__.py)",
+        "./usr/lib/python3/dist-packages/dhcp_utilities/common/dhcp_db_monitor.py uid=0 gid=0 mode=0644 type=file content=$(location dhcp_utilities/common/dhcp_db_monitor.py)",
+        "./usr/lib/python3/dist-packages/dhcp_utilities/common/utils.py uid=0 gid=0 mode=0644 type=file content=$(location dhcp_utilities/common/utils.py)",
+        "./usr/lib/python3/dist-packages/dhcp_utilities/dhcprelayd/dhcprelayd.py uid=0 gid=0 mode=0644 type=file content=$(location dhcp_utilities/dhcprelayd/dhcprelayd.py)",
+        "./usr/lib/python3/dist-packages/dhcp_utilities/dhcpservd/dhcp_cfggen.py uid=0 gid=0 mode=0644 type=file content=$(location dhcp_utilities/dhcpservd/dhcp_cfggen.py)",
+        "./usr/lib/python3/dist-packages/dhcp_utilities/dhcpservd/dhcp_lease.py uid=0 gid=0 mode=0644 type=file content=$(location dhcp_utilities/dhcpservd/dhcp_lease.py)",
+        "./usr/lib/python3/dist-packages/dhcp_utilities/dhcpservd/dhcp_option.csv uid=0 gid=0 mode=0644 type=file content=$(location dhcp_utilities/dhcpservd/dhcp_option.csv)",
+        "./usr/lib/python3/dist-packages/dhcp_utilities/dhcpservd/dhcpservd.py uid=0 gid=0 mode=0644 type=file content=$(location dhcp_utilities/dhcpservd/dhcpservd.py)",
+        "./usr/local/bin/dhcprelayd uid=0 gid=0 mode=0755 type=file content=$(location :dhcprelayd_console_script)",
+        "./usr/local/bin/dhcpservd uid=0 gid=0 mode=0755 type=file content=$(location :dhcpservd_console_script)",
+    ],
+    visibility = ["//visibility:public"],
+)
