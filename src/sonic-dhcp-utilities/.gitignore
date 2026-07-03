@@ -2,3 +2,7 @@
 build/
 dist/
 sonic_dhcp_utilities.egg-info/
+!*.bazel
+!*.BUILD
+!*.bzl
+!*.build

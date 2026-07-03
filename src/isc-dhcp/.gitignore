@@ -3,3 +3,6 @@
 !Makefile
 !patch/
 !patch/*
+!*.build
+!*.bazel
+!*.BUILD
