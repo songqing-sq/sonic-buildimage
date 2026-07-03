@@ -7,6 +7,19 @@ load("@tar.bzl", "tar")
 package(default_visibility = ["//visibility:public"])
 
 exports_files(["uv.lock"])
+exports_files(glob(["yang-models/*.yang"]))
+exports_files(glob(["cvlyang-models/*.yang"]))
+
+filegroup(
+    name = "cvlyang_models_files",
+    srcs = glob(["cvlyang-models/*.yang"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "all_yang_models",
+    srcs = glob(["yang-models/*.yang"]),
+)
 
 # Files rendered from yang-templates/*.yang.j2 (twice — once with
 # yang_model_type="py" → yang-models/, once with "cvl" → cvlyang-models/).

@@ -266,6 +266,7 @@ sonic_shared_library_versioned(
     copts = [
         "-DLIBYANG_BUILD",
         "-DLY_XXHASH_SUPPORT",
+        "-fvisibility=hidden",
         "-std=c11",
         "-Wall",
         "-Wextra",

@@ -368,6 +368,7 @@ sonic_deb(
     package = "libnl-3-200",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    section = "libs",
     description = "libnl generic netlink library",
     content = {
         # Debian's libnl-3-200.install moves the .so.* files from
@@ -388,6 +389,7 @@ sonic_deb(
     package = "libnl-3-dev",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    section = "libdevel",
     description = "development library and header files for libnl-3",
     content = {
         "/usr/include/libnl3:include/:0644": [":libnl_3_hdr_files"],
@@ -411,6 +413,7 @@ sonic_deb(
     package = "libnl-genl-3-200",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    section = "libs",
     description = "libnl generic netlink library",
     content = {
         # debian/libnl-genl-3-200.install moves the .so.* to /lib/<multiarch>/.
@@ -432,6 +435,7 @@ sonic_deb(
     package = "libnl-genl-3-dev",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    section = "libdevel",
     description = "development library and header files for libnl-genl-3",
     content = {
         "${LIBDIR}/pkgconfig:0644": [
@@ -456,6 +460,7 @@ sonic_deb(
     package = "libnl-route-3-200",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    section = "libs",
     description = "libnl route library",
     content = {
         "${LIBDIR}:*:0644": [":libnl_route_3_files"],
@@ -476,6 +481,7 @@ sonic_deb(
     package = "libnl-route-3-dev",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    section = "libdevel",
     description = "development library and header files for libnl-route-3",
     content = {
         "${LIBDIR}/pkgconfig:0644": [
@@ -500,6 +506,7 @@ sonic_deb(
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
     description = "libnl netfilter library",
+    section = "libs",
     content = {
         "${LIBDIR}:*:0644": [":libnl_nf_3_files"],
     },
@@ -519,6 +526,7 @@ sonic_deb(
     package = "libnl-nf-3-dev",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    section = "libdevel",
     description = "development library and header files for libnl-nf-3",
     content = {
         "${LIBDIR}/pkgconfig:0644": [
@@ -543,6 +551,7 @@ sonic_deb(
     package = "libnl-cli-3-200",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    section = "libs",
     description = "libnl CLI library",
     content = {
         "${LIBDIR}:*:0644": [":libnl_cli_3_files"],
@@ -580,6 +589,7 @@ sonic_deb(
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
     description = "development library and header files for libnl-cli-3",
+    section = "libdevel",
     content = {
         "${LIBDIR}/pkgconfig:0644": [
             ":libnl3_cli_pc_generated",
@@ -623,8 +633,8 @@ sonic_deb(
 # accepts list concatenation, so we splice this single-element select() into
 # each content list to pick the right multiarch dir per target arch.
 _LIBDIR_LINE_SELECT = select({
-    "@platforms//cpu:x86_64": ["libdir=$${prefix}/lib/x86_64-linux-gnu"],
-    "@platforms//cpu:aarch64": ["libdir=$${prefix}/lib/aarch64-linux-gnu"],
+    "@platforms//cpu:x86_64": ["libdir=${prefix}/lib/x86_64-linux-gnu"],
+    "@platforms//cpu:aarch64": ["libdir=${prefix}/lib/aarch64-linux-gnu"],
 })
 
 write_file(
@@ -632,16 +642,16 @@ write_file(
     out = "libnl-3.0.pc",
     content = [
         "prefix=/usr",
-        "exec_prefix=$${prefix}",
+        "exec_prefix=${prefix}",
     ] + _LIBDIR_LINE_SELECT + [
-        "includedir=$${prefix}/include/libnl3",
+        "includedir=${prefix}/include",
         "",
-        "Name: libnl-3.0",
+        "Name: libnl",
         "Description: Convenience library for netlink sockets",
         "Version: 3.7.0",
-        "Libs: -L$${libdir} -lnl-3",
-        "Libs.private: -lpthread -lm",
-        "Cflags: -I$${includedir}",
+        "Libs: -L${libdir} -lnl-3",
+        "Libs.private: -lpthread ",
+        "Cflags: -I${includedir}/libnl3",
         "",
     ],
 )
@@ -651,16 +661,16 @@ write_file(
     out = "libnl-genl-3.0.pc",
     content = [
         "prefix=/usr",
-        "exec_prefix=$${prefix}",
+        "exec_prefix=${prefix}",
     ] + _LIBDIR_LINE_SELECT + [
-        "includedir=$${prefix}/include/libnl3",
+        "includedir=${prefix}/include",
         "",
-        "Name: libnl-genl-3.0",
+        "Name: libnl-genl",
         "Description: Generic Netlink Library",
         "Version: 3.7.0",
-        "Requires: libnl-3.0 >= 3.7.0",
-        "Libs: -L$${libdir} -lnl-genl-3",
-        "Cflags: -I$${includedir}",
+        "Requires: libnl-3.0",
+        "Libs: -L${libdir} -lnl-genl-3",
+        "Cflags: -I${includedir}/libnl3",
         "",
     ],
 )
@@ -670,16 +680,16 @@ write_file(
     out = "libnl-route-3.0.pc",
     content = [
         "prefix=/usr",
-        "exec_prefix=$${prefix}",
+        "exec_prefix=${prefix}",
     ] + _LIBDIR_LINE_SELECT + [
-        "includedir=$${prefix}/include/libnl3",
+        "includedir=${prefix}/include",
         "",
-        "Name: libnl-route-3.0",
-        "Description: Routing/link Library",
+        "Name: libnl-route",
+        "Description: Netlink Routing Family Library",
         "Version: 3.7.0",
-        "Requires: libnl-3.0 >= 3.7.0",
-        "Libs: -L$${libdir} -lnl-route-3",
-        "Cflags: -I$${includedir}",
+        "Requires: libnl-3.0",
+        "Libs: -L${libdir} -lnl-route-3",
+        "Cflags: -I${includedir}/libnl3",
         "",
     ],
 )
@@ -689,16 +699,16 @@ write_file(
     out = "libnl-nf-3.0.pc",
     content = [
         "prefix=/usr",
-        "exec_prefix=$${prefix}",
+        "exec_prefix=${prefix}",
     ] + _LIBDIR_LINE_SELECT + [
-        "includedir=$${prefix}/include/libnl3",
+        "includedir=${prefix}/include",
         "",
-        "Name: libnl-nf-3.0",
+        "Name: libnl-nf",
         "Description: Netfilter Netlink Library",
         "Version: 3.7.0",
-        "Requires: libnl-3.0 >= 3.7.0",
-        "Libs: -L$${libdir} -lnl-nf-3",
-        "Cflags: -I$${includedir}",
+        "Requires: libnl-route-3.0",
+        "Libs: -L${libdir} -lnl-nf-3",
+        "Cflags: -I${includedir}/libnl3",
         "",
     ],
 )
@@ -708,16 +718,16 @@ write_file(
     out = "libnl-cli-3.0.pc",
     content = [
         "prefix=/usr",
-        "exec_prefix=$${prefix}",
+        "exec_prefix=${prefix}",
     ] + _LIBDIR_LINE_SELECT + [
-        "includedir=$${prefix}/include/libnl3",
+        "includedir=${prefix}/include",
         "",
-        "Name: libnl-cli-3.0",
-        "Description: CLI Netlink Library",
+        "Name: libnl-cli",
+        "Description: Command Line Interface library for netlink sockets",
         "Version: 3.7.0",
-        "Requires: libnl-3.0 >= 3.7.0 libnl-route-3.0 >= 3.7.0 libnl-genl-3.0 >= 3.7.0 libnl-nf-3.0 >= 3.7.0",
-        "Libs: -L$${libdir} -lnl-cli-3",
-        "Cflags: -I$${includedir}",
+        "Libs: -L${libdir} -lnl-cli-3",
+        "Cflags: -I${includedir}",
+        "Requires: libnl-3.0 libnl-genl-3.0 libnl-nf-3.0 libnl-route-3.0",
         "",
     ],
 )
