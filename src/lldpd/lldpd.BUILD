@@ -219,6 +219,13 @@ cc_library(
     ],
     deps = [":lldpd_private_headers"],
     copts = LLDPD_COPTS,
+    # Force the compat .a into every dependent link, even when Bazel's
+    # cc_binary + dynamic_deps machinery would otherwise elide it because a
+    # shared library on dynamic_deps has libcompat in its exports_filter.
+    # We need strtonum in the lldpcli binary directly (glibc doesn't ship
+    # it, the daemon and CLI both reference it, and liblldpctl.so's version
+    # script hides it), so alwayslink is the correct posture here.
+    alwayslink = True,
 )
 
 # =============================================================================
@@ -266,6 +273,7 @@ cc_library(
     hdrs = ["src/lib/fixedpoint.h"],
     deps = [":lldpd_private_headers"],
     copts = LLDPD_COPTS,
+    alwayslink = True,
 )
 
 # =============================================================================
@@ -305,9 +313,11 @@ sonic_shared_library_versioned(
         ":libfixedpoint",
         ":libcompat",
     ],
-    copts = LLDPD_COPTS + [
-        "-fvisibility=hidden",
-    ],
+    # No exports_filter needed: no downstream cc_binary uses dynamic_deps on
+    # this cc_shared_library. lldpcli links :lldpctl via `deps` (static), so
+    # Bazel's "linked-but-not-exported" check is not triggered. See comment
+    # on the lldpcli cc_binary for the trade-off vs. Make's dynamic linkage.
+    copts = LLDPD_COPTS,
     linkopts = [
         "-Wl,--version-script=$(location src/lib/lldpctl.map)",
     ],
@@ -383,6 +393,25 @@ cc_library(
 
 # =============================================================================
 # lldpd binary
+#
+# features/-runtime_library_search_directories: disable the Bazel cc toolchain
+# feature that appends `$ORIGIN/../../_solib_k8/...` RPATH entries pointing
+# into the runfiles tree. Those paths do NOT exist on the target /usr/sbin/
+# install layout, and the Make baseline lldpd ships with no RPATH/RUNPATH at
+# all -- so dropping the feature yields a clean binary that matches upstream.
+#
+# -Wl,--as-needed: pkg-config Libs.private on trixie's libsnmp-dev pulls in
+# the full net-snmp private link line (libmariadb, libperl, libwrap, libssl,
+# libcrypto, libz, libselinux, libpcre2, libsensors, libpci, libudev,
+# libevent_core/extra/openssl/pthreads, ...). With --as-needed, ld only emits
+# DT_NEEDED for shared libraries that resolve at least one referenced symbol,
+# stripping the transitive junk and matching Make's compact NEEDED list of
+# libnetsnmp*/libevent/libcap/libbsd/libc.
+#
+# -lbsd: Make's lldpd links against libbsd (privsep chroot uses BSD-only
+# helpers: strtonum/setproctitle wrappers via compat/). Force the direct
+# NEEDED entry so runtime resolution matches; the apt libbsd-dev package is
+# already in @lldpd_deps.
 # =============================================================================
 cc_binary(
     name = "lldpd",
@@ -392,11 +421,21 @@ cc_binary(
         "@lldpd_deps//libsnmp-dev:libsnmp",
         "@lldpd_deps//libevent-dev:libevent",
         "@lldpd_deps//libcap-dev:libcap",
-    ],
+        # rules_distroless-generated @lldpd_deps//libbsd-dev:libbsd is unusable
+        # here (its cc_import lists a raw file label from a sibling apt repo in
+        # `deps`, which Bazel rejects as misplaced). Bypass the -dev wrapper
+        # and depend on the runtime libbsd0's cc_import directly (per-arch).
+    ] + select({
+        "@platforms//cpu:x86_64":  ["@trixie_libbsd0-amd64_0.12.2-2//:libbsd.so.0"],
+        "@platforms//cpu:aarch64": ["@trixie_libbsd0-arm64_0.12.2-2//:libbsd.so.0"],
+    }),
     copts = LLDPD_COPTS + ["-Isrc/daemon"],
+    features = ["-runtime_library_search_directories"],
     linkopts = [
         "-pie",
         "-lrt",
+        "-Wl,--as-needed",
+        "-Wl,--no-copy-dt-needed-entries",
     ],
     visibility = ["//visibility:public"],
 )
@@ -436,6 +475,7 @@ cc_binary(
         "@lldpd_deps//libreadline-dev:libreadline",
     ],
     copts = LLDPD_COPTS,
+    features = ["-runtime_library_search_directories"],
     # libxml2 transitively pulls libicuuc.so.NN, which DT_NEEDEDs libicudata.so.NN.
     # rules_distroless does not declare libicudata as a cc_import dep of libicuuc,
     # so the link step cannot find icudt_dat. --allow-shlib-undefined tells ld

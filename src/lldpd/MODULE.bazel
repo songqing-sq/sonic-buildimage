@@ -69,4 +69,15 @@ apt.install(
         "trixie-security",
     ],
 )
-use_repo(apt, "lldpd_deps")
+use_repo(
+    apt,
+    "lldpd_deps",
+    # Also expose the transitive runtime libbsd0 apt repo directly. The
+    # @lldpd_deps//libbsd-dev:libbsd cc_import wrapper is broken in this
+    # rules_distroless version (raw file dep across sibling repos), so we
+    # bypass the -dev wrapper and use the libbsd0 cc_import in
+    # @trixie_libbsd0-amd64_0.12.2-2//:libbsd.so.0 directly. See
+    # lldpd.BUILD comments on the `lldpd` cc_binary deps.
+    "trixie_libbsd0-amd64_0.12.2-2",
+    "trixie_libbsd0-arm64_0.12.2-2",
+)
