@@ -309,3 +309,9 @@ local_path_override(
     module_name = "sonic-dhcp-utilities",
     path = "src/sonic-dhcp-utilities",
 )
+
+bazel_dep(name = "sonic-linkmgrd", version = "1.0.0-1")
+local_path_override(
+    module_name = "sonic-linkmgrd",
+    path = "src/linkmgrd",
+)
