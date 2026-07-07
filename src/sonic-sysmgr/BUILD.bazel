@@ -1,10 +1,29 @@
 load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@sonic_build_infra//shared_library:shared_library.bzl", "sonic_shared_library_versioned")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
 
 package(default_visibility = ["//visibility:public"])
 
 VERSION = "1.0.0"
+
+# === librebootgnoi shared library ===
+# Make: lib_LTLIBRARIES = build/gen/librebootgnoi.la
+# soname librebootgnoi.so.0, version 0.0.0
+# Protobuf symbols stay UND (resolved by libprotobuf.so.32 at runtime).
+sonic_shared_library_versioned(
+    name = "rebootgnoi",
+    srcs = [],
+    deps = ["@gnoi//:gnoi_cc_proto"],
+    exports_filter = ["@@gnoi++_repo_rules+gnoi_src//:__subpackages__"],
+    dynamic_deps = ["@sonic_build_infra//protobuf:libprotobuf_shared"],
+    soversion = "0",
+    version = "0.0.0",
+    output_name = "librebootgnoi",
+    copts = ["-std=c++17"],
+    visibility = ["//visibility:public"],
+)
 
 # === dbus proxy header generation ===
 genrule(
@@ -22,7 +41,6 @@ tar -xzf $(location @sysmgr_deps//libdbus-c++-bin:data) -C "$$unpack"
 )
 
 # === rebootbackend daemon ===
-# Protobuf 29: google::protobuf::util::Status → absl::Status
 genrule(
     name = "patch_reboot_thread_cpp",
     srcs = ["rebootbackend/reboot_thread.cpp"],
@@ -87,13 +105,14 @@ cc_binary(
         "-Wl,--as-needed",
     ],
     deps = [
-        "@gnoi//:gnoi_cc_proto",
+        ":rebootgnoi",
         "@protobuf//:json_util",
         "@sonic-swss-common//:swsscommon",
         "@sysmgr_deps//libdbus-c++-dev:libdbus-c++",
-        "@sysmgr_deps//libprotobuf-dev:libprotobuf",
     ],
     dynamic_deps = [
+        ":rebootgnoi_shared",
+        "@sonic_build_infra//protobuf:libprotobuf_shared",
         "@libnl3//:libnl_3_shared",
         "@libnl3//:libnl_nf_3_shared",
         "@libnl3//:libnl_route_3_shared",
@@ -109,6 +128,7 @@ sonic_deb(
     version = VERSION,
     content = {
         "/usr/bin:*:0755": [":rebootbackend"],
+        "${LIBDIR}:*:0644": [":rebootgnoi_files"],
     },
     depends = [
         "libc6 (>= 2.34)",
