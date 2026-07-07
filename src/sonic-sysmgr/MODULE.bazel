@@ -1,0 +1,32 @@
+module(
+    name = "sonic-sysmgr",
+    version = "1.0.0",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "protobuf", version = "29.0")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "sonic-swss-common", version = "1.0.0")
+bazel_dep(name = "libnl3", version = "3.7.0")
+bazel_dep(name = "libyang3", version = "3.12.2")
+
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.install(
+    dependency_set = "sysmgr_deps",
+    packages = [
+        "libdbus-c++-bin:amd64",
+        "libdbus-c++-bin:arm64",
+        "libdbus-c++-dev:amd64",
+        "libdbus-c++-dev:arm64",
+        "libdbus-c++-1-0v5:amd64",
+        "libdbus-c++-1-0v5:arm64",
+        "libdbus-1-dev:amd64",
+        "libdbus-1-dev:arm64",
+        "libdbus-1-3:amd64",
+        "libdbus-1-3:arm64",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(apt, "sysmgr_deps")

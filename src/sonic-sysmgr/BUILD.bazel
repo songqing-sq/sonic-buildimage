@@ -1,0 +1,184 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.0.0"
+
+# === gnoi C++ protobuf (genrule approach to avoid cc_proto_library hang) ===
+#
+# Make's Makefile.am runs:
+#   protoc --cpp_out=build/gen --proto_path=github.com/openconfig/gnoi=gnoi \
+#       gnoi/types/types.proto gnoi/common/common.proto gnoi/system/system.proto
+#
+# types.proto imports google/protobuf/descriptor.proto (well-known type).
+# common.proto imports github.com/openconfig/gnoi/types/types.proto.
+# system.proto imports both common and types via the same import prefix.
+
+genrule(
+    name = "gnoi_cpp_proto_gen",
+    srcs = [
+        "gnoi/types/types.proto",
+        "gnoi/common/common.proto",
+        "gnoi/system/system.proto",
+        "@protobuf//:well_known_type_protos",
+        "@protobuf//:descriptor_proto_srcs",
+    ],
+    outs = [
+        "gen/github.com/openconfig/gnoi/types/types.pb.h",
+        "gen/github.com/openconfig/gnoi/types/types.pb.cc",
+        "gen/github.com/openconfig/gnoi/common/common.pb.h",
+        "gen/github.com/openconfig/gnoi/common/common.pb.cc",
+        "gen/github.com/openconfig/gnoi/system/system.pb.h",
+        "gen/github.com/openconfig/gnoi/system/system.pb.cc",
+    ],
+    cmd = """
+set -e
+WKT=$$(echo $(execpaths @protobuf//:well_known_type_protos) | awk '{print $$1}')
+WKT_INC=$$(dirname $$(dirname $$(dirname $$WKT)))
+# Stage proto files mirroring the import path github.com/openconfig/gnoi/...
+STAGE=$$(mktemp -d)
+mkdir -p "$$STAGE/github.com/openconfig/gnoi/types"
+mkdir -p "$$STAGE/github.com/openconfig/gnoi/common"
+mkdir -p "$$STAGE/github.com/openconfig/gnoi/system"
+cp $(execpath gnoi/types/types.proto) "$$STAGE/github.com/openconfig/gnoi/types/"
+cp $(execpath gnoi/common/common.proto) "$$STAGE/github.com/openconfig/gnoi/common/"
+cp $(execpath gnoi/system/system.proto) "$$STAGE/github.com/openconfig/gnoi/system/"
+$(execpath @protobuf//:protoc) \
+    -I"$$STAGE" \
+    -I$$WKT_INC \
+    --cpp_out=$(RULEDIR)/gen \
+    "$$STAGE/github.com/openconfig/gnoi/types/types.proto" \
+    "$$STAGE/github.com/openconfig/gnoi/common/common.proto" \
+    "$$STAGE/github.com/openconfig/gnoi/system/system.proto"
+rm -rf "$$STAGE"
+""",
+    tools = ["@protobuf//:protoc"],
+)
+
+cc_library(
+    name = "gnoi_cc_proto",
+    srcs = [
+        "gen/github.com/openconfig/gnoi/types/types.pb.cc",
+        "gen/github.com/openconfig/gnoi/common/common.pb.cc",
+        "gen/github.com/openconfig/gnoi/system/system.pb.cc",
+    ],
+    hdrs = [
+        "gen/github.com/openconfig/gnoi/types/types.pb.h",
+        "gen/github.com/openconfig/gnoi/common/common.pb.h",
+        "gen/github.com/openconfig/gnoi/system/system.pb.h",
+    ],
+    includes = [
+        "gen",
+        "gen/github.com/openconfig/gnoi",
+    ],
+    deps = ["@protobuf"],
+)
+
+# === dbus proxy header generation ===
+# Makefile.am: /usr/bin/dbusxx-xml2cpp rebootbackend/reboot.xml --proxy=rebootbackend/reboot_dbus.h
+# Output goes under gen_dbus/ to avoid collision with cc_binary named "rebootbackend".
+genrule(
+    name = "reboot_dbus_h",
+    srcs = ["rebootbackend/reboot.xml"],
+    outs = ["gen_dbus/reboot_dbus.h"],
+    cmd = """
+set -e
+unpack=$(RULEDIR)/_dbusxx_unpack
+mkdir -p "$$unpack"
+tar -xzf $(location @sysmgr_deps//libdbus-c++-bin:data) -C "$$unpack"
+"$$unpack/usr/bin/dbusxx-xml2cpp" $(location rebootbackend/reboot.xml) --proxy=$@
+""",
+    tools = ["@sysmgr_deps//libdbus-c++-bin:data"],
+)
+
+# === rebootbackend daemon ===
+# Protobuf 29 removed google::protobuf::util::Status (now absl::Status).
+# The source uses `namespace gpu = ::google::protobuf::util;` then `gpu::Status`.
+# Patch at build time to use absl::Status directly.
+genrule(
+    name = "patch_reboot_thread_cpp",
+    srcs = ["rebootbackend/reboot_thread.cpp"],
+    outs = ["patched/reboot_thread.cpp"],
+    cmd = "sed " +
+          "-e '1i #include \"absl/status/status.h\"' " +
+          "-e 's/gpu::Status/absl::Status/g' " +
+          "-e 's/status\\.message()\\.as_string()/std::string(status.message())/g' " +
+          "$(SRCS) > $@",
+)
+
+genrule(
+    name = "patch_rebootbe_cpp",
+    srcs = ["rebootbackend/rebootbe.cpp"],
+    outs = ["patched/rebootbe.cpp"],
+    cmd = "sed " +
+          "-e '1i #include \"absl/status/status.h\"' " +
+          "-e 's/gpu::Status/absl::Status/g' " +
+          "-e 's/google::protobuf::util::Status/absl::Status/g' " +
+          "-e 's/  Status status/  absl::Status status/g' " +
+          "-e 's/status\\.message()\\.as_string()/std::string(status.message())/g' " +
+          "$(SRCS) > $@",
+)
+
+cc_binary(
+    name = "rebootbackend",
+    srcs = [
+        "rebootbackend/rebootbackend.cpp",
+        "patched/rebootbe.cpp",
+        "rebootbackend/interfaces.cpp",
+        "patched/reboot_thread.cpp",
+        "rebootbackend/rebootbe.h",
+        "rebootbackend/interfaces.h",
+        "rebootbackend/reboot_thread.h",
+        "rebootbackend/reboot_common.h",
+        "rebootbackend/reboot_interfaces.h",
+        ":reboot_dbus_h",
+    ],
+    copts = [
+        "-std=c++17",
+        "-Wno-write-strings",
+        "-Wno-unused-parameter",
+        "-Wno-deprecated-declarations",
+    ],
+    includes = [
+        "gen_dbus",
+        "rebootbackend",
+    ],
+    deps = [
+        ":gnoi_cc_proto",
+        "@protobuf//:json_util",
+        "@sonic-swss-common//:swsscommon",
+        "@sysmgr_deps//libdbus-c++-dev:libdbus-c++",
+    ],
+    dynamic_deps = [
+        "@libnl3//:libnl_3_shared",
+        "@libnl3//:libnl_nf_3_shared",
+        "@libnl3//:libnl_route_3_shared",
+        "@libnl3//:libnl_genl_3_shared",
+        "@libyang3//:yang_shared",
+        "@sonic-swss-common//:swsscommon_shared",
+    ],
+    linkopts = ["-lpthread"],
+)
+
+sonic_deb(
+    name = "sysmgr_{}.deb".format(VERSION),
+    package = "sysmgr",
+    version = VERSION,
+    content = {
+        "/usr/bin:*:0755": [":rebootbackend"],
+    },
+    maintainer = "Runming Wu <runmingwu@google.com>",
+    description = "This package contains sysmgr service.",
+    section = "net",
+    priority = "optional",
+    gen_dbg = True,
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "sysmgr-dbg_{}.deb".format(VERSION),
+    actual = ":sysmgr-dbgsym_{}.deb".format(VERSION),
+    visibility = ["//visibility:public"],
+)
