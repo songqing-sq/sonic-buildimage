@@ -327,3 +327,9 @@ local_path_override(
     module_name = "sonic-bmpcfgd-services",
     path = "src/sonic-bmpcfgd",
 )
+
+bazel_dep(name = "sonic-bgpcfgd", version = "1.0")
+local_path_override(
+    module_name = "sonic-bgpcfgd",
+    path = "src/sonic-bgpcfgd",
+)

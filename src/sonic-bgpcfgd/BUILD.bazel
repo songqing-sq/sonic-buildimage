@@ -1,0 +1,214 @@
+load("@aspect_rules_py//py:defs.bzl", "py_library")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@tar.bzl", "tar")
+
+py_library(
+    name = "bgpcfgd_lib",
+    srcs = glob(["bgpcfgd/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "bgpmon_lib",
+    srcs = glob(["bgpmon/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "bfdmon_lib",
+    srcs = glob(["bfdmon/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "staticroutebfd_lib",
+    srcs = glob(["staticroutebfd/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "tests_lib",
+    srcs = glob(["tests/*.py"]),
+    imports = ["."],
+)
+
+py_wheel(
+    name = "wheel",
+    distribution = "sonic_bgpcfgd",
+    version = "1.0",
+    requires = [
+        "jinja2>=2.10",
+        "netaddr==0.8.0",
+        "pyyaml>=6.0.1",
+    ],
+    entry_points = {
+        "console_scripts": [
+            "bgpcfgd = bgpcfgd.main:main",
+            "staticroutebfd = staticroutebfd.main:main",
+            "bgpmon = bgpmon.bgpmon:main",
+            "bfdmon = bfdmon.bfdmon:main",
+        ],
+    },
+    deps = [
+        ":bgpcfgd_lib",
+        ":bgpmon_lib",
+        ":bfdmon_lib",
+        ":staticroutebfd_lib",
+        ":tests_lib",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+write_file(
+    name = "bgpcfgd_console_script",
+    out = "bgpcfgd_bin",
+    content = [
+        "#!/usr/bin/python3",
+        "# -*- coding: utf-8 -*-",
+        "import re",
+        "import sys",
+        "from bgpcfgd.main import main",
+        "if __name__ == '__main__':",
+        "    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])",
+        "    sys.exit(main())",
+    ],
+)
+
+write_file(
+    name = "staticroutebfd_console_script",
+    out = "staticroutebfd_bin",
+    content = [
+        "#!/usr/bin/python3",
+        "# -*- coding: utf-8 -*-",
+        "import re",
+        "import sys",
+        "from staticroutebfd.main import main",
+        "if __name__ == '__main__':",
+        "    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])",
+        "    sys.exit(main())",
+    ],
+)
+
+write_file(
+    name = "bgpmon_console_script",
+    out = "bgpmon_bin",
+    content = [
+        "#!/usr/bin/python3",
+        "# -*- coding: utf-8 -*-",
+        "import re",
+        "import sys",
+        "from bgpmon.bgpmon import main",
+        "if __name__ == '__main__':",
+        "    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])",
+        "    sys.exit(main())",
+    ],
+)
+
+write_file(
+    name = "bfdmon_console_script",
+    out = "bfdmon_bin",
+    content = [
+        "#!/usr/bin/python3",
+        "# -*- coding: utf-8 -*-",
+        "import re",
+        "import sys",
+        "from bfdmon.bfdmon import main",
+        "if __name__ == '__main__':",
+        "    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])",
+        "    sys.exit(main())",
+    ],
+)
+
+tar(
+    name = "install",
+    srcs = [
+        "bgpcfgd/__init__.py",
+        "bgpcfgd/main.py",
+        "bgpcfgd/config.py",
+        "bgpcfgd/directory.py",
+        "bgpcfgd/frr.py",
+        "bgpcfgd/log.py",
+        "bgpcfgd/__main__.py",
+        "bgpcfgd/manager.py",
+        "bgpcfgd/managers_advertise_rt.py",
+        "bgpcfgd/managers_aggregate_address.py",
+        "bgpcfgd/managers_allow_list.py",
+        "bgpcfgd/managers_as_path.py",
+        "bgpcfgd/managers_bbr.py",
+        "bgpcfgd/managers_bfd.py",
+        "bgpcfgd/managers_bgp.py",
+        "bgpcfgd/managers_chassis_app_db.py",
+        "bgpcfgd/managers_db.py",
+        "bgpcfgd/managers_device_global.py",
+        "bgpcfgd/managers_intf.py",
+        "bgpcfgd/managers_prefix_list.py",
+        "bgpcfgd/managers_rm.py",
+        "bgpcfgd/managers_setsrc.py",
+        "bgpcfgd/managers_srv6.py",
+        "bgpcfgd/managers_static_rt.py",
+        "bgpcfgd/runner.py",
+        "bgpcfgd/static_rt_timer.py",
+        "bgpcfgd/template.py",
+        "bgpcfgd/utils.py",
+        "bgpcfgd/vars.py",
+        "bgpmon/__init__.py",
+        "bgpmon/bgpmon.py",
+        "bfdmon/__init__.py",
+        "bfdmon/bfdmon.py",
+        "staticroutebfd/__init__.py",
+        "staticroutebfd/main.py",
+        "staticroutebfd/vars.py",
+        ":bgpcfgd_console_script",
+        ":staticroutebfd_console_script",
+        ":bgpmon_console_script",
+        ":bfdmon_console_script",
+    ],
+    mtree = [
+        "./usr/lib/python3/dist-packages/bgpcfgd/__init__.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/__init__.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/main.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/main.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/config.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/config.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/directory.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/directory.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/frr.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/frr.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/log.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/log.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/__main__.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/__main__.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/manager.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/manager.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_advertise_rt.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_advertise_rt.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_aggregate_address.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_aggregate_address.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_allow_list.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_allow_list.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_as_path.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_as_path.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_bbr.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_bbr.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_bfd.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_bfd.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_bgp.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_bgp.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_chassis_app_db.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_chassis_app_db.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_db.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_db.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_device_global.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_device_global.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_intf.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_intf.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_prefix_list.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_prefix_list.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_rm.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_rm.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_setsrc.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_setsrc.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_srv6.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_srv6.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/managers_static_rt.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/managers_static_rt.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/runner.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/runner.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/static_rt_timer.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/static_rt_timer.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/template.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/template.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/utils.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/utils.py)",
+        "./usr/lib/python3/dist-packages/bgpcfgd/vars.py uid=0 gid=0 mode=0644 type=file content=$(location bgpcfgd/vars.py)",
+        "./usr/lib/python3/dist-packages/bgpmon/__init__.py uid=0 gid=0 mode=0644 type=file content=$(location bgpmon/__init__.py)",
+        "./usr/lib/python3/dist-packages/bgpmon/bgpmon.py uid=0 gid=0 mode=0644 type=file content=$(location bgpmon/bgpmon.py)",
+        "./usr/lib/python3/dist-packages/bfdmon/__init__.py uid=0 gid=0 mode=0644 type=file content=$(location bfdmon/__init__.py)",
+        "./usr/lib/python3/dist-packages/bfdmon/bfdmon.py uid=0 gid=0 mode=0644 type=file content=$(location bfdmon/bfdmon.py)",
+        "./usr/lib/python3/dist-packages/staticroutebfd/__init__.py uid=0 gid=0 mode=0644 type=file content=$(location staticroutebfd/__init__.py)",
+        "./usr/lib/python3/dist-packages/staticroutebfd/main.py uid=0 gid=0 mode=0644 type=file content=$(location staticroutebfd/main.py)",
+        "./usr/lib/python3/dist-packages/staticroutebfd/vars.py uid=0 gid=0 mode=0644 type=file content=$(location staticroutebfd/vars.py)",
+        "./usr/local/bin/bgpcfgd uid=0 gid=0 mode=0755 type=file content=$(location :bgpcfgd_console_script)",
+        "./usr/local/bin/staticroutebfd uid=0 gid=0 mode=0755 type=file content=$(location :staticroutebfd_console_script)",
+        "./usr/local/bin/bgpmon uid=0 gid=0 mode=0755 type=file content=$(location :bgpmon_console_script)",
+        "./usr/local/bin/bfdmon uid=0 gid=0 mode=0755 type=file content=$(location :bfdmon_console_script)",
+    ],
+    visibility = ["//visibility:public"],
+)
