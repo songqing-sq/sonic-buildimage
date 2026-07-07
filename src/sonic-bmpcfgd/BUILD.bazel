@@ -1,0 +1,68 @@
+load("@aspect_rules_py//py:defs.bzl", "py_library")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@tar.bzl", "tar")
+
+py_library(
+    name = "sources",
+    srcs = glob(["bmpcfgd/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "tests_lib",
+    srcs = glob(
+        ["tests/*.py"],
+        exclude = ["tests/common/**"],
+    ),
+    imports = ["."],
+)
+
+py_wheel(
+    name = "wheel",
+    distribution = "sonic_bmpcfgd_services",
+    version = "1.0",
+    requires = [
+        "jinja2>=2.10",
+        "netaddr==0.8.0",
+        "pyyaml>=6.0.1",
+    ],
+    entry_points = {
+        "console_scripts": [
+            "bmpcfgd = bmpcfgd.bmpcfgd:main",
+        ],
+    },
+    deps = [":sources", ":tests_lib"],
+    visibility = ["//visibility:public"],
+)
+
+write_file(
+    name = "bmpcfgd_console_script",
+    out = "bmpcfgd",
+    content = [
+        "#!/usr/bin/python3",
+        "# -*- coding: utf-8 -*-",
+        "import re",
+        "import sys",
+        "from bmpcfgd.bmpcfgd import main",
+        "if __name__ == '__main__':",
+        "    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])",
+        "    sys.exit(main())",
+    ],
+)
+
+tar(
+    name = "install",
+    srcs = [
+        "bmpcfgd/__init__.py",
+        "bmpcfgd/bmpcfgd.py",
+        ":bmpcfgd_console_script",
+    ],
+    mtree = [
+        "./usr/lib/python3/dist-packages/bmpcfgd/__init__.py uid=0 gid=0 mode=0644 type=file content=$(location bmpcfgd/__init__.py)",
+        "./usr/lib/python3/dist-packages/bmpcfgd/bmpcfgd.py uid=0 gid=0 mode=0644 type=file content=$(location bmpcfgd/bmpcfgd.py)",
+        "./usr/local/bin/bmpcfgd uid=0 gid=0 mode=0755 type=file content=$(location :bmpcfgd_console_script)",
+    ],
+    visibility = ["//visibility:public"],
+)
