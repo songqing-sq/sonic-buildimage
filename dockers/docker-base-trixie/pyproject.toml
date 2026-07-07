@@ -1,0 +1,20 @@
+[project]
+name = "docker-base-trixie"
+version = "0.0.1"
+# Trixie ships Python 3.13. rules_python toolchain 3.13.4 is declared in the
+# root MODULE.bazel; use it for resolving pip deps for this docker.
+requires-python = ">=3.13"
+dependencies = [
+    "supervisor==4.2.5",
+    "supervisord-dependent-startup==1.4.0",
+    # Trixie's Dockerfile.j2 uses `pip3 install jinjanator` (a maintained
+    # replacement for the archived j2cli). Provides the `j2` script.
+    "jinjanator",
+    # supervisor 4.2.5 imports pkg_resources at module load time. The system
+    # `python3-setuptools` .deb (Architecture:all) is excluded from the flat
+    # layer — see BUILD.bazel comment above the python3 entry — so setuptools
+    # is provided via pip instead. Pin to <68 because upstream setuptools 68
+    # removed the bundled `pkg_resources` module and supervisor 4.2.5 still
+    # references it.
+    "setuptools<68",
+]
