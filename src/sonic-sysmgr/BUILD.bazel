@@ -6,16 +6,9 @@ package(default_visibility = ["//visibility:public"])
 
 VERSION = "1.0.0"
 
-# === gnoi C++ protobuf (genrule approach to avoid cc_proto_library hang) ===
-#
-# Make's Makefile.am runs:
-#   protoc --cpp_out=build/gen --proto_path=github.com/openconfig/gnoi=gnoi \
-#       gnoi/types/types.proto gnoi/common/common.proto gnoi/system/system.proto
-#
-# types.proto imports google/protobuf/descriptor.proto (well-known type).
-# common.proto imports github.com/openconfig/gnoi/types/types.proto.
-# system.proto imports both common and types via the same import prefix.
-
+# === gnoi C++ protobuf codegen ===
+# Use Bazel protoc for codegen. Generated .pb.cc compiles against @protobuf headers.
+# At runtime, symbols resolve against libprotobuf.so.32 (ABI-compatible).
 genrule(
     name = "gnoi_cpp_proto_gen",
     srcs = [
@@ -37,7 +30,6 @@ genrule(
 set -e
 WKT=$$(echo $(execpaths @protobuf//:well_known_type_protos) | awk '{print $$1}')
 WKT_INC=$$(dirname $$(dirname $$(dirname $$WKT)))
-# Stage proto files mirroring the import path github.com/openconfig/gnoi/...
 STAGE=$$(mktemp -d)
 mkdir -p "$$STAGE/github.com/openconfig/gnoi/types"
 mkdir -p "$$STAGE/github.com/openconfig/gnoi/common"
@@ -57,6 +49,9 @@ rm -rf "$$STAGE"
     tools = ["@protobuf//:protoc"],
 )
 
+# === librebootgnoi shared library ===
+# Make: lib_LTLIBRARIES = build/gen/librebootgnoi.la (soversion 0, version 0.0.0)
+# Compiled against protobuf headers, linked dynamically against libprotobuf.so.32.
 cc_library(
     name = "gnoi_cc_proto",
     srcs = [
@@ -73,12 +68,11 @@ cc_library(
         "gen",
         "gen/github.com/openconfig/gnoi",
     ],
+    copts = ["-std=c++17"],
     deps = ["@protobuf"],
 )
 
 # === dbus proxy header generation ===
-# Makefile.am: /usr/bin/dbusxx-xml2cpp rebootbackend/reboot.xml --proxy=rebootbackend/reboot_dbus.h
-# Output goes under gen_dbus/ to avoid collision with cc_binary named "rebootbackend".
 genrule(
     name = "reboot_dbus_h",
     srcs = ["rebootbackend/reboot.xml"],
@@ -94,9 +88,7 @@ tar -xzf $(location @sysmgr_deps//libdbus-c++-bin:data) -C "$$unpack"
 )
 
 # === rebootbackend daemon ===
-# Protobuf 29 removed google::protobuf::util::Status (now absl::Status).
-# The source uses `namespace gpu = ::google::protobuf::util;` then `gpu::Status`.
-# Patch at build time to use absl::Status directly.
+# Protobuf 29 headers: google::protobuf::util::Status → absl::Status
 genrule(
     name = "patch_reboot_thread_cpp",
     srcs = ["rebootbackend/reboot_thread.cpp"],
@@ -145,11 +137,16 @@ cc_binary(
         "gen_dbus",
         "rebootbackend",
     ],
+    linkopts = [
+        "-lpthread",
+        "-Wl,--as-needed",
+    ],
     deps = [
         ":gnoi_cc_proto",
         "@protobuf//:json_util",
         "@sonic-swss-common//:swsscommon",
         "@sysmgr_deps//libdbus-c++-dev:libdbus-c++",
+        "@sysmgr_deps//libprotobuf-dev:libprotobuf",
     ],
     dynamic_deps = [
         "@libnl3//:libnl_3_shared",
@@ -159,9 +156,10 @@ cc_binary(
         "@libyang3//:yang_shared",
         "@sonic-swss-common//:swsscommon_shared",
     ],
-    linkopts = ["-lpthread"],
 )
 
+# === sysmgr deb ===
+# Make ships: /usr/bin/rebootbackend + /usr/lib/<arch>/librebootgnoi.so* + doc
 sonic_deb(
     name = "sysmgr_{}.deb".format(VERSION),
     package = "sysmgr",
@@ -169,6 +167,15 @@ sonic_deb(
     content = {
         "/usr/bin:*:0755": [":rebootbackend"],
     },
+    depends = [
+        "libc6 (>= 2.34)",
+        "libdbus-c++-1-0v5 (>= 0.9.0)",
+        "libgcc-s1 (>= 3.0)",
+        "libhiredis1.1.0 (>= 1.2.0)",
+        "libprotobuf32t64 (>= 3.21.12)",
+        "libstdc++6 (>= 14)",
+        "libswsscommon (>= 1.0.0)",
+    ],
     maintainer = "Runming Wu <runmingwu@google.com>",
     description = "This package contains sysmgr service.",
     section = "net",
