@@ -314,4 +314,9 @@ bazel_dep(name = "sonic-linkmgrd", version = "1.0.0-1")
 local_path_override(
     module_name = "sonic-linkmgrd",
     path = "src/linkmgrd",
+
+bazel_dep(name = "sonic-bmp", version = "0.1")
+local_path_override(
+    module_name = "sonic-bmp",
+    path = "src/sonic-bmp",
 )
