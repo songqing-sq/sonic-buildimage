@@ -1,0 +1,23 @@
+module(
+    name = "gnoi",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "protobuf", version = "29.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+GNOI_COMMIT = "2b6ff72de5769839fc68bd019f345a184e3b0bf1"
+
+http_archive(
+    name = "gnoi_src",
+    urls = ["https://github.com/openconfig/gnoi/archive/{}.tar.gz".format(GNOI_COMMIT)],
+    sha256 = "0f71e9452ec8c50f5a87f54d59f709501a2cb4770a4633d773c443379ca4d4e0",
+    strip_prefix = "gnoi-{}".format(GNOI_COMMIT),
+    build_file = "//:gnoi.BUILD",
+    patch_cmds = [
+        "find . -mindepth 2 -name BUILD.bazel -delete",
+        "find . -mindepth 2 -name BUILD -delete",
+    ],
+)

@@ -11,6 +11,7 @@ bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_buil
 bazel_dep(name = "sonic-swss-common", version = "1.0.0")
 bazel_dep(name = "libnl3", version = "3.7.0")
 bazel_dep(name = "libyang3", version = "3.12.2")
+bazel_dep(name = "gnoi", version = "0.0.0")
 
 apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
 apt.install(

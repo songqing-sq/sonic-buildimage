@@ -340,6 +340,12 @@ local_path_override(
     path = "src/sonic-sysmgr",
 )
 
+bazel_dep(name = "gnoi", version = "0.0.0")
+local_path_override(
+    module_name = "gnoi",
+    path = "src/sonic-sysmgr/gnoi-bazel",
+)
+
 apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
 apt.install(
     dependency_set = "sysmgr_deps",

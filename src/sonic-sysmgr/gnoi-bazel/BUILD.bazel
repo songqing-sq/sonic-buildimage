@@ -1,0 +1,6 @@
+package(default_visibility = ["//visibility:public"])
+
+alias(
+    name = "gnoi_cc_proto",
+    actual = "@gnoi_src//:gnoi_cc_proto",
+)
