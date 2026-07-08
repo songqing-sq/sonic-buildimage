@@ -1,0 +1,105 @@
+load("@aspect_rules_py//py:defs.bzl", "py_library")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@tar.bzl", "tar")
+
+py_library(
+    name = "frrcfgd_lib",
+    srcs = glob(["frrcfgd/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "tests_lib",
+    srcs = glob(["tests/*.py"]),
+    imports = ["."],
+)
+
+_TEMPLATE_FILES = [
+    "templates/bfdd/bfdd.conf.j2",
+    "templates/bgpd/bgpd.conf.j2",
+    "templates/bgpd/bgpd.conf.db.j2",
+    "templates/bgpd/bgpd.conf.db.route_map.j2",
+    "templates/bgpd/bgpd.conf.db.pref_list.j2",
+    "templates/bgpd/bgpd.conf.db.nbr_or_peer.j2",
+    "templates/bgpd/bgpd.conf.db.nbr_af.j2",
+    "templates/bgpd/bgpd.conf.db.comm_list.j2",
+    "templates/bgpd/bgpd.conf.db.addr_family.j2",
+    "templates/bgpd/bgpd.conf.db.addr_family.evpn.j2",
+    "templates/ospfd/ospfd.conf.j2",
+    "templates/ospfd/ospfd.conf.db.area.j2",
+    "templates/ospfd/ospfd.conf.db.comm_list.j2",
+    "templates/ospfd/ospfd.conf.db.distributeroute.j2",
+    "templates/ospfd/ospfd.conf.db.interface.j2",
+    "templates/ospfd/ospfd.conf.db.policyrange.j2",
+    "templates/ospfd/ospfd.conf.db.vlink.j2",
+    "templates/staticd/staticd.conf.j2",
+    "templates/staticd/staticd.db.conf.j2",
+    "templates/staticd/staticd.db.default_route.conf.j2",
+    "templates/frr/frr.conf.j2",
+]
+
+# Map setup.py `data_files=[('sonic/frrcfgd', [...])]` to py_wheel
+# `data_files`: `<src>` → `data/sonic/frrcfgd/<basename>` inside the wheel.
+# Result matches Make wheel layout: `sonic_frr_mgmt_framework-1.0.data/data/sonic/frrcfgd/*.j2`.
+_DATA_FILES = {
+    src: "data/sonic/frrcfgd/" + src.split("/")[-1]
+    for src in _TEMPLATE_FILES
+}
+
+py_wheel(
+    name = "wheel",
+    distribution = "sonic_frr_mgmt_framework",
+    version = "1.0",
+    requires = [
+        "jinja2>=2.10",
+        "netaddr==0.8.0",
+        "pyyaml>=6.0.1",
+    ],
+    entry_points = {
+        "console_scripts": [
+            "frrcfgd = frrcfgd.frrcfgd:main",
+        ],
+    },
+    data_files = _DATA_FILES,
+    deps = [
+        ":frrcfgd_lib",
+        ":tests_lib",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+write_file(
+    name = "frrcfgd_console_script",
+    out = "frrcfgd_bin",
+    content = [
+        "#!/usr/bin/python3",
+        "# -*- coding: utf-8 -*-",
+        "import re",
+        "import sys",
+        "from frrcfgd.frrcfgd import main",
+        "if __name__ == '__main__':",
+        "    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$', '', sys.argv[0])",
+        "    sys.exit(main())",
+    ],
+)
+
+tar(
+    name = "install",
+    srcs = [
+        "frrcfgd/__init__.py",
+        "frrcfgd/frrcfgd.py",
+        ":frrcfgd_console_script",
+    ] + _TEMPLATE_FILES,
+    mtree = [
+        "./usr/lib/python3/dist-packages/frrcfgd/__init__.py uid=0 gid=0 mode=0644 type=file content=$(location frrcfgd/__init__.py)",
+        "./usr/lib/python3/dist-packages/frrcfgd/frrcfgd.py uid=0 gid=0 mode=0644 type=file content=$(location frrcfgd/frrcfgd.py)",
+        "./usr/local/bin/frrcfgd uid=0 gid=0 mode=0755 type=file content=$(location :frrcfgd_console_script)",
+    ] + [
+        "./usr/share/sonic/frrcfgd/" + src.split("/")[-1] +
+        " uid=0 gid=0 mode=0644 type=file content=$(location " + src + ")"
+        for src in _TEMPLATE_FILES
+    ],
+    visibility = ["//visibility:public"],
+)

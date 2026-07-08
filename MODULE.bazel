@@ -328,6 +328,12 @@ local_path_override(
     path = "src/sonic-bgpcfgd",
 )
 
+bazel_dep(name = "sonic-frr-mgmt-framework", version = "1.0")
+local_path_override(
+    module_name = "sonic-frr-mgmt-framework",
+    path = "src/sonic-frr-mgmt-framework",
+)
+
 bazel_dep(name = "sonic-sysmgr", version = "1.0.0")
 local_path_override(
     module_name = "sonic-sysmgr",
