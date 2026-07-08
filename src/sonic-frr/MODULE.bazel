@@ -1,0 +1,171 @@
+module(
+    name = "sonic-frr",
+    version = "10.5.4-sonic-0",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+# libfrr.so links against libyang.so.3 (configure.ac PKG_CHECK_MODULES libyang
+# >= 2.0.0; libyang3 satisfies it).  Provided as a local module by the repo.
+bazel_dep(name = "libyang3", version = "3.12.2")
+
+# The SONiC dplane_fpm_sonic.so plugin (patch 0012) calls into libnexthopgroup
+# via <nexthopgroup/c-api/nexthopgroup_capi.h> (rules/frr.mk LIBFIB dependency).
+bazel_dep(name = "sonic-fib", version = "1.0.0")
+
+# =============================================================================
+# @frr_patched : the pristine upstream FRR 10.5.4 submodule tree
+# (src/sonic-frr/frr/) with all 85 patches in patch/series applied (patch -p1,
+# in order) and dplane_fpm_sonic/dplane_fpm_sonic.c copied into zebra/.  This
+# reproduces -- hermetically, inside Bazel -- what the Make recipe does with
+# `stg import -s ../patch/series` + `cp ../dplane_fpm_sonic/... zebra/`.
+# The BUILD wiring (cc rules) lives in the dropped-in BUILD.bazel template.
+# =============================================================================
+frr_patched = use_repo_rule("//:frr_patched.bzl", "frr_patched")
+
+frr_patched(
+    name = "frr_patched",
+    series = "//patch:series",
+    build_file = "//:frr_patched.BUILD.bazel",
+    clippy_helpers = "//:clippy_helpers.bzl",
+)
+
+# =============================================================================
+# Hermetic Python 3.11 toolchain for clippy (relinked against
+# @rules_python//python/cc:current_py_cc_libs) and for the yang_genrule /
+# clippy_genrule action drivers in clippy_helpers.bzl.
+# =============================================================================
+bazel_dep(name = "rules_python", version = "1.7.0")
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    python_version = "3.11.3",
+    is_default = True,
+)
+use_repo(python, "python_3_11_3")
+
+# =============================================================================
+# protobuf-c: zebra_fpm.so / dplane_fpm_nl.so wire-encode FPM route updates
+# with protobuf-c.  Reuse the reference approach: self-built protoc-gen-c
+# (cfg=exec) + statically linked runtime from the upstream v1.5.2 tarball,
+# driven by rules_proto_grpc against @protobuf//:protoc.
+# =============================================================================
+bazel_dep(name = "rules_proto_grpc", version = "5.8.0")
+bazel_dep(name = "protobuf", version = "29.0")
+bazel_dep(name = "abseil-cpp", version = "20240722.0")
+
+sonic_http_archive = use_repo_rule("@sonic_build_infra//sonic_http_archive:sonic_http_archive.bzl", "sonic_http_archive")
+
+sonic_http_archive(
+    name = "protobuf_c",
+    build_file_template = "//:protobuf_c.BUILD",
+    patches = ["//:protobuf_c-absl-include-quote.patch"],
+    sha256 = "e2c86271873a79c92b58fef7ebf8de1aa0df4738347a8bd5d4e65a80a16d0d24",
+    strip_prefix = "protobuf-c-1.5.2",
+    urls = ["https://github.com/protobuf-c/protobuf-c/releases/download/v1.5.2/protobuf-c-1.5.2.tar.gz"],
+)
+
+# =============================================================================
+# Bison / Flex / m4 toolchains (libfrr's command parser is generated from
+# lib/command_parse.y and lib/command_lex.l; clippy pulls those in too).
+#
+# The flex/bison/m4 repos (and their toolchains) are declared+registered by
+# libnl3, the first SONiC module to need them.  Re-declaring them here via
+# `.repository()` would clash in the shared extension, so we simply consume
+# the same repos (mirrors the sonic-alibgp reference).
+# =============================================================================
+bazel_dep(name = "rules_flex", version = "0.4")
+
+flex = use_extension(
+    "@rules_flex//flex/extensions:flex_repository_ext.bzl",
+    "flex_repository_ext",
+)
+use_repo(flex, "flex")
+
+bazel_dep(name = "rules_bison", version = "0.4")
+
+bison = use_extension(
+    "@rules_bison//bison/extensions:bison_repository_ext.bzl",
+    "bison_repository_ext",
+)
+use_repo(bison, "bison")
+
+bazel_dep(name = "rules_m4", version = "0.3")
+
+git_override(
+    module_name = "rules_m4",
+    commit = "54e35332761523b8b8c7e7a17c8fd3733e53e3e7",
+    remote = "https://github.com/blorente/rules_m4",
+)
+
+m4 = use_extension(
+    "@rules_m4//m4/extensions:m4_repository_ext.bzl",
+    "m4_repository_ext",
+)
+use_repo(m4, "m4")
+
+# =============================================================================
+# Build-time apt dependencies (trixie, public Debian mirrors, dual-arch with
+# explicit :amd64 + :arm64 suffixes per Lesson 2).  Derived from frr's
+# debian/control Build-Depends + configure requirements.
+# =============================================================================
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = [
+        "trixie",
+        "trixie-updates",
+    ],
+    uris = ["https://deb.debian.org/debian"],
+)
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://security.debian.org/debian-security"],
+)
+apt.install(
+    dependency_set = "frr_deps",
+    packages = [
+        "libelf-dev:amd64",
+        "libelf-dev:arm64",
+        "libjson-c-dev:amd64",
+        "libjson-c-dev:arm64",
+        "libreadline-dev:amd64",
+        "libreadline-dev:arm64",
+        "libcap-dev:amd64",
+        "libcap-dev:arm64",
+        "libpcre2-dev:amd64",
+        "libpcre2-dev:arm64",
+        "libc-ares-dev:amd64",
+        "libc-ares-dev:arm64",
+        "libsystemd-dev:amd64",
+        "libsystemd-dev:arm64",
+        "libsnmp-dev:amd64",
+        "libsnmp-dev:arm64",
+        "libssl-dev:amd64",
+        "libssl-dev:arm64",
+        "libsqlite3-dev:amd64",
+        "libsqlite3-dev:arm64",
+        "libpam0g-dev:amd64",
+        "libpam0g-dev:arm64",
+        "libnftnl-dev:amd64",
+        "libnftnl-dev:arm64",
+        "libnl-3-dev:amd64",
+        "libnl-3-dev:arm64",
+        "libnl-genl-3-dev:amd64",
+        "libnl-genl-3-dev:arm64",
+        # gperftools tcmalloc (ENABLE_FRR_TCMALLOC ?= y in rules/config;
+        # patch 0110 adds HAVE_TCMALLOC -> libfrr includes gperftools/*.h and
+        # links -ltcmalloc). Runtime dep libgoogle-perftools4t64.
+        "libgoogle-perftools-dev:amd64",
+        "libgoogle-perftools-dev:arm64",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(apt, "frr_deps")

@@ -123,6 +123,12 @@ local_path_override(
     path = "src/libraries/sonic-fib",
 )
 
+bazel_dep(name = "sonic-frr", version = "10.5.4-sonic-0")
+local_path_override(
+    module_name = "sonic-frr",
+    path = "src/sonic-frr",
+)
+
 bazel_dep(name = "sonic-yang-models", version = "1.0")
 local_path_override(
     module_name = "sonic-yang-models",

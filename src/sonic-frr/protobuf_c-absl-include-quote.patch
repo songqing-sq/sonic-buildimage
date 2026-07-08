@@ -1,0 +1,18 @@
+Convert protoc-gen-c/compat.h's angle-bracket absl include to a quoted one
+so Bazel's default -iquote external/abseil-cpp+/ lookup satisfies it.  Angle
+brackets would require -I/-isystem, which abseil's cc_library doesn't
+contribute (it has no `includes` attr), and threading a per-version repo
+canonical path through copts is brittle.  Quoted is equivalent semantically
+for this header (the file is unambiguously the upstream absl one).
+
+--- a/protoc-gen-c/compat.h
++++ b/protoc-gen-c/compat.h
+@@ -36,7 +36,7 @@
+ #endif
+
+ #if GOOGLE_PROTOBUF_VERSION >= 6030000
+-# include <absl/strings/string_view.h>
++# include "absl/strings/string_view.h"
+ #else
+ # include <string>
+ #endif

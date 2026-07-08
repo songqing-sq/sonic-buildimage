@@ -1,0 +1,12 @@
+# Maintainer scripts + conffiles for the frr_*.deb, reproduced verbatim from
+# the Make baseline (`dpkg-deb -e`).  Exported for the sonic_deb control tar.
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "preinst",
+    "postinst",
+    "prerm",
+    "postrm",
+    "conffiles",
+    "shlibs",
+])

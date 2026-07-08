@@ -1,0 +1,9 @@
+/etc/frr/daemons
+/etc/frr/frr.conf
+/etc/frr/support_bundle_commands.conf
+/etc/frr/vtysh.conf
+/etc/init.d/frr
+/etc/iproute2/rt_protos.d/frr.conf
+/etc/logrotate.d/frr
+/etc/pam.d/frr
+/etc/rsyslog.d/45-frr.conf

@@ -1,0 +1,3256 @@
+load("@rules_bison//bison:bison.bzl", "bison")
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
+load("@rules_flex//flex:flex.bzl", "flex")
+load("@sonic_build_infra//shared_library:shared_library.bzl", "sonic_shared_library_versioned")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load(
+    ":clippy_helpers.bzl",
+    "clippy_genrule",
+    "exec_py_prefix",
+    "frr_daemon",
+    "protoc_c_proto",
+    "vtysh_cmd_xref_genrule",
+    "vtysh_daemons_h_genrule",
+    "yang_genrule",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+exec_py_prefix(name = "_clippy_exec_py_prefix")
+
+VERSION = "10.5.4"
+
+# =============================================================================
+# Generated headers: config.h, lib/config_paths.h, lib/version.h,
+# lib/route_types.h, lib/vtysh_daemons.h
+#
+# Upstream FRR generates these from configure.ac via autoconf.  Rather than
+# running ./configure inside Bazel we materialise the values ./configure WOULD
+# emit on Debian trixie / glibc 2.41 / GCC 14, with the exact configure flag
+# set from the SONiC-patched debian/rules:
+#   --sbindir=/usr/lib/frr --with-vtysh-pager=/usr/bin/pager
+#   --libdir=/usr/lib/<multiarch>/frr
+#   --with-moduledir=/usr/lib/<multiarch>/frr/modules
+#   --with-libpam --enable-doc --enable-doc-html --enable-snmp --enable-fpm
+#   --enable-sharpd --disable-protobuf --disable-zeromq --enable-ospfapi
+#   --enable-multipath=514 --enable-pcre2posix
+#   --enable-user=frr --enable-group=frr --enable-vty-group=frrvty
+#   --enable-configfile-mask=0640 --enable-logfile-mask=0640
+#   (pkg.frr.nortrlib -> --disable-rpki; --disable-scripting; --disable-grpc)
+#   patch 0016: --enable-multipath=514 + no --enable-bgp-vnc (VNC disabled)
+# =============================================================================
+genrule(
+    name = "config_h_gen",
+    outs = ["frr/config.h"],
+    cmd = r"""cat > $@ <<'EOF'
+/* config.h: Bazel-emitted equivalent of autoconf-generated config.h.
+ * Pinned for Debian trixie / glibc 2.41 / GCC 14, FRR 10.5.4. */
+
+#ifndef FRR_BAZEL_CONFIG_H
+#define FRR_BAZEL_CONFIG_H
+
+/* Package identification */
+#define PACKAGE "frr"
+#define PACKAGE_NAME "frr"
+#define PACKAGE_TARNAME "frr"
+#define PACKAGE_VERSION "10.5.4"
+#define PACKAGE_STRING "frr 10.5.4"
+#define PACKAGE_URL "https://frrouting.org/"
+#define PACKAGE_BUGREPORT "https://github.com/frrouting/frr/issues"
+#define VERSION "10.5.4"
+#define CONFIG_ARGS "(bazel build)"
+#define FRR_ID "generic"
+
+/* Build platform: Linux + glibc */
+#define GNU_LINUX 1
+#define HAVE_NETLINK 1
+#define LINUX_IPV6 1
+#define HAVE_RTADV 1
+#define HAVE_IP_PKTINFO 1
+#define HAVE_IP_FREEBIND 1
+#define HAVE_STRUCT_IN_PKTINFO 1
+#define HAVE_STRUCT_IP_MREQN_IMR_IFINDEX 1
+#define HAVE_STRUCT_ICMPHDR 1
+#define HAVE_STRUCT_MFCCTL 1
+#define HAVE_STRUCT_VIFCTL 1
+#define HAVE_STRUCT_IGMPMSG 1
+#define HAVE_STRUCT_SIOC_SG_REQ 1
+#define HAVE_STRUCT_SIOC_VIF_REQ 1
+#define HAVE_STRUCT_ND_OPT_ADV_INTERVAL 1
+/* #undef HAVE_STRUCT_ND_OPT_ADV_INTERVAL_ND_OPT_AI_TYPE */
+/* #undef HAVE_STRUCT_ND_OPT_HOMEAGENT_INFO */
+/* #undef HAVE_STRUCT_ND_OPT_RDNSS */
+/* #undef HAVE_STRUCT_ND_OPT_DNSSL */
+#define HAVE_STRUCT_UTSNAME_DOMAINNAME 1
+#define HAVE_RFC3678 1
+#define HAVE_PPOLL 1
+
+/* Standard ANSI C headers */
+#define STDC_HEADERS 1
+#define HAVE_DLFCN_H 1
+#define HAVE_INTTYPES_H 1
+#define HAVE_MEMORY_H 1
+#define HAVE_STDINT_H 1
+#define HAVE_STDLIB_H 1
+#define HAVE_STRINGS_H 1
+#define HAVE_STRING_H 1
+#define HAVE_SYS_STAT_H 1
+#define HAVE_SYS_TYPES_H 1
+#define HAVE_UNISTD_H 1
+
+/* Linux-specific headers */
+#define HAVE_ASM_TYPES_H 1
+#define HAVE_ENDIAN_H 1
+#define HAVE_LINUX_VERSION_H 1
+#define HAVE_LINUX_MROUTE_H 1
+#define HAVE_LINUX_MROUTE6_H 1
+#define HAVE_MALLOC_H 1
+/* #undef HAVE_SYS_SDT_H */
+#define HAVE_UCONTEXT_H 1
+#define HAVE_UCONTEXT_T_UC_MCONTEXT_GREGS 1
+#define HAVE_LINK_H 1
+#define HAVE_SYS_CAPABILITY_H 1
+/* #undef HAVE_PTHREAD_NP_H */
+
+/* glibc 2.41 functions */
+#define HAVE_OPENAT 1
+#define HAVE_UNLINKAT 1
+#define HAVE_POSIX_FALLOCATE 1
+#define HAVE_GETGROUPLIST 1
+#define HAVE_SETNS 1
+#define HAVE_NETNS 1
+#define HAVE_GLIBC_BACKTRACE 1
+#define HAVE_MALLINFO 1
+#define HAVE_MALLINFO2 1
+#define HAVE_MALLOC_USABLE_SIZE 1
+#define HAVE_PTHREAD_SETNAME_NP 1
+#define HAVE_PTHREAD_CONDATTR_SETCLOCK 1
+#define HAVE_CLOCK_MONOTONIC 1
+#define HAVE_CLOCK_NANOSLEEP 1
+#define HAVE_CLOCK_THREAD_CPUTIME_ID 1
+#define HAVE_PR_SET_KEEPCAPS 1
+#define HAVE_GETRANDOM 1
+#define HAVE_EXPLICIT_BZERO 1
+/* glibc 2.38+ ships strlcpy / strlcat */
+#define HAVE_STRLCPY 1
+#define HAVE_STRLCAT 1
+
+/* GCC 14 atomic / section feature support */
+#define FRR_AUTOCONF_ATOMIC 1
+#define HAVE_STDATOMIC_H 1
+#define HAVE___ATOMIC 1
+/* #undef HAVE___SYNC */
+/* #undef HAVE___SYNC_SWAP */
+#define HAVE_SYNC_LINUX_FUTEX 1
+#define HAVE_SECTION_SYMS 1
+
+/* Library availability (matched to apt deps) */
+#define HAVE_LIBCRYPT 1
+#define HAVE_LIBCRYPTO 1
+#define HAVE_LIBELF 1
+#define HAVE_ELF_GETDATA_RAWCHUNK 1
+#define HAVE_GELF_GETNOTE 1
+/* #undef HAVE_LIBPCREPOSIX */
+#define HAVE_LIBPCRE2_POSIX 1
+/* #undef HAVE_LIBUNWIND */
+#define HAVE_JSON_C_JSON_H 1
+#define HAVE_SQLITE3 1
+#define CRYPTO_OPENSSL 1
+/* #undef CRYPTO_INTERNAL */
+
+/* Daemon presence */
+#define HAVE_BGPD 1
+#define HAVE_RIPD 1
+#define HAVE_RIPNGD 1
+#define HAVE_OSPFD 1
+#define HAVE_OSPF6D 1
+#define HAVE_LDPD 1
+#define HAVE_NHRPD 1
+#define HAVE_EIGRPD 1
+#define HAVE_BABELD 1
+#define HAVE_ISISD 1
+#define HAVE_PIMD 1
+#define HAVE_PBRD 1
+#define HAVE_SHARPD 1
+#define HAVE_STATICD 1
+#define HAVE_FABRICD 1
+#define HAVE_VRRPD 1
+#define HAVE_BFDD 1
+#define HAVE_PATHD 1
+#define BFD_LINUX 1
+
+/* Capabilities (libcap) */
+#define HAVE_CAPABILITIES 1
+#define HAVE_LCAPS 1
+
+/* PAM support (--with-libpam) */
+#define USE_PAM 1
+#define HAVE_PAM_MISC_H 1
+#define PAM_CONV_FUNC misc_conv
+
+/* SNMP (--enable-snmp; default method = agentx) */
+#define SNMP_AGENTX 1
+
+/* TCP_MD5SIG via <linux/tcp.h> */
+#define HAVE_DECL_TCP_MD5SIG 1
+
+/* BGP route announcement to zebra */
+#define DISABLE_BGP_ANNOUNCE 0
+
+/* Protobuf: --disable-protobuf in SONiC debian/rules.  The FPM plugins still
+ * use protobuf-c directly (fpm/qpb .pb-c.c compiled in), but HAVE_PROTOBUF
+ * (the automake libfrrfpm_pb / libfrr_pb split gate) stays undefined -- the
+ * plugins compile the generated .pb-c.c straight into the .so.  zebra_mlag.c
+ * gates its mlag.pb-c include on HAVE_PROTOBUF_VERSION_3, which we leave
+ * undefined so it lands in the stub `#else` branch. */
+/* #undef HAVE_PROTOBUF */
+/* #undef HAVE_PROTOBUF_VERSION_3 */
+/* #undef HAVE_PROTOBUF3 */
+
+/* OSPF API (--enable-ospfapi) */
+#define SUPPORT_OSPF_API 1
+
+/* Disabled in SONiC build */
+/* #undef HAVE_LTTNG */
+/* #undef HAVE_USDT */
+/* #undef HAVE_ZEROMQ */
+/* #undef HAVE_SCRIPTING */
+/* #undef ENABLE_BGP_VNC */
+/* #undef ENABLE_TC_MALLOC */
+/* gperftools tcmalloc (SONiC ENABLE_FRR_TCMALLOC=y -> --enable-gperf-tcmalloc,
+ * patch 0110).  gperftools ships tc_mallinfo2 -> HAVE_TC_MALLINFO2. */
+#define HAVE_TCMALLOC 1
+#define HAVE_TC_MALLINFO2 1
+/* #undef HAVE_DATACENTER */
+/* #undef HAVE_CUMULUS */
+/* #undef HAVE_GTEST */
+/* #undef HAVE_CONFD */
+/* #undef HAVE_SYSREPO */
+/* #undef HAVE_GRPC */
+/* #undef HAVE_CONFIG_ROLLBACKS */
+/* #undef HAVE_MGMTD_TESTC */
+/* #undef DEV_BUILD */
+/* #undef GIT_VERSION */
+/* #undef ZEBRA_UNIT_TESTING */
+/* #undef NETLINK_DEBUG */
+
+/* Multipath (patch 0016: --enable-multipath=514) */
+#define MULTIPATH_NUM 514
+#define FRR_USER "frr"
+#define FRR_GROUP "frr"
+#define VTY_GROUP "frrvty"
+#define CONFIGFILE_MASK 0640
+#define LOGFILE_MASK 0640
+
+/* ISIS method selection */
+#define ISIS_METHOD_PFPACKET 1
+#define ISIS_METHOD_DLPI 2
+#define ISIS_METHOD_BPF 3
+#define ISIS_METHOD ISIS_METHOD_PFPACKET
+
+/* VTY shell */
+#define VTYSH 1
+
+/* Other autoconf default substitutions */
+#define LT_OBJDIR ".libs/"
+#define YYTEXT_POINTER 1
+#define LOCAL_VRF_IMPORT_ENABLE 0
+#define CONSUMED_TIME_CHECK 5000000
+#define DFLT_NAME "traditional"
+
+/* Startup zlog timestamp precision (configure default 0). */
+#define LOG_TIMESTAMP_PRECISION 0
+
+/* strongSwan vici socket path (nhrpd/vici.c; configure default). */
+#define VICI_SOCKET "/var/run/charon.vici"
+
+/* vtysh pager (debian/rules --with-vtysh-pager). */
+#define VTYSH_PAGER "/usr/bin/pager"
+
+/* GNU/Linux feature-test enablement */
+#ifndef _ALL_SOURCE
+# define _ALL_SOURCE 1
+#endif
+#ifndef _GNU_SOURCE
+# define _GNU_SOURCE 1
+#endif
+#ifndef _POSIX_PTHREAD_SEMANTICS
+# define _POSIX_PTHREAD_SEMANTICS 1
+#endif
+#ifndef _TANDEM_SOURCE
+# define _TANDEM_SOURCE 1
+#endif
+#ifndef __EXTENSIONS__
+# define __EXTENSIONS__ 1
+#endif
+
+#endif /* FRR_BAZEL_CONFIG_H */
+EOF
+""",
+)
+
+# lib/config_paths.h -- FRR 10.5.4 moved the runtime path macros out of
+# config.h into a dedicated generated header (only libfrr + watchfrr include
+# it).  MODULE_PATH / YANG_MODELS_PATH etc. mirror debian/rules'
+# --libdir=/usr/lib/<multiarch>/frr + --with-moduledir + sbindir=/usr/lib/frr.
+# The multiarch component is arch-specific, so emit via select() (Lesson 11 --
+# no hardcoded x86_64-linux-gnu).
+genrule(
+    name = "config_paths_h_gen",
+    outs = ["frr/lib/config_paths.h"],
+    cmd = select({
+        "@platforms//cpu:aarch64": "MULTIARCH=aarch64-linux-gnu",
+        "//conditions:default": "MULTIARCH=x86_64-linux-gnu",
+    }) + r""" ; cat > $@ <<EOF
+/* Bazel-emitted lib/config_paths.h (autoconf equivalent). */
+#define FRR_RUNSTATE_PATH	"/run/frr"
+#define FRR_LIBSTATE_PATH	"/var/lib/frr"
+#define YANG_MODELS_PATH	"/usr/share/yang"
+#define MODULE_PATH		"/usr/lib/$${MULTIARCH}/frr/modules"
+#define SCRIPT_PATH		"/etc/frr/scripts"
+#define SYSCONFDIR		"/etc/frr/"
+#define VTYSH_BIN_PATH		"/usr/bin/vtysh"
+#define WATCHFRR_SH_PATH	"/usr/lib/frr/watchfrr.sh"
+EOF
+""",
+)
+
+genrule(
+    name = "version_h_gen",
+    srcs = ["frr/lib/version.h.in"],
+    outs = ["frr/lib/version.h"],
+    cmd = r"""sed \
+        -e 's|@PACKAGE_NAME@|frr|g' \
+        -e 's|@PACKAGE_VERSION@|10.5.4|g' \
+        -e 's|@PACKAGE_BUGREPORT@|https://github.com/frrouting/frr/issues|g' \
+        -e 's|@CONFIG_ARGS@|(bazel build)|g' \
+        -e 's|@configure_input@|version.h: bazel-generated from version.h.in|g' \
+        $< > $@""",
+)
+
+# route_types.h -- Perl-generated; --enabled flags for every daemon whose
+# HAVE_*D is set in config.h (mirrors the rt_enabled block in lib/subdir.am).
+genrule(
+    name = "route_types_h_gen",
+    srcs = [
+        "frr/lib/route_types.txt",
+        "frr/lib/route_types.pl",
+    ],
+    outs = ["frr/lib/route_types.h"],
+    cmd = r"""perl $(location frr/lib/route_types.pl) \
+        --enabled babeld --enabled bfdd --enabled bgpd \
+        --enabled eigrpd --enabled isisd --enabled fabricd \
+        --enabled ldpd --enabled nhrpd --enabled ospfd \
+        --enabled ospf6d --enabled pbrd --enabled pimd \
+        --enabled ripd --enabled ripngd --enabled sharpd \
+        --enabled staticd --enabled pathd --enabled vrrpd \
+        --enabled zebra \
+        < $(location frr/lib/route_types.txt) > $@""",
+)
+
+# vtysh_daemons.h -- in 10.5.4 libfrr (log_cli.c/log_vty.c) AND vtysh consume
+# this, so it lands under lib/.
+vtysh_daemons_h_genrule(
+    name = "vtysh_daemons_h_gen",
+    daemons = [
+        "zebra",
+        "bgpd",
+        "ripd",
+        "ripngd",
+        "ospfd",
+        "ospf6d",
+        "ldpd",
+        "nhrpd",
+        "eigrpd",
+        "babeld",
+        "isisd",
+        "pimd",
+        "pim6d",
+        "pbrd",
+        "pathd",
+        "bfdd",
+        "vrrpd",
+        "staticd",
+        "fabricd",
+        "sharpd",
+        "mgmtd",
+    ],
+    outname = "frr/lib/vtysh_daemons.h",
+)
+
+# =============================================================================
+# Header-view libraries for libfrr / clippy.
+# =============================================================================
+
+filegroup(
+    name = "frr_lib_headers",
+    srcs = glob(
+        ["frr/lib/**/*.h"],
+        exclude = ["frr/lib/version.h", "frr/lib/config_paths.h"],
+    ) + [
+        ":config_h_gen",
+        ":config_paths_h_gen",
+        ":version_h_gen",
+        ":route_types_h_gen",
+        ":vtysh_daemons_h_gen",
+    ],
+)
+
+cc_library(
+    name = "frr_lib_hdrs",
+    hdrs = [":frr_lib_headers"],
+    includes = [
+        "frr",
+        "frr/lib",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# FRR's lib/memory.h etc. shadow libc /usr/include/memory.h; expose FRR's own
+# lib/*.h through strip_include_prefix so they win via _virtual_includes.
+cc_library(
+    name = "frr_lib_v_hdrs",
+    hdrs = glob(
+        ["frr/lib/**/*.h"],
+        exclude = ["frr/lib/version.h", "frr/lib/config_paths.h"],
+    ) + [
+        ":version_h_gen",
+        ":route_types_h_gen",
+        ":vtysh_daemons_h_gen",
+    ],
+    strip_include_prefix = "frr/lib",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "frr_assert_hdrs",
+    hdrs = glob(["frr/lib/assert/*.h"]),
+    strip_include_prefix = "frr/lib/assert",
+    visibility = ["//visibility:public"],
+)
+
+# Vendored Linux UAPI headers (include/linux/*.h) that shadow the toolchain's
+# linux-libc-dev.  Placed FIRST in zebra deps.
+cc_library(
+    name = "frr_uapi_hdrs",
+    hdrs = glob(["frr/include/**/*.h"]),
+    strip_include_prefix = "frr/include",
+    visibility = ["//visibility:public"],
+)
+
+# All FRR headers under the repo root exposed flat so `<lib/foo.h>`,
+# `<bgpd/bgp_vty.h>`, `<zebra/foo.h>`, `<config.h>`, etc. resolve through one
+# -I (via strip_include_prefix = repo root).
+cc_library(
+    name = "frr_v_hdrs",
+    hdrs = glob(
+        [
+            "frr/lib/**/*.h",
+            "frr/bfdd/*.h",
+            "frr/bgpd/**/*.h",
+            "frr/zebra/**/*.h",
+            "frr/ospfd/*.h",
+            "frr/ospf6d/*.h",
+            "frr/isisd/*.h",
+            "frr/pimd/*.h",
+            "frr/fpm/*.h",
+            "frr/qpb/*.h",
+            "frr/nhrpd/*.h",
+        ],
+        exclude = ["frr/lib/version.h", "frr/lib/config_paths.h"],
+    ) + [
+        ":config_h_gen",
+        ":config_paths_h_gen",
+        ":version_h_gen",
+        ":route_types_h_gen",
+        ":vtysh_daemons_h_gen",
+    ],
+    strip_include_prefix = "frr",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Bison / Flex generated command parser / lexers.
+# Strip the upstream %output / %defines / %option outfile directives which
+# hardcode a lib/ subdir that doesn't exist in the flex/bison sandbox.
+# =============================================================================
+genrule(
+    name = "command_parse_y_stripped",
+    srcs = ["frr/lib/command_parse.y"],
+    outs = ["frr/lib/command_parse_stripped.y"],
+    cmd = r"""sed -e '/^%defines/d' -e '/^%output/d' $< > $@""",
+)
+
+genrule(
+    name = "command_lex_l_stripped",
+    srcs = ["frr/lib/command_lex.l"],
+    outs = ["frr/lib/command_lex_stripped.l"],
+    cmd = r"""sed \
+        -e '/^%option outfile/d' \
+        -e '/^%option header-file/d' \
+        -e '/^%option prefix/d' \
+        $< > $@""",
+)
+
+genrule(
+    name = "defun_lex_l_stripped",
+    srcs = ["frr/lib/defun_lex.l"],
+    outs = ["frr/lib/defun_lex_stripped.l"],
+    cmd = r"""sed \
+        -e '/^%option outfile/d' \
+        -e '/^%option prefix/d' \
+        $< > $@""",
+)
+
+bison(
+    name = "frr/lib/command_parse",
+    src = ":command_parse_y_stripped",
+    bison_options = ["-Dapi.prefix={cmd_yy}"],
+)
+
+flex(
+    name = "frr/lib/command_lex",
+    src = ":command_lex_l_stripped",
+    flex_options = ["-Pcmd_yy"],
+)
+
+flex(
+    name = "frr/lib/defun_lex",
+    src = ":defun_lex_l_stripped",
+    flex_options = ["-Pdef_yy"],
+)
+
+# =============================================================================
+# clippy build tool (lib_clippy_SOURCES from lib/subdir.am).
+# =============================================================================
+
+# FRR 10.5.4's lib/command_graph.c + lib/memory.c (both compiled into clippy)
+# call _zlog_assert_failed() via the assert() macro in lib/assert/assert.h.
+# That symbol lives in lib/zlog.c, which clippy does NOT link (clippy is a
+# minimal host tool -- lib_clippy_SOURCES omits zlog.c).  clippy.c provides
+# stubs for vzlogx()/memory_oom() but not this one, so supply a tiny abort()
+# stub via a Bazel-generated TU (no source-tree edits).
+genrule(
+    name = "clippy_assert_stub_gen",
+    outs = ["frr/lib/clippy_assert_stub.c"],
+    cmd = r"""cat > $@ <<'EOF'
+/* Bazel-generated clippy assert stub (see BUILD.bazel comment). */
+#include <stdlib.h>
+#include <stdarg.h>
+
+struct xref_assert;
+
+void _zlog_assert_failed(const struct xref_assert *xref, const char *extra, ...);
+void _zlog_assert_failed(const struct xref_assert *xref, const char *extra, ...)
+{
+	abort();
+}
+EOF
+""",
+)
+
+# Bare cc_import of JUST the trixie libelf .so file -- NO deps -- so the
+# exec-cfg clippy tool doesn't drag in the target trixie libc6/ld-linux (which
+# would clash with the host loader's libm at clippy runtime).  gcc records
+# DT_NEEDED from the .so's SONAME (libelf.so.1); the host loader then resolves
+# libelf via its default search path.  Only clippy uses this; all target-cfg
+# consumers of libelf use the full @frr_deps//libelf-dev:libelf graph.
+cc_import(
+    name = "clippy_libelf_link",
+    shared_library = "@@rules_distroless++apt+trixie_libelf1t64-amd64_0.192-4//:usr/lib/x86_64-linux-gnu/libelf.so.1",
+    visibility = ["//visibility:private"],
+)
+
+cc_binary(
+    name = "clippy",
+    srcs = [
+        "frr/lib/clippy.c",
+        "frr/lib/command_graph.c",
+        "frr/lib/command_py.c",
+        "frr/lib/elf_py.c",
+        "frr/lib/graph.c",
+        "frr/lib/jhash.c",
+        "frr/lib/libfrr_trace.c",
+        "frr/lib/memory.c",
+        "frr/lib/typesafe.c",
+        "frr/lib/vector.c",
+        ":clippy_assert_stub_gen",
+        ":frr/lib/command_parse",
+        ":frr/lib/command_lex",
+        ":frr/lib/defun_lex",
+    ],
+    copts = [
+        "-D_GNU_SOURCE",
+        "-DBUILDING_CLIPPY",
+        "-DHAVE_CONFIG_H",
+        "-std=gnu11",
+        "-fms-extensions",
+        "-Wno-sign-compare",
+        "-Wno-implicit-fallthrough",
+        "-Wno-unused-but-set-variable",
+        "-Wno-unused-function",
+        "-Wno-misleading-indentation",
+    ],
+    deps = [
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        # libpython3.11 + Python C API via rules_python's hermetic toolchain.
+        "@rules_python//python/cc:current_py_cc_libs",
+        "@rules_python//python/cc:current_py_cc_headers",
+        # elf_py.c CALLS libelf; link the bare .so directly (see comment above
+        # on :clippy_libelf_link) + headers-only view.  We deliberately AVOID
+        # @frr_deps//libelf-dev:libelf because it transitively cc_imports the
+        # trixie libc6 / ld-linux, which would plant the target sysroot libc
+        # in this exec-cfg host tool's RPATH and clash with the host libm.
+        ":clippy_libelf_link",
+        "@@rules_distroless++apt+trixie_libelf-dev-amd64_0.192-4//:libelf_hdrs",
+        # zebra.h drags in <sys/capability.h>, <json-c/json.h>, <openssl/evp.h>
+        # transitively; clippy only needs the headers, never the .so.
+        "@@rules_distroless++apt+trixie_libcap-dev-amd64_1-2.75-10-b8//:libcap_hdrs",
+        "@@rules_distroless++apt+trixie_libjson-c-dev-amd64_0.18-ds-1//:libjson-c_hdrs",
+        "@@rules_distroless++apt+trixie-security_libssl-dev-amd64_3.5.5-1_deb13u2//:libssl_hdrs",
+    ],
+    linkopts = [
+        "-Wl,--export-dynamic",
+        "-lpthread",
+        "-lm",
+        # libelf .so was packaged against libz; we link it via the bare
+        # cc_import (no transitive deps) so let ld skip verifying those refs --
+        # the host loader pulls libz in via libelf.so.1's own NEEDED at runtime.
+        "-Wl,--unresolved-symbols=ignore-in-shared-libs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# clippy companions for lib/ (18 clippy_scan sources in lib/subdir.am).
+# =============================================================================
+LIB_CLIPPY_SOURCES = [
+    "affinitymap_cli",
+    "host_cli",
+    "if",
+    "filter_cli",
+    "if_rmap",
+    "keychain_cli",
+    "log_cli",
+    "log_vty",
+    "mgmt_be_client",
+    "mgmt_fe_client",
+    "nexthop_group",
+    "northbound_cli",
+    "plist",
+    "routemap",
+    "routemap_cli",
+    "event",
+    "vty",
+    "zlog_5424_cli",
+]
+
+# clidef.py reads basepath/lib/command.h + basepath/bgpd/bgp_vty.h at runtime.
+CLIPPY_FRR_INPUTS = [
+    ":route_types_h_gen",
+    "frr/lib/command.h",
+    "frr/bgpd/bgp_vty.h",
+]
+
+[
+    clippy_genrule(
+        name = "lib_{}_clippy".format(name),
+        src = "frr/lib/{}.c".format(name),
+        basename = "frr/lib/" + name,
+        clippy = ":clippy",
+        clidef = "frr/python/clidef.py",
+        clippy_pkg = glob([
+            "frr/python/clippy/*.py",
+            "frr/python/*.py",
+        ]),
+        frr_extra_inputs = CLIPPY_FRR_INPUTS,
+    )
+    for name in LIB_CLIPPY_SOURCES
+]
+
+# =============================================================================
+# libfrr yang embed wrappers (nodist_lib_libfrr_la_SOURCES).
+# =============================================================================
+YANG_LIBFRR_MODELS = [
+    ("frr/yang/frr-affinity-map", "frr/yang/frr-affinity-map.yang"),
+    ("frr/yang/frr-backend", "frr/yang/frr-backend.yang"),
+    ("frr/yang/frr-filter", "frr/yang/frr-filter.yang"),
+    ("frr/yang/frr-host", "frr/yang/frr-host.yang"),
+    ("frr/yang/frr-if-rmap", "frr/yang/frr-if-rmap.yang"),
+    ("frr/yang/frr-interface", "frr/yang/frr-interface.yang"),
+    ("frr/yang/frr-logging", "frr/yang/frr-logging.yang"),
+    ("frr/yang/frr-route-map", "frr/yang/frr-route-map.yang"),
+    ("frr/yang/frr-route-types", "frr/yang/frr-route-types.yang"),
+    ("frr/yang/frr-vrf", "frr/yang/frr-vrf.yang"),
+    ("frr/yang/frr-routing", "frr/yang/frr-routing.yang"),
+    ("frr/yang/frr-nexthop", "frr/yang/frr-nexthop.yang"),
+    ("frr/yang/ietf/frr-deviations-ietf-key-chain", "frr/yang/ietf/frr-deviations-ietf-key-chain.yang"),
+    ("frr/yang/ietf/ietf-routing-types", "frr/yang/ietf/ietf-routing-types.yang"),
+    ("frr/yang/ietf/ietf-syslog-types", "frr/yang/ietf/ietf-syslog-types.yang"),
+    ("frr/yang/ietf/ietf-netconf-acm", "frr/yang/ietf/ietf-netconf-acm.yang"),
+    ("frr/yang/ietf/ietf-key-chain", "frr/yang/ietf/ietf-key-chain.yang"),
+    ("frr/yang/ietf/ietf-interfaces", "frr/yang/ietf/ietf-interfaces.yang"),
+    ("frr/yang/ietf/ietf-bgp-types", "frr/yang/ietf/ietf-bgp-types.yang"),
+    ("frr/yang/frr-module-translator", "frr/yang/frr-module-translator.yang"),
+    ("frr/yang/ietf/ietf-srv6-types", "frr/yang/ietf/ietf-srv6-types.yang"),
+]
+
+[
+    yang_genrule(
+        name = "yang_{}".format(stem.replace("/", "_").replace("-", "_")),
+        src = src,
+        outname = stem + ".yang.c",
+        embedmodel = "frr/yang/embedmodel.py",
+    )
+    for stem, src in YANG_LIBFRR_MODELS
+]
+
+# =============================================================================
+# libfrr.so (lib_libfrr_la_SOURCES).
+# =============================================================================
+LIBFRR_SOURCES = [
+    "frr/lib/" + s + ".c"
+    for s in [
+        "admin_group",
+        "affinitymap",
+        "affinitymap_cli",
+        "affinitymap_northbound",
+        "agg_table",
+        "atomlist",
+        "asn",
+        "base64",
+        "bfd",
+        "buffer",
+        "checksum",
+        "command",
+        "command_graph",
+        "command_match",
+        "cspf",
+        "csv",
+        "darr",
+        "debug",
+        "defaults",
+        "distribute",
+        "explicit_bzero",
+        "ferr",
+        "filter",
+        "filter_cli",
+        "filter_nb",
+        "flex_algo",
+        "frrcu",
+        "frrlua",
+        "frrscript",
+        "frr_pthread",
+        "frrstr",
+        "grammar_sandbox",
+        "graph",
+        "hash",
+        "host_cli",
+        "host_nb",
+        "hook",
+        "id_alloc",
+        "if",
+        "if_rmap",
+        "imsg-buffer",
+        "imsg",
+        "iso",
+        "jhash",
+        "json",
+        "keychain",
+        "keychain_cli",
+        "keychain_nb",
+        "ldp_sync",
+        "lib_errors",
+        "lib_vty",
+        "libagentx",
+        "libfrr",
+        "libfrr_trace",
+        "linklist",
+        "link_state",
+        "log",
+        "log_cli",
+        "log_filter",
+        "log_nb",
+        "log_vty",
+        "md5",
+        "memory",
+        "mgmt_be_client",
+        "mgmt_fe_client",
+        "mgmt_msg",
+        "mgmt_msg_native",
+        "mlag",
+        "module",
+        "mpls",
+        "srv6",
+        "network",
+        "nexthop",
+        "netns_linux",
+        "netns_other",
+        "nexthop_group",
+        "northbound",
+        "northbound_cli",
+        "northbound_db",
+        "northbound_notif",
+        "northbound_oper",
+        "ntop",
+        "openbsd-tree",
+        "pid_output",
+        "plist",
+        "prefix",
+        "privs",
+        "ptm_lib",
+        "pullwr",
+        "qobj",
+        "ringbuf",
+        "routemap",
+        "routemap_cli",
+        "routemap_northbound",
+        "sbuf",
+        "seqlock",
+        "sha256",
+        "sigevent",
+        "skiplist",
+        "sockopt",
+        "sockunion",
+        "spf_backoff",
+        "segment_routing",
+        "srcdest_table",
+        "stream",
+        "strformat",
+        "strlcat",
+        "strlcpy",
+        "systemd",
+        "table",
+        "termtable",
+        "event",
+        "typerb",
+        "typesafe",
+        "vector",
+        "vrf",
+        "vty",
+        "wheel",
+        "workqueue",
+        "xref",
+        "yang",
+        "yang_translator",
+        "yang_wrappers",
+        "zclient",
+        "zlog",
+        "zlog_5424",
+        "zlog_5424_cli",
+        "zlog_live",
+        "zlog_recirculate",
+        "zlog_targets",
+        "routing_nb",
+        "routing_nb_config",
+        "tc",
+        "db",  # SQLITE3 gate on
+    ]
+] + [
+    "frr/lib/printf/printf-pos.c",
+    "frr/lib/printf/vfprintf.c",
+    "frr/lib/printf/glue.c",
+]
+
+LIBFRR_YANG_C_SOURCES = [
+    ":yang_{}".format(stem.replace("/", "_").replace("-", "_"))
+    for stem, _ in YANG_LIBFRR_MODELS
+]
+
+LIBFRR_BISON_SOURCES = [
+    ":frr/lib/command_parse",
+    ":frr/lib/command_lex",
+]
+
+LIBFRR_CLIPPY_TEXTUAL_HDRS = [
+    ":lib_{}_clippy".format(name)
+    for name in LIB_CLIPPY_SOURCES
+]
+
+FRR_COMMON_COPTS = [
+    "-D_GNU_SOURCE",
+    "-DHAVE_CONFIG_H",
+    "-DSYSCONFDIR=\\\"/etc/frr/\\\"",
+    "-DCONFDATE=20260101",
+    "-std=gnu11",
+    "-fms-extensions",
+    "-Wno-error=implicit-function-declaration",
+    "-Wno-sign-compare",
+    "-Wno-implicit-fallthrough",
+    "-Wno-unused-but-set-variable",
+    "-Wno-unused-function",
+    "-Wno-unused-parameter",
+    "-Wno-unused-variable",
+    "-Wno-misleading-indentation",
+    "-Wno-deprecated-declarations",
+    "-Wno-cast-function-type",
+    "-fno-omit-frame-pointer",
+]
+
+sonic_shared_library_versioned(
+    name = "libfrr",
+    srcs = LIBFRR_SOURCES + LIBFRR_YANG_C_SOURCES + LIBFRR_BISON_SOURCES,
+    hdrs = [":frr_lib_headers"],
+    textual_hdrs = LIBFRR_CLIPPY_TEXTUAL_HDRS,
+    copts = FRR_COMMON_COPTS + ["-fPIC"],
+    deps = [
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        "@frr_deps//libreadline-dev:libreadline",
+        "@frr_deps//libjson-c-dev:libjson-c",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libpcre2-dev:libpcre2",
+        "@frr_deps//libssl-dev:libssl",
+        "@frr_deps//libsqlite3-dev:libsqlite3",
+        "@frr_deps//libsystemd-dev:libsystemd",
+        "@frr_deps//libelf-dev:libelf",
+        "@frr_deps//libc-ares-dev:libc-ares",
+        # gperftools tcmalloc: lib/vty.c + lib/libfrr.c include
+        # gperftools/tcmalloc.h + malloc_extension_c.h and call
+        # tc_version/tc_mallinfo2/MallocExtension_* under HAVE_TCMALLOC
+        # (patch 0110). The cc_import records NEEDED libtcmalloc.so.4 so the
+        # allocator override is loaded process-wide (matches Make baseline).
+        "@frr_deps//libgoogle-perftools-dev:tcmalloc",
+    ],
+    dynamic_deps = [
+        "@libyang3//:yang_shared",
+    ],
+    linkopts = [
+        "-pthread",
+        "-lm",
+        "-ldl",
+        "-lrt",
+        "-lcrypt",
+        "-Wl,-e,_libfrr_version",
+    ],
+    soversion = "0",
+    version = "0.0.0",
+    output_name = "libfrr",
+    allow_undefined = True,
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# libfrrcares.so (lib/resolver.c).
+# =============================================================================
+sonic_shared_library_versioned(
+    name = "libfrrcares",
+    srcs = ["frr/lib/resolver.c"],
+    copts = FRR_COMMON_COPTS + ["-fPIC"],
+    deps = [
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        ":libfrr",
+        "@frr_deps//libc-ares-dev:libc-ares",
+    ],
+    dynamic_deps = [
+        ":libfrr_shared",
+    ],
+    soversion = "0",
+    version = "0.0.0",
+    output_name = "libfrrcares",
+    allow_undefined = True,
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# libfrrsnmp.so (lib/agentx.c + lib/snmp.c).
+# =============================================================================
+sonic_shared_library_versioned(
+    name = "libfrrsnmp",
+    srcs = [
+        "frr/lib/agentx.c",
+        "frr/lib/snmp.c",
+    ],
+    copts = FRR_COMMON_COPTS + ["-fPIC"],
+    deps = [
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        ":libfrr",
+        "@frr_deps//libsnmp-dev:libsnmp",
+    ],
+    dynamic_deps = [
+        ":libfrr_shared",
+    ],
+    soversion = "0",
+    version = "0.0.0",
+    output_name = "libfrrsnmp",
+    allow_undefined = True,
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# nexthopgroup C-API header shim (dplane_fpm_sonic.c uses
+# <nexthopgroup/c-api/nexthopgroup_capi.h> from the sonic-fib module).
+# =============================================================================
+cc_library(
+    name = "nexthopgroup_capi_hdrs",
+    hdrs = ["@sonic-fib//:nexthopgroup_capi_hdrs"],
+    include_prefix = "nexthopgroup/c-api",
+    strip_include_prefix = "/src/c-api",
+    visibility = ["//visibility:private"],
+)
+
+# =============================================================================
+# Shared yang embed wrappers referenced by multiple daemons (emitted once).
+# frr-bfdd.yang.c is embedded into staticd, ripd, bfdd (and mgmtd).
+# =============================================================================
+yang_genrule(
+    name = "yang_yang_frr_bfdd",
+    src = "frr/yang/frr-bfdd.yang",
+    outname = "frr/yang/frr-bfdd.yang.c",
+    embedmodel = "frr/yang/embedmodel.py",
+)
+
+# =============================================================================
+# staticd
+# =============================================================================
+frr_daemon(
+    name = "staticd",
+    sources = [
+        "frr/staticd/" + s + ".c"
+        for s in [
+            "static_bfd",
+            "static_debug",
+            "static_nht",
+            "static_routes",
+            "static_zebra",
+            "static_vrf",
+            "static_vty",
+            "static_nb",
+            "static_nb_config",
+            "static_srv6",
+            "static_main",
+        ]
+    ],
+    clippy_sources = ["static_vty"],
+    yang_models = [
+        ("yang/frr-staticd", "frr/yang/frr-staticd.yang"),
+    ],
+    nodist_yang = ["yang/frr-bfdd"],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# =============================================================================
+# zebra
+# =============================================================================
+ZEBRA_CLIPPY_SOURCES = [
+    "debug",
+    "dplane_fpm_nl",
+    "interface",
+    "rtadv",
+    "zebra_mlag_vty",
+    "zebra_routemap",
+    "zebra_vty",
+    "zebra_srv6_vty",
+    "zebra_vrf",
+    "label_manager",
+    "zebra_cli",
+]
+
+[
+    clippy_genrule(
+        name = "zebra_{}_clippy".format(name),
+        src = "frr/zebra/{}.c".format(name),
+        basename = "frr/zebra/" + name,
+        clippy = ":clippy",
+        clidef = "frr/python/clidef.py",
+        clippy_pkg = glob([
+            "frr/python/clippy/*.py",
+            "frr/python/*.py",
+        ]),
+        frr_extra_inputs = CLIPPY_FRR_INPUTS,
+    )
+    for name in ZEBRA_CLIPPY_SOURCES
+]
+
+yang_genrule(
+    name = "yang_frr_zebra",
+    src = "frr/yang/frr-zebra.yang",
+    outname = "frr/yang/frr-zebra.yang.c",
+    embedmodel = "frr/yang/embedmodel.py",
+)
+
+yang_genrule(
+    name = "yang_frr_zebra_route_map",
+    src = "frr/yang/frr-zebra-route-map.yang",
+    outname = "frr/yang/frr-zebra-route-map.yang.c",
+    embedmodel = "frr/yang/embedmodel.py",
+)
+
+cc_library(
+    name = "zebra_v_hdrs",
+    hdrs = glob(["frr/zebra/*.h", "frr/zebra/dpdk/*.h"]),
+    strip_include_prefix = "frr/zebra",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "zebra_clippy_textual_hdrs",
+    textual_hdrs = [":zebra_{}_clippy".format(name) for name in ZEBRA_CLIPPY_SOURCES],
+    visibility = ["//visibility:public"],
+)
+
+ZEBRA_C_SOURCES = [
+    "frr/zebra/" + s + ".c"
+    for s in [
+        "connected",
+        "debug",
+        "if_ioctl",
+        "if_netlink",
+        "if_socket",
+        "if_sysctl",
+        "interface",
+        "ioctl",
+        "ipforward_proc",
+        "ipforward_sysctl",
+        "kernel_netlink",
+        "kernel_socket",
+        "label_manager",
+        "main",
+        "netconf_netlink",
+        "redistribute",
+        "router-id",
+        "rt_netlink",
+        "ge_netlink",
+        "rt_socket",
+        "rtadv",
+        "rtread_netlink",
+        "rtread_sysctl",
+        "rule_netlink",
+        "rule_socket",
+        "table_manager",
+        "tc_netlink",
+        "tc_socket",
+        "zapi_msg",
+        "zebra_affinitymap",
+        "zebra_dplane",
+        "zebra_errors",
+        "zebra_gr",
+        "zebra_l2",
+        "zebra_l2_bridge_if",
+        "zebra_evpn",
+        "zebra_evpn_mac",
+        "zebra_evpn_neigh",
+        "zebra_mlag",
+        "zebra_mlag_vty",
+        "zebra_mpls",
+        "zebra_mpls_netlink",
+        "zebra_mpls_openbsd",
+        "zebra_mpls_null",
+        "zebra_mpls_vty",
+        "zebra_srv6",
+        "zebra_srv6_vty",
+        "zebra_mroute",
+        "zebra_nb",
+        "zebra_nb_config",
+        "zebra_nb_rpcs",
+        "zebra_nb_state",
+        "zebra_netns_id",
+        "zebra_netns_notify",
+        "zebra_nhg",
+        "zebra_ns",
+        "zebra_opaque",
+        "zebra_pbr",
+        "zebra_ptm",
+        "zebra_ptm_redistribute",
+        "zebra_pw",
+        "zebra_rib",
+        "zebra_router",
+        "zebra_rnh",
+        "zebra_routemap",
+        "zebra_routemap_nb",
+        "zebra_routemap_nb_config",
+        "zebra_script",
+        "zebra_srte",
+        "zebra_tc",
+        "zebra_trace",
+        "zebra_vrf",
+        "zebra_vty",
+        "zebra_vxlan",
+        "zebra_vxlan_if",
+        "zebra_evpn_mh",
+        "zebra_neigh",
+        "zserv",
+    ]
+]
+
+cc_binary(
+    name = "zebra",
+    srcs = ZEBRA_C_SOURCES + [
+        ":yang_frr_zebra",
+        ":yang_frr_zebra_route_map",
+    ],
+    deps = [
+        ":frr_uapi_hdrs",
+        ":zebra_v_hdrs",
+        ":zebra_clippy_textual_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+    ],
+    dynamic_deps = [
+        ":libfrr_shared",
+        "@libyang3//:yang_shared",
+    ],
+    copts = FRR_COMMON_COPTS,
+    linkopts = [
+        "-Wl,--export-dynamic",
+        "-pthread",
+        "-lm",
+        "-ldl",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# bgpd
+# =============================================================================
+BGPD_CLIPPY_SOURCES = [
+    "bgp_debug",
+    "bgp_evpn_vty",
+    "bgp_labelpool",
+    "bgp_route",
+    "bgp_routemap",
+    "bgp_vty",
+    "bgp_nexthop",
+    "bgp_bfd",
+]
+
+[
+    clippy_genrule(
+        name = "bgpd_{}_clippy".format(name),
+        src = "frr/bgpd/{}.c".format(name),
+        basename = "frr/bgpd/" + name,
+        clippy = ":clippy",
+        clidef = "frr/python/clidef.py",
+        clippy_pkg = glob([
+            "frr/python/clippy/*.py",
+            "frr/python/*.py",
+        ]),
+        frr_extra_inputs = CLIPPY_FRR_INPUTS,
+    )
+    for name in BGPD_CLIPPY_SOURCES
+]
+
+BGPD_YANG_MODELS = [
+    ("frr/yang/frr-bgp-types", "frr/yang/frr-bgp-types.yang"),
+    ("frr/yang/frr-bgp", "frr/yang/frr-bgp.yang"),
+    ("frr/yang/frr-bgp-common-structure", "frr/yang/frr-bgp-common-structure.yang"),
+    ("frr/yang/frr-bgp-common", "frr/yang/frr-bgp-common.yang"),
+    ("frr/yang/frr-bgp-common-multiprotocol", "frr/yang/frr-bgp-common-multiprotocol.yang"),
+    ("frr/yang/frr-bgp-neighbor", "frr/yang/frr-bgp-neighbor.yang"),
+    ("frr/yang/frr-bgp-peer-group", "frr/yang/frr-bgp-peer-group.yang"),
+    ("frr/yang/frr-bgp-bmp", "frr/yang/frr-bgp-bmp.yang"),
+    ("frr/yang/frr-bgp-rpki", "frr/yang/frr-bgp-rpki.yang"),
+    ("frr/yang/frr-deviations-bgp-datacenter", "frr/yang/frr-deviations-bgp-datacenter.yang"),
+    ("frr/yang/frr-bgp-filter", "frr/yang/frr-bgp-filter.yang"),
+    ("frr/yang/frr-bgp-route-map", "frr/yang/frr-bgp-route-map.yang"),
+]
+
+[
+    yang_genrule(
+        name = "yang_{}".format(stem.replace("/", "_").replace("-", "_")),
+        src = src,
+        outname = stem + ".yang.c",
+        embedmodel = "frr/yang/embedmodel.py",
+    )
+    for stem, src in BGPD_YANG_MODELS
+]
+
+cc_library(
+    name = "bgpd_v_hdrs",
+    hdrs = glob(["frr/bgpd/*.h", "frr/bgpd/rfapi/*.h"]),
+    strip_include_prefix = "frr/bgpd",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "bgpd_clippy_textual_hdrs",
+    textual_hdrs = [":bgpd_{}_clippy".format(name) for name in BGPD_CLIPPY_SOURCES],
+    visibility = ["//visibility:public"],
+)
+
+BGPD_C_SOURCES = [
+    "frr/bgpd/" + s + ".c"
+    for s in [
+        "bgp_addpath",
+        "bgp_advertise",
+        "bgp_aspath",
+        "bgp_attr",
+        "bgp_attr_evpn",
+        "bgp_bfd",
+        "bgp_clist",
+        "bgp_community",
+        "bgp_community_alias",
+        "bgp_conditional_adv",
+        "bgp_damp",
+        "bgp_debug",
+        "bgp_dump",
+        "bgp_ecommunity",
+        "bgp_encap_tlv",
+        "bgp_errors",
+        "bgp_evpn",
+        "bgp_evpn_mh",
+        "bgp_evpn_vty",
+        "bgp_filter",
+        "bgp_flowspec",
+        "bgp_flowspec_util",
+        "bgp_flowspec_vty",
+        "bgp_fsm",
+        "bgp_io",
+        "bgp_keepalives",
+        "bgp_label",
+        "bgp_labelpool",
+        "bgp_lcommunity",
+        "bgp_mac",
+        "bgp_memory",
+        "bgp_mpath",
+        "bgp_mplsvpn",
+        "bgp_network",
+        "bgp_nexthop",
+        "bgp_nht",
+        "bgp_open",
+        "bgp_packet",
+        "bgp_pbr",
+        "bgp_rd",
+        "bgp_regex",
+        "bgp_route",
+        "bgp_routemap",
+        "bgp_routemap_nb",
+        "bgp_routemap_nb_config",
+        "bgp_script",
+        "bgp_table",
+        "bgp_updgrp",
+        "bgp_updgrp_adv",
+        "bgp_updgrp_packet",
+        "bgp_vpn",
+        "bgp_vty",
+        "bgp_zebra",
+        "bgpd",
+        "bgp_trace",
+        "bgp_nhg",
+        "bgp_nhc",
+        "bgp_main",
+    ]
+]
+
+BGPD_YANG_C_SOURCES = [
+    ":yang_{}".format(stem.replace("/", "_").replace("-", "_"))
+    for stem, _ in BGPD_YANG_MODELS
+]
+
+cc_binary(
+    name = "bgpd",
+    srcs = BGPD_C_SOURCES + BGPD_YANG_C_SOURCES,
+    deps = [
+        ":bgpd_v_hdrs",
+        ":bgpd_clippy_textual_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+    ],
+    dynamic_deps = [
+        ":libfrr_shared",
+        "@libyang3//:yang_shared",
+    ],
+    copts = FRR_COMMON_COPTS,
+    linkopts = [
+        "-Wl,--export-dynamic",
+        "-pthread",
+        "-lm",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Simple daemons via the frr_daemon macro.
+# =============================================================================
+
+# ---- ripd ----
+frr_daemon(
+    name = "ripd",
+    sources = [
+        "frr/ripd/" + s + ".c"
+        for s in [
+            "rip_bfd",
+            "rip_debug",
+            "rip_errors",
+            "rip_interface",
+            "rip_offset",
+            "rip_main",
+            "rip_nb",
+            "rip_nb_config",
+            "rip_nb_rpcs",
+            "rip_nb_notifications",
+            "rip_nb_state",
+            "rip_peer",
+            "rip_routemap",
+            "rip_zebra",
+            "ripd",
+            "rip_cli",
+        ]
+    ],
+    clippy_sources = ["rip_bfd", "rip_cli"],
+    yang_models = [
+        ("yang/frr-ripd", "frr/yang/frr-ripd.yang"),
+    ],
+    nodist_yang = ["yang/frr-bfdd"],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# ---- ripngd ----
+frr_daemon(
+    name = "ripngd",
+    sources = [
+        "frr/ripngd/" + s + ".c"
+        for s in [
+            "ripng_debug",
+            "ripng_interface",
+            "ripng_nexthop",
+            "ripng_offset",
+            "ripng_main",
+            "ripng_nb",
+            "ripng_nb_config",
+            "ripng_nb_rpcs",
+            "ripng_nb_state",
+            "ripng_peer",
+            "ripng_route",
+            "ripng_routemap",
+            "ripng_zebra",
+            "ripngd",
+            "ripng_cli",
+        ]
+    ],
+    clippy_sources = ["ripng_cli"],
+    yang_models = [("yang/frr-ripngd", "frr/yang/frr-ripngd.yang")],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# ---- pbrd ----
+frr_daemon(
+    name = "pbrd",
+    sources = [
+        "frr/pbrd/" + s + ".c"
+        for s in [
+            "pbr_zebra",
+            "pbr_vty",
+            "pbr_map",
+            "pbr_memory",
+            "pbr_nht",
+            "pbr_debug",
+            "pbr_vrf",
+            "pbr_main",
+        ]
+    ],
+    clippy_sources = ["pbr_debug", "pbr_vty"],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# ---- babeld ----
+frr_daemon(
+    name = "babeld",
+    sources = [
+        "frr/babeld/" + s + ".c"
+        for s in [
+            "babel_errors",
+            "babel_filter",
+            "babel_interface",
+            "babel_main",
+            "babel_zebra",
+            "babeld",
+            "kernel",
+            "message",
+            "neighbour",
+            "net",
+            "resend",
+            "route",
+            "source",
+            "util",
+            "xroute",
+        ]
+    ],
+    clippy_sources = ["babel_interface", "babeld"],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# ---- nhrpd ----
+frr_daemon(
+    name = "nhrpd",
+    sources = [
+        "frr/nhrpd/" + s + ".c"
+        for s in [
+            "linux",
+            "netlink_arp",
+            "nhrp_cache",
+            "nhrp_errors",
+            "nhrp_event",
+            "nhrp_interface",
+            "nhrp_main",
+            "nhrp_nhs",
+            "nhrp_packet",
+            "nhrp_peer",
+            "nhrp_multicast",
+            "nhrp_route",
+            "nhrp_shortcut",
+            "nhrp_vc",
+            "nhrp_vty",
+            "reqid",
+            "vici",
+            "zbuf",
+            "znl",
+        ]
+    ],
+    clippy_sources = ["nhrp_vty"],
+    extra_deps = [":libfrrcares"],
+    extra_dynamic_deps = [":libfrrcares_shared"],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# ---- vrrpd ----
+frr_daemon(
+    name = "vrrpd",
+    sources = [
+        "frr/vrrpd/" + s + ".c"
+        for s in [
+            "vrrp",
+            "vrrp_arp",
+            "vrrp_debug",
+            "vrrp_main",
+            "vrrp_ndisc",
+            "vrrp_northbound",
+            "vrrp_packet",
+            "vrrp_vty",
+            "vrrp_zebra",
+        ]
+    ],
+    clippy_sources = ["vrrp_vty"],
+    yang_models = [("yang/frr-vrrpd", "frr/yang/frr-vrrpd.yang")],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# ---- ldpd ----
+frr_daemon(
+    name = "ldpd",
+    sources = [
+        "frr/ldpd/" + s + ".c"
+        for s in [
+            "accept",
+            "address",
+            "adjacency",
+            "control",
+            "hello",
+            "init",
+            "interface",
+            "keepalive",
+            "l2vpn",
+            "labelmapping",
+            "lde",
+            "lde_lib",
+            "ldp_debug",
+            "ldp_vty_cmds",
+            "ldp_vty_conf",
+            "ldp_vty_exec",
+            "ldp_zebra",
+            "ldpe",
+            "logmsg",
+            "neighbor",
+            "notification",
+            "packet",
+            "pfkey",
+            "rlfa",
+            "socket",
+            "util",
+            "ldpd",
+        ]
+    ],
+    clippy_sources = ["ldp_vty_cmds"],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# ---- eigrpd ----
+frr_daemon(
+    name = "eigrpd",
+    sources = [
+        "frr/eigrpd/" + s + ".c"
+        for s in [
+            "eigrp_cli",
+            "eigrp_dump",
+            "eigrp_errors",
+            "eigrp_filter",
+            "eigrp_fsm",
+            "eigrp_hello",
+            "eigrp_interface",
+            "eigrp_main",
+            "eigrp_metric",
+            "eigrp_neighbor",
+            "eigrp_network",
+            "eigrp_northbound",
+            "eigrp_packet",
+            "eigrp_query",
+            "eigrp_reply",
+            "eigrp_siaquery",
+            "eigrp_siareply",
+            "eigrp_snmp",
+            "eigrp_topology",
+            "eigrp_update",
+            "eigrp_vrf",
+            "eigrp_vty",
+            "eigrp_zebra",
+            "eigrpd",
+        ]
+    ],
+    clippy_sources = ["eigrp_cli", "eigrp_vty"],
+    yang_models = [("yang/frr-eigrpd", "frr/yang/frr-eigrpd.yang")],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# ---- sharpd ----
+frr_daemon(
+    name = "sharpd",
+    sources = [
+        "frr/sharpd/" + s + ".c"
+        for s in [
+            "sharp_nht",
+            "sharp_zebra",
+            "sharp_vty",
+            "sharp_logpump",
+            "sharp_main",
+        ]
+    ],
+    clippy_sources = ["sharp_vty"],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# ---- bfdd ----
+frr_daemon(
+    name = "bfdd",
+    sources = [
+        "frr/bfdd/" + s + ".c"
+        for s in [
+            "bfd",
+            "bfdd_nb",
+            "bfdd_nb_config",
+            "bfdd_nb_state",
+            "bfdd_vty",
+            "bfdd_cli",
+            "bfd_packet",
+            "dplane",
+            "event",
+            "ptm_adapter",
+            "bfdd",
+        ]
+    ],
+    clippy_sources = ["bfdd_cli", "bfdd_vty"],
+    yang_models = [],
+    nodist_yang = ["yang/frr-bfdd"],
+    extra_linkopts = ["-ldl"],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# ---- pathd (base binary; PCEP plugin is a separate .so) ----
+frr_daemon(
+    name = "pathd",
+    sources = [
+        "frr/pathd/" + s + ".c"
+        for s in [
+            "path_cli",
+            "path_debug",
+            "path_errors",
+            "path_nb",
+            "path_nb_config",
+            "path_nb_state",
+            "path_ted",
+            "path_zebra",
+            "pathd",
+            "path_main",
+        ]
+    ],
+    clippy_sources = ["path_cli", "path_ted"],
+    yang_models = [("yang/frr-pathd", "frr/yang/frr-pathd.yang")],
+    extra_linkopts = ["-ldl"],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# ---- ospfd ----
+frr_daemon(
+    name = "ospfd",
+    sources = [
+        "frr/ospfd/" + s + ".c"
+        for s in [
+            "ospf_abr",
+            "ospf_api",
+            "ospf_apiserver",
+            "ospf_asbr",
+            "ospf_ase",
+            "ospf_bfd",
+            "ospf_dump",
+            "ospf_dump_api",
+            "ospf_errors",
+            "ospf_ext",
+            "ospf_flood",
+            "ospf_gr",
+            "ospf_ia",
+            "ospf_interface",
+            "ospf_ism",
+            "ospf_ldp_sync",
+            "ospf_lsa",
+            "ospf_lsdb",
+            "ospf_memory",
+            "ospf_neighbor",
+            "ospf_network",
+            "ospf_nsm",
+            "ospf_opaque",
+            "ospf_packet",
+            "ospf_ri",
+            "ospf_route",
+            "ospf_routemap",
+            "ospf_routemap_nb",
+            "ospf_routemap_nb_config",
+            "ospf_spf",
+            "ospf_ti_lfa",
+            "ospf_sr",
+            "ospf_te",
+            "ospf_vty",
+            "ospf_zebra",
+            "ospfd",
+            "ospf_gr_helper",
+            "ospf_auth",
+            "ospf_main",
+        ]
+    ],
+    clippy_sources = ["ospf_vty", "ospf_ldp_sync", "ospf_dump", "ospf_gr"],
+    yang_models = [("yang/frr-ospf-route-map", "frr/yang/frr-ospf-route-map.yang")],
+    extra_linkopts = ["-ldl"],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# ---- ospf6d ----
+frr_daemon(
+    name = "ospf6d",
+    sources = [
+        "frr/ospf6d/" + s + ".c"
+        for s in [
+            "ospf6_nssa",
+            "ospf6_abr",
+            "ospf6_area",
+            "ospf6_asbr",
+            "ospf6_routemap_nb",
+            "ospf6_routemap_nb_config",
+            "ospf6_bfd",
+            "ospf6_flood",
+            "ospf6_gr",
+            "ospf6_gr_helper",
+            "ospf6_interface",
+            "ospf6_intra",
+            "ospf6_lsa",
+            "ospf6_lsdb",
+            "ospf6_message",
+            "ospf6_neighbor",
+            "ospf6_network",
+            "ospf6_proto",
+            "ospf6_route",
+            "ospf6_spf",
+            "ospf6_top",
+            "ospf6_zebra",
+            "ospf6d",
+            "ospf6_auth_trailer",
+            "ospf6_main",
+        ]
+    ],
+    clippy_sources = [
+        "ospf6d",
+        "ospf6_top",
+        "ospf6_area",
+        "ospf6_asbr",
+        "ospf6_interface",
+        "ospf6_lsa",
+        "ospf6_gr_helper",
+        "ospf6_gr",
+        "ospf6_nssa",
+        "ospf6_route",
+        "ospf6_neighbor",
+    ],
+    yang_models = [("yang/frr-ospf6-route-map", "frr/yang/frr-ospf6-route-map.yang")],
+    nodist_yang = ["yang/frr-ospf-route-map"],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# ---- pimd (IPv4; -DPIM_IPV=4) ----
+frr_daemon(
+    name = "pimd",
+    sources = [
+        "frr/pimd/" + s + ".c"
+        for s in [
+            "pim_addr",
+            "pim_assert",
+            "pim_bfd",
+            "pim_bsm",
+            "pim_bsr_rpdb",
+            "pim_cmd_common",
+            "pim_errors",
+            "pim_hello",
+            "pim_iface",
+            "pim_ifchannel",
+            "pim_instance",
+            "pim_int",
+            "pim_join",
+            "pim_jp_agg",
+            "pim_macro",
+            "pim_memory",
+            "pim_mroute",
+            "pim_msg",
+            "pim_nb",
+            "pim_nb_config",
+            "pim_neighbor",
+            "pim_nht",
+            "pim_oil",
+            "pim_pim",
+            "pim_routemap",
+            "pim_rp",
+            "pim_rpf",
+            "pim_sock",
+            "pim_ssm",
+            "pim_dm",
+            "pim_state_refresh",
+            "pim_ssmpingd",
+            "pim_static",
+            "pim_tib",
+            "pim_time",
+            "pim_tlv",
+            "pim_upstream",
+            "pim_util",
+            "pim_vty",
+            "pim_zebra",
+            "pim_zlookup",
+            "pim_vxlan",
+            "pim_register",
+            "pimd",
+            "pim_autorp",
+            "pim_cmd",
+            "pim_igmp",
+            "pim_igmp_mtrace",
+            "pim_igmp_stats",
+            "pim_igmpv2",
+            "pim_igmpv3",
+            "pim_main",
+            "pim_mlag",
+            "pim_msdp",
+            "pim_msdp_packet",
+            "pim_msdp_socket",
+            "pim_signals",
+            "pim_zpthread",
+        ]
+    ],
+    clippy_sources = ["pim_cmd", "pim_routemap"],
+    yang_models = [
+        ("yang/frr-pim", "frr/yang/frr-pim.yang"),
+        ("yang/frr-pim-route-map", "frr/yang/frr-pim-route-map.yang"),
+        ("yang/frr-pim-rp", "frr/yang/frr-pim-rp.yang"),
+        ("yang/frr-pim-candidate", "frr/yang/frr-pim-candidate.yang"),
+        ("yang/frr-gmp", "frr/yang/frr-gmp.yang"),
+    ],
+    extra_copts = ["-DPIM_IPV=4"],
+    clippy_frr_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# =============================================================================
+# pim6d (IPv6 PIM; -DPIM_IPV=6).  pimd/subdir.am PIM6D conditional:
+#   pimd_pim6d_SOURCES = $(pim_common) pim6_main.c pim6_mld.c pim6_cmd.c
+#   pimd_pim6d_CFLAGS  = $(AM_CFLAGS) -DPIM_IPV=6
+#   pimd_pim6d_LDADD   = lib/libfrr.la $(LIBCAP) -lm
+# Reuses pimd_v_hdrs/pimd_q_hdrs + the pim yang embed .c already emitted by the
+# pimd frr_daemon() call above.
+# =============================================================================
+clippy_genrule(
+    name = "pimd_pim6_cmd_clippy",
+    src = "frr/pimd/pim6_cmd.c",
+    basename = "frr/pimd/pim6_cmd",
+    clippy = ":clippy",
+    clidef = "frr/python/clidef.py",
+    clippy_pkg = glob(["frr/python/clippy/*.py", "frr/python/*.py"]),
+    frr_extra_inputs = CLIPPY_FRR_INPUTS,
+)
+
+clippy_genrule(
+    name = "pimd_pim6_mld_clippy",
+    src = "frr/pimd/pim6_mld.c",
+    basename = "frr/pimd/pim6_mld",
+    clippy = ":clippy",
+    clidef = "frr/python/clidef.py",
+    clippy_pkg = glob(["frr/python/clippy/*.py", "frr/python/*.py"]),
+    frr_extra_inputs = CLIPPY_FRR_INPUTS,
+)
+
+cc_library(
+    name = "pim6d_clippy_textual_hdrs",
+    textual_hdrs = [
+        ":pimd_pim6_cmd_clippy",
+        ":pimd_pim6_mld_clippy",
+        ":pimd_pim_routemap_clippy",
+    ],
+    visibility = ["//visibility:private"],
+)
+
+PIM_COMMON_SOURCES = [
+    "frr/pimd/" + s + ".c"
+    for s in [
+        "pim_addr",
+        "pim_assert",
+        "pim_bfd",
+        "pim_bsm",
+        "pim_bsr_rpdb",
+        "pim_cmd_common",
+        "pim_errors",
+        "pim_hello",
+        "pim_iface",
+        "pim_ifchannel",
+        "pim_instance",
+        "pim_int",
+        "pim_join",
+        "pim_jp_agg",
+        "pim_macro",
+        "pim_memory",
+        "pim_mroute",
+        "pim_msg",
+        "pim_nb",
+        "pim_nb_config",
+        "pim_neighbor",
+        "pim_nht",
+        "pim_oil",
+        "pim_pim",
+        "pim_routemap",
+        "pim_rp",
+        "pim_rpf",
+        "pim_sock",
+        "pim_ssm",
+        "pim_dm",
+        "pim_state_refresh",
+        "pim_ssmpingd",
+        "pim_static",
+        "pim_tib",
+        "pim_time",
+        "pim_tlv",
+        "pim_upstream",
+        "pim_util",
+        "pim_vty",
+        "pim_zebra",
+        "pim_zlookup",
+        "pim_vxlan",
+        "pim_register",
+        "pimd",
+    ]
+]
+
+cc_binary(
+    name = "pim6d",
+    srcs = PIM_COMMON_SOURCES + [
+        "frr/pimd/pim6_main.c",
+        "frr/pimd/pim6_mld.c",
+        "frr/pimd/pim6_cmd.c",
+        ":yang_yang_frr_pim",
+        ":yang_yang_frr_pim_route_map",
+        ":yang_yang_frr_pim_rp",
+        ":yang_yang_frr_pim_candidate",
+        ":yang_yang_frr_gmp",
+    ],
+    deps = [
+        ":pimd_v_hdrs",
+        ":pimd_q_hdrs",
+        ":pim6d_clippy_textual_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+    ],
+    dynamic_deps = [
+        ":libfrr_shared",
+        "@libyang3//:yang_shared",
+    ],
+    copts = FRR_COMMON_COPTS + ["-DPIM_IPV=6"],
+    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm"],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# isisd + fabricd
+#
+# fabricd is built from the SAME LIBISIS_SOURCES + isis_vty_fabricd.c with
+# -DFABRICD=1 (isisd/subdir.am FABRICD_CPPFLAGS).  Because the -DFABRICD define
+# changes the compiled objects, fabricd needs its own compile of every isis
+# source + its own isis_cli clippy companion.
+# =============================================================================
+clippy_genrule(
+    name = "isisd_isis_cli_clippy",
+    src = "frr/isisd/isis_cli.c",
+    basename = "frr/isisd/isis_cli",
+    clippy = ":clippy",
+    clidef = "frr/python/clidef.py",
+    clippy_pkg = glob(["frr/python/clippy/*.py", "frr/python/*.py"]),
+    frr_extra_inputs = CLIPPY_FRR_INPUTS,
+)
+
+yang_genrule(
+    name = "yang_frr_isisd",
+    src = "frr/yang/frr-isisd.yang",
+    outname = "frr/yang/frr-isisd.yang.c",
+    embedmodel = "frr/yang/embedmodel.py",
+)
+
+cc_library(
+    name = "isisd_v_hdrs",
+    hdrs = glob(["frr/isisd/*.h"]),
+    strip_include_prefix = "frr/isisd",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "isisd_q_hdrs",
+    hdrs = glob(["frr/isisd/*.h"]),
+    strip_include_prefix = "frr",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "isisd_clippy_textual_hdrs",
+    textual_hdrs = [":isisd_isis_cli_clippy"],
+    visibility = ["//visibility:public"],
+)
+
+# LIBISIS_SOURCES + isis_nb*.c + isis_cli.c + ISIS_SOURCES
+ISISD_C_SOURCES = [
+    "frr/isisd/" + s + ".c"
+    for s in [
+        "isis_affinitymap",
+        "isis_adjacency",
+        "isis_bfd",
+        "isis_circuit",
+        "isis_csm",
+        "isis_dr",
+        "isis_dynhn",
+        "isis_errors",
+        "isis_events",
+        "isis_flags",
+        "isis_ldp_sync",
+        "isis_lfa",
+        "isis_lsp",
+        "isis_misc",
+        "isis_mt",
+        "isis_pdu",
+        "isis_pdu_counter",
+        "isis_redist",
+        "isis_route",
+        "isis_routemap",
+        "isis_spf",
+        "isis_sr",
+        "isis_flex_algo",
+        "isis_srv6",
+        "isis_te",
+        "isis_tlvs",
+        "isis_tx_queue",
+        "isis_zebra",
+        "isisd",
+        "iso_checksum",
+        "fabricd",
+        "isis_nb",
+        "isis_nb_config",
+        "isis_nb_notifications",
+        "isis_nb_state",
+        "isis_cli",
+        "isis_bpf",
+        "isis_dlpi",
+        "isis_main",
+        "isis_pfpacket",
+    ]
+]
+
+cc_binary(
+    name = "isisd",
+    srcs = ISISD_C_SOURCES + [":yang_frr_isisd"],
+    deps = [
+        ":isisd_v_hdrs",
+        ":isisd_q_hdrs",
+        ":isisd_clippy_textual_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+    ],
+    dynamic_deps = [
+        ":libfrr_shared",
+        "@libyang3//:yang_shared",
+    ],
+    copts = FRR_COMMON_COPTS,
+    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm"],
+    visibility = ["//visibility:public"],
+)
+
+# fabricd: same sources compiled with -DFABRICD=1 + isis_vty_fabricd.c.
+clippy_genrule(
+    name = "fabricd_isis_cli_clippy",
+    src = "frr/isisd/isis_cli.c",
+    basename = "frr/isisd/isis_cli_fabricd",
+    clippy = ":clippy",
+    clidef = "frr/python/clidef.py",
+    clippy_pkg = glob(["frr/python/clippy/*.py", "frr/python/*.py"]),
+    frr_extra_inputs = CLIPPY_FRR_INPUTS,
+)
+
+FABRICD_C_SOURCES = [
+    "frr/isisd/" + s + ".c"
+    for s in [
+        "isis_affinitymap",
+        "isis_adjacency",
+        "isis_bfd",
+        "isis_circuit",
+        "isis_csm",
+        "isis_dr",
+        "isis_dynhn",
+        "isis_errors",
+        "isis_events",
+        "isis_flags",
+        "isis_ldp_sync",
+        "isis_lfa",
+        "isis_lsp",
+        "isis_misc",
+        "isis_mt",
+        "isis_pdu",
+        "isis_pdu_counter",
+        "isis_redist",
+        "isis_route",
+        "isis_routemap",
+        "isis_spf",
+        "isis_sr",
+        "isis_flex_algo",
+        "isis_srv6",
+        "isis_te",
+        "isis_tlvs",
+        "isis_tx_queue",
+        "isis_zebra",
+        "isisd",
+        "iso_checksum",
+        "fabricd",
+        "isis_vty_fabricd",
+        "isis_bpf",
+        "isis_dlpi",
+        "isis_main",
+        "isis_pfpacket",
+    ]
+]
+
+cc_binary(
+    name = "fabricd",
+    srcs = FABRICD_C_SOURCES,
+    deps = [
+        ":isisd_v_hdrs",
+        ":isisd_q_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+    ],
+    dynamic_deps = [
+        ":libfrr_shared",
+        "@libyang3//:yang_shared",
+    ],
+    copts = FRR_COMMON_COPTS + ["-DFABRICD=1"],
+    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm"],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# watchfrr
+# =============================================================================
+clippy_genrule(
+    name = "watchfrr_watchfrr_vty_clippy",
+    src = "frr/watchfrr/watchfrr_vty.c",
+    basename = "frr/watchfrr/watchfrr_vty",
+    clippy = ":clippy",
+    clidef = "frr/python/clidef.py",
+    clippy_pkg = glob(["frr/python/clippy/*.py", "frr/python/*.py"]),
+    frr_extra_inputs = CLIPPY_FRR_INPUTS,
+)
+
+cc_library(
+    name = "watchfrr_v_hdrs",
+    hdrs = glob(["frr/watchfrr/*.h"]),
+    strip_include_prefix = "frr/watchfrr",
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "watchfrr_clippy_textual_hdrs",
+    textual_hdrs = [":watchfrr_watchfrr_vty_clippy"],
+    visibility = ["//visibility:private"],
+)
+
+cc_binary(
+    name = "watchfrr",
+    srcs = [
+        "frr/watchfrr/watchfrr.c",
+        "frr/watchfrr/watchfrr_errors.c",
+        "frr/watchfrr/watchfrr_vty.c",
+    ],
+    deps = [
+        ":watchfrr_v_hdrs",
+        ":watchfrr_clippy_textual_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+    ],
+    dynamic_deps = [
+        ":libfrr_shared",
+        "@libyang3//:yang_shared",
+    ],
+    copts = FRR_COMMON_COPTS,
+    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm"],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# mtracebis (CLI tool -> /usr/bin/mtracebis)
+# =============================================================================
+cc_library(
+    name = "pimd_mtrace_hdrs",
+    hdrs = glob(["frr/pimd/*.h"]),
+    strip_include_prefix = "frr/pimd",
+    visibility = ["//visibility:private"],
+)
+
+cc_binary(
+    name = "mtracebis",
+    srcs = [
+        "frr/pimd/mtracebis.c",
+        "frr/pimd/mtracebis_netlink.c",
+        "frr/pimd/mtracebis_routeget.c",
+    ],
+    deps = [
+        ":pimd_mtrace_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+    ],
+    dynamic_deps = [
+        ":libfrr_shared",
+        "@libyang3//:yang_shared",
+    ],
+    copts = FRR_COMMON_COPTS + ["-DPIM_IPV=4"],
+    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm"],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# mgmtd -- Management Daemon (new in FRR 10.5.4 vs the 8.2.2 reference).
+#
+# Two artifacts (mgmtd/subdir.am):
+#   - libmgmt_be_nb.so.0 (lib_LTLIBRARIES, -version-info 0:0:0): the back-end
+#     northbound command-def library, compiled from mgmt_be_nb.c + the
+#     per-daemon *_cli.c sources with -DINCLUDE_MGMTD_CMDDEFS_ONLY.
+#   - mgmtd binary: libmgmtd.a sources + mgmt_main.c + embedded yang, linking
+#     libfrr + libmgmt_be_nb.
+# =============================================================================
+clippy_genrule(
+    name = "mgmtd_mgmt_vty_clippy",
+    src = "frr/mgmtd/mgmt_vty.c",
+    basename = "frr/mgmtd/mgmt_vty",
+    clippy = ":clippy",
+    clidef = "frr/python/clidef.py",
+    clippy_pkg = glob(["frr/python/clippy/*.py", "frr/python/*.py"]),
+    frr_extra_inputs = CLIPPY_FRR_INPUTS,
+)
+
+cc_library(
+    name = "mgmtd_v_hdrs",
+    hdrs = glob(["frr/mgmtd/*.h"]),
+    strip_include_prefix = "frr/mgmtd",
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "mgmtd_q_hdrs",
+    hdrs = glob(["frr/mgmtd/*.h"]),
+    strip_include_prefix = "frr",
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "mgmtd_clippy_textual_hdrs",
+    textual_hdrs = [":mgmtd_mgmt_vty_clippy"],
+    visibility = ["//visibility:private"],
+)
+
+# The per-daemon *_cli.c compiled into libmgmt_be_nb consume clippy companions
+# already generated by their owning daemons (zebra_cli, rip_cli, ripng_cli,
+# static_vty).  Group those textual hdrs so the -DINCLUDE_MGMTD_CMDDEFS_ONLY
+# TUs can #include them.
+cc_library(
+    name = "mgmt_be_nb_clippy_textual_hdrs",
+    textual_hdrs = [
+        ":zebra_zebra_cli_clippy",
+        ":ripd_rip_cli_clippy",
+        ":ripngd_ripng_cli_clippy",
+        ":staticd_static_vty_clippy",
+    ],
+    visibility = ["//visibility:private"],
+)
+
+sonic_shared_library_versioned(
+    name = "libmgmt_be_nb",
+    srcs = [
+        "frr/mgmtd/mgmt_be_nb.c",
+        "frr/zebra/zebra_cli.c",
+        "frr/ripd/rip_cli.c",
+        "frr/ripngd/ripng_cli.c",
+        "frr/staticd/static_vty.c",
+    ],
+    copts = FRR_COMMON_COPTS + ["-DINCLUDE_MGMTD_CMDDEFS_ONLY", "-fPIC"],
+    deps = [
+        ":mgmt_be_nb_clippy_textual_hdrs",
+        ":zebra_v_hdrs",
+        ":ripd_v_hdrs",
+        ":ripngd_v_hdrs",
+        ":staticd_v_hdrs",
+        ":frr_uapi_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+    ],
+    dynamic_deps = [
+        ":libfrr_shared",
+        "@libyang3//:yang_shared",
+    ],
+    soversion = "0",
+    version = "0.0.0",
+    output_name = "libmgmt_be_nb",
+    allow_undefined = True,
+    visibility = ["//visibility:public"],
+)
+
+# mgmtd embedded yang: frr-zebra + frr-zebra-route-map (already emitted for
+# zebra), ietf-netconf, ietf-netconf-with-defaults, plus frr-bfdd / frr-ripd /
+# frr-ripngd / frr-staticd (already emitted elsewhere -> referenced).
+yang_genrule(
+    name = "yang_ietf_netconf",
+    src = "frr/yang/ietf/ietf-netconf.yang",
+    outname = "frr/yang/ietf/ietf-netconf.yang.c",
+    embedmodel = "frr/yang/embedmodel.py",
+)
+
+yang_genrule(
+    name = "yang_ietf_netconf_wd",
+    src = "frr/yang/ietf/ietf-netconf-with-defaults.yang",
+    outname = "frr/yang/ietf/ietf-netconf-with-defaults.yang.c",
+    embedmodel = "frr/yang/embedmodel.py",
+)
+
+MGMTD_C_SOURCES = [
+    "frr/mgmtd/" + s + ".c"
+    for s in [
+        "mgmt",
+        "mgmt_ds",
+        "mgmt_be_adapter",
+        "mgmt_fe_adapter",
+        "mgmt_history",
+        "mgmt_memory",
+        "mgmt_txn",
+        "mgmt_vty",
+        "mgmt_main",
+    ]
+]
+
+cc_binary(
+    name = "mgmtd",
+    srcs = MGMTD_C_SOURCES + [
+        ":yang_frr_zebra",
+        ":yang_frr_zebra_route_map",
+        ":yang_ietf_netconf",
+        ":yang_ietf_netconf_wd",
+        ":yang_yang_frr_bfdd",
+        ":yang_yang_frr_ripd",
+        ":yang_yang_frr_ripngd",
+        ":yang_yang_frr_staticd",
+    ],
+    deps = [
+        ":mgmtd_v_hdrs",
+        ":mgmtd_q_hdrs",
+        ":mgmtd_clippy_textual_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        ":libmgmt_be_nb",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+    ],
+    dynamic_deps = [
+        ":libfrr_shared",
+        ":libmgmt_be_nb_shared",
+        "@libyang3//:yang_shared",
+    ],
+    copts = FRR_COMMON_COPTS + ["-Ifrr"],
+    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm"],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# protobuf-c generated files (fpm/fpm.pb-c.{c,h}, qpb/qpb.pb-c.{c,h}).
+# Only zebra_fpm.so consumes these in FRR 10.5.4.
+# =============================================================================
+proto_library(
+    name = "qpb_proto",
+    srcs = ["frr/qpb/qpb.proto"],
+    strip_import_prefix = "frr",
+)
+
+proto_library(
+    name = "fpm_proto",
+    srcs = ["frr/fpm/fpm.proto"],
+    strip_import_prefix = "frr",
+    deps = [":qpb_proto"],
+)
+
+protoc_c_proto(
+    name = "qpb_pb_c",
+    proto = ":qpb_proto",
+    basename = "qpb/qpb",
+)
+
+protoc_c_proto(
+    name = "fpm_pb_c",
+    proto = ":fpm_proto",
+    basename = "fpm/fpm",
+)
+
+cc_library(
+    name = "_fpm_qpb_handwritten_hdrs",
+    hdrs = glob([
+        "frr/fpm/*.h",
+        "frr/qpb/*.h",
+    ]),
+    strip_include_prefix = "frr",
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "fpm_qpb_hdrs",
+    hdrs = [
+        ":qpb_pb_c_h_filegroup",
+        ":fpm_pb_c_h_filegroup",
+    ],
+    includes = ["frr"],
+    deps = [":_fpm_qpb_handwritten_hdrs"],
+    visibility = ["//visibility:private"],
+)
+
+# fpm/fpm_pb.c, qpb/qpb.c, qpb/qpb_allocator.c + the generated .pb-c.c.
+FPM_PB_GLUE_SOURCES = [
+    "frr/fpm/fpm_pb.c",
+    "frr/qpb/qpb.c",
+    "frr/qpb/qpb_allocator.c",
+    ":fpm_pb_c_src",
+    ":qpb_pb_c_src",
+]
+
+PLUGIN_COPTS = FRR_COMMON_COPTS + ["-fPIC"]
+
+# =============================================================================
+# zebra_fpm.so
+# =============================================================================
+cc_library(
+    name = "zebra_fpm_objs",
+    srcs = [
+        "frr/zebra/zebra_fpm.c",
+        "frr/zebra/zebra_fpm_netlink.c",
+        "frr/zebra/zebra_fpm_protobuf.c",
+        "frr/zebra/zebra_fpm_dt.c",
+    ] + FPM_PB_GLUE_SOURCES,
+    deps = [
+        ":frr_uapi_hdrs",
+        ":zebra_v_hdrs",
+        ":fpm_qpb_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+        "@protobuf_c//:libprotobuf_c",
+    ],
+    copts = PLUGIN_COPTS,
+    visibility = ["//visibility:private"],
+)
+
+cc_shared_library(
+    name = "zebra_fpm_shared",
+    deps = [":zebra_fpm_objs"],
+    dynamic_deps = [
+        ":libfrr_shared",
+        "@libyang3//:yang_shared",
+    ],
+    user_link_flags = ["-Wl,-soname,zebra_fpm.so"],
+    shared_lib_name = "zebra_fpm.so",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# dplane_fpm_nl.so (10.5.4: single source, no protobuf/nftnl deps).
+# =============================================================================
+cc_library(
+    name = "dplane_fpm_nl_objs",
+    srcs = ["frr/zebra/dplane_fpm_nl.c"],
+    deps = [
+        ":frr_uapi_hdrs",
+        ":zebra_v_hdrs",
+        ":zebra_clippy_textual_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+    ],
+    copts = PLUGIN_COPTS,
+    visibility = ["//visibility:private"],
+)
+
+cc_shared_library(
+    name = "dplane_fpm_nl_shared",
+    deps = [":dplane_fpm_nl_objs"],
+    dynamic_deps = [
+        ":libfrr_shared",
+        "@libyang3//:yang_shared",
+    ],
+    user_link_flags = ["-Wl,-soname,dplane_fpm_nl.so"],
+    shared_lib_name = "dplane_fpm_nl.so",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# dplane_fpm_sonic.so (SONiC-private; patch 0012).  LIBADD = -lnexthopgroup.
+# =============================================================================
+cc_library(
+    name = "dplane_fpm_sonic_objs",
+    srcs = ["frr/zebra/dplane_fpm_sonic.c"],
+    deps = [
+        ":frr_uapi_hdrs",
+        ":zebra_v_hdrs",
+        ":fpm_qpb_hdrs",
+        ":nexthopgroup_capi_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+    ],
+    copts = PLUGIN_COPTS + [
+        # zebra2proto() is declared behind #ifdef NETLINK_DEBUG (off) in
+        # zebra/rt_netlink.h but the SONiC dplane module calls it; the Make
+        # build tolerates the implicit declaration.  GCC 14 promotes it to an
+        # error by default -- demote back to a warning.
+        "-Wno-error=implicit-function-declaration",
+        "-Wno-implicit-function-declaration",
+    ],
+    visibility = ["//visibility:private"],
+)
+
+cc_shared_library(
+    name = "dplane_fpm_sonic_shared",
+    deps = [":dplane_fpm_sonic_objs"],
+    dynamic_deps = [
+        ":libfrr_shared",
+        "@libyang3//:yang_shared",
+        "@sonic-fib//:nexthopgroup_shared",
+    ],
+    user_link_flags = [
+        "-Wl,-soname,dplane_fpm_sonic.so",
+    ],
+    shared_lib_name = "dplane_fpm_sonic.so",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# bgpd_bmp.so
+# =============================================================================
+clippy_genrule(
+    name = "bgpd_bgp_bmp_clippy",
+    src = "frr/bgpd/bgp_bmp.c",
+    basename = "frr/bgpd/bgp_bmp",
+    clippy = ":clippy",
+    clidef = "frr/python/clidef.py",
+    clippy_pkg = glob(["frr/python/clippy/*.py", "frr/python/*.py"]),
+    frr_extra_inputs = CLIPPY_FRR_INPUTS,
+)
+
+cc_library(
+    name = "bgpd_bmp_clippy_textual_hdrs",
+    textual_hdrs = [":bgpd_bgp_bmp_clippy"],
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "bgpd_bmp_objs",
+    srcs = ["frr/bgpd/bgp_bmp.c"],
+    deps = [
+        ":bgpd_v_hdrs",
+        ":bgpd_bmp_clippy_textual_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        ":libfrrcares",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+    ],
+    copts = PLUGIN_COPTS,
+    visibility = ["//visibility:private"],
+)
+
+cc_shared_library(
+    name = "bgpd_bmp_shared",
+    deps = [":bgpd_bmp_objs"],
+    dynamic_deps = [
+        ":libfrr_shared",
+        ":libfrrcares_shared",
+        "@libyang3//:yang_shared",
+    ],
+    user_link_flags = ["-Wl,-soname,bgpd_bmp.so"],
+    shared_lib_name = "bgpd_bmp.so",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# zebra_cumulus_mlag.so
+# =============================================================================
+cc_library(
+    name = "zebra_cumulus_mlag_objs",
+    srcs = ["frr/zebra/zebra_mlag_private.c"],
+    deps = [
+        ":frr_uapi_hdrs",
+        ":zebra_v_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+    ],
+    copts = PLUGIN_COPTS,
+    visibility = ["//visibility:private"],
+)
+
+cc_shared_library(
+    name = "zebra_cumulus_mlag_shared",
+    deps = [":zebra_cumulus_mlag_objs"],
+    dynamic_deps = [
+        ":libfrr_shared",
+        "@libyang3//:yang_shared",
+    ],
+    user_link_flags = ["-Wl,-soname,zebra_cumulus_mlag.so"],
+    shared_lib_name = "zebra_cumulus_mlag.so",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# pathd_pcep.so + pceplib
+# =============================================================================
+cc_library(
+    name = "pceplib_v_hdrs",
+    hdrs = glob(["frr/pceplib/*.h"]),
+    strip_include_prefix = "frr/pceplib",
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "pceplib_q_hdrs",
+    hdrs = glob(["frr/pceplib/*.h"]),
+    strip_include_prefix = "frr",
+    visibility = ["//visibility:private"],
+)
+
+clippy_genrule(
+    name = "pathd_path_pcep_cli_clippy",
+    src = "frr/pathd/path_pcep_cli.c",
+    basename = "frr/pathd/path_pcep_cli",
+    clippy = ":clippy",
+    clidef = "frr/python/clidef.py",
+    clippy_pkg = glob(["frr/python/clippy/*.py", "frr/python/*.py"]),
+    frr_extra_inputs = CLIPPY_FRR_INPUTS,
+)
+
+cc_library(
+    name = "pathd_pcep_clippy_textual_hdrs",
+    textual_hdrs = [":pathd_path_pcep_cli_clippy"],
+    visibility = ["//visibility:private"],
+)
+
+PATHD_PCEP_SOURCES = [
+    "frr/pathd/" + s + ".c"
+    for s in [
+        "path_pcep",
+        "path_pcep_cli",
+        "path_pcep_controller",
+        "path_pcep_debug",
+        "path_pcep_lib",
+        "path_pcep_config",
+        "path_pcep_pcc",
+    ]
+]
+
+PCEPLIB_SOURCES = [
+    "frr/pceplib/" + s + ".c"
+    for s in [
+        "pcep_msg_messages",
+        "pcep_msg_objects",
+        "pcep_msg_tlvs",
+        "pcep_msg_tools",
+        "pcep_msg_messages_encoding",
+        "pcep_msg_objects_encoding",
+        "pcep_msg_tlvs_encoding",
+        "pcep_msg_object_error_types",
+        "pcep_pcc_api",
+        "pcep_session_logic",
+        "pcep_session_logic_loop",
+        "pcep_session_logic_states",
+        "pcep_session_logic_counters",
+        "pcep_socket_comm_loop",
+        "pcep_socket_comm",
+        "pcep_timers_event_loop",
+        "pcep_timers",
+        "pcep_utils_counters",
+        "pcep_utils_double_linked_list",
+        "pcep_utils_logging",
+        "pcep_utils_memory",
+        "pcep_utils_ordered_list",
+        "pcep_utils_queue",
+    ]
+]
+
+cc_library(
+    name = "pathd_pcep_objs",
+    srcs = PATHD_PCEP_SOURCES + PCEPLIB_SOURCES,
+    deps = [
+        ":pathd_v_hdrs",
+        ":pathd_q_hdrs",
+        ":pathd_pcep_clippy_textual_hdrs",
+        ":pceplib_v_hdrs",
+        ":pceplib_q_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+    ],
+    copts = PLUGIN_COPTS,
+    visibility = ["//visibility:private"],
+)
+
+cc_shared_library(
+    name = "pathd_pcep_shared",
+    deps = [":pathd_pcep_objs"],
+    dynamic_deps = [
+        ":libfrr_shared",
+        "@libyang3//:yang_shared",
+    ],
+    user_link_flags = ["-Wl,-soname,pathd_pcep.so"],
+    shared_lib_name = "pathd_pcep.so",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# vtysh (/usr/bin/vtysh) -- integrated CLI.
+#
+# FRR 10.5.4 generates vtysh/vtysh_cmd.c from the ELF .xref sections of the
+# built daemons/libs/modules (xref-based flow; see vtysh_cmd_xref_genrule).
+# =============================================================================
+clippy_genrule(
+    name = "vtysh_vtysh_clippy",
+    src = "frr/vtysh/vtysh.c",
+    basename = "frr/vtysh/vtysh",
+    clippy = ":clippy",
+    clidef = "frr/python/clidef.py",
+    clippy_pkg = glob(["frr/python/clippy/*.py", "frr/python/*.py"]),
+    frr_extra_inputs = CLIPPY_FRR_INPUTS,
+)
+
+# Binaries whose ELF .xref notes feed frr.xref (matches makefile.py's
+# xref_targets minus vtysh/mtracebis/ssd/rfptest).
+VTYSH_XREF_BINARIES = [
+    ":libfrr_shared",
+    ":libmgmt_be_nb_shared",
+    ":zebra",
+    ":bgpd",
+    ":ripd",
+    ":ripngd",
+    ":ospfd",
+    ":ospf6d",
+    ":ldpd",
+    ":nhrpd",
+    ":eigrpd",
+    ":babeld",
+    ":isisd",
+    ":fabricd",
+    ":pimd",
+    ":pim6d",
+    ":pbrd",
+    ":pathd",
+    ":bfdd",
+    ":vrrpd",
+    ":staticd",
+    ":sharpd",
+    ":mgmtd",
+    ":watchfrr",
+    ":zebra_fpm_shared",
+    ":dplane_fpm_nl_shared",
+    ":bgpd_bmp_shared",
+    ":zebra_cumulus_mlag_shared",
+    ":pathd_pcep_shared",
+]
+
+vtysh_cmd_xref_genrule(
+    name = "vtysh_cmd_gen",
+    outname = "frr/vtysh/vtysh_cmd.c",
+    binaries = VTYSH_XREF_BINARIES,
+    origins = [
+        "lib/libfrr.so",
+        "mgmtd/libmgmt_be_nb.so",
+        "d/zebra",
+        "d/bgpd",
+        "d/ripd",
+        "d/ripngd",
+        "d/ospfd",
+        "d/ospf6d",
+        "d/ldpd",
+        "d/nhrpd",
+        "d/eigrpd",
+        "d/babeld",
+        "d/isisd",
+        "isisd/fabricd",
+        "d/pimd",
+        "d/pim6d",
+        "d/pbrd",
+        "d/pathd",
+        "d/bfdd",
+        "d/vrrpd",
+        "d/staticd",
+        "d/sharpd",
+        "d/mgmtd",
+        "d/watchfrr",
+        "zebra/zebra_fpm.so",
+        "zebra/dplane_fpm_nl.so",
+        "bgpd/bgpd_bmp.so",
+        "zebra/zebra_cumulus_mlag.so",
+        "pathd/pathd_pcep.so",
+    ],
+    xrelfo = "frr/python/xrelfo.py",
+    py_pkg = glob([
+        "frr/python/*.py",
+        "frr/python/clippy/*.py",
+    ]),
+    clippy = ":clippy",
+)
+
+cc_library(
+    name = "vtysh_hdrs",
+    hdrs = glob(["frr/vtysh/*.h"]),
+    strip_include_prefix = "frr",
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "vtysh_clippy_textual_hdrs",
+    textual_hdrs = [":vtysh_vtysh_clippy"],
+    visibility = ["//visibility:private"],
+)
+
+cc_binary(
+    name = "vtysh",
+    srcs = [
+        "frr/vtysh/vtysh_main.c",
+        "frr/vtysh/vtysh.c",
+        "frr/vtysh/vtysh_user.c",
+        "frr/vtysh/vtysh_config.c",
+        ":vtysh_cmd_gen",
+    ],
+    deps = [
+        ":vtysh_hdrs",
+        ":vtysh_clippy_textual_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        "@frr_deps//libreadline-dev:libreadline",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+        "@frr_deps//libpam0g-dev:pam",
+        "@frr_deps//libpam0g-dev:pam_misc",
+    ],
+    dynamic_deps = [
+        ":libfrr_shared",
+        "@libyang3//:yang_shared",
+    ],
+    copts = FRR_COMMON_COPTS + [
+        # xref2vtysh maps ~263 libfrr-resident CLI commands to a synthetic
+        # VTYSH_LIB token (its __FILE__/frr_top_src relpath doesn't reduce to
+        # lib/<file>.c inside the Bazel sandbox, so they hit the loadable-module
+        # parent-dir branch = "lib").  VTYSH_LIB isn't defined in vtysh.h; since
+        # these commands are linked into every daemon via libfrr, alias it to
+        # VTYSH_ALL so vtysh_cmd.c compiles.  VERIFY-PHASE equivalence gap.
+        "-DVTYSH_LIB=VTYSH_ALL",
+    ],
+    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm"],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# libfrrospfapiclient.so.0 (ospfclient/libfrrospfapiclient.la).
+#
+# ospfclient/subdir.am (OSPFCLIENT true via --enable-ospfapi):
+#   ospfclient_libfrrospfapiclient_la_LDFLAGS = -version-info 0:0:0
+#   ospfclient_libfrrospfapiclient_la_LIBADD  = lib/libfrr.la
+#   ospfclient_libfrrospfapiclient_la_SOURCES = ospfclient/ospf_apiclient.c
+# -version-info 0:0:0 -> SONAME libfrrospfapiclient.so.0, real .so.0.0.0.
+#
+# ospf_apiclient.c references msg_*/new_msg_* helpers that live in ospfd's
+# libfrrospfclient.a (ospf_api.c); the Make-built shipped .so leaves them
+# UNDEFINED (verified via `readelf --dyn-syms` on the baseline), so we link
+# with allow_undefined=True and do NOT drag in the ospfd api objects.
+# =============================================================================
+cc_library(
+    name = "ospfclient_v_hdrs",
+    hdrs = glob(["frr/ospfclient/*.h"]),
+    strip_include_prefix = "frr/ospfclient",
+    visibility = ["//visibility:private"],
+)
+
+sonic_shared_library_versioned(
+    name = "libfrrospfapiclient",
+    srcs = ["frr/ospfclient/ospf_apiclient.c"],
+    copts = FRR_COMMON_COPTS + ["-fPIC"],
+    deps = [
+        ":ospfclient_v_hdrs",
+        ":ospfd_v_hdrs",
+        ":ospfd_q_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+    ],
+    dynamic_deps = [
+        ":libfrr_shared",
+    ],
+    soversion = "0",
+    version = "0.0.0",
+    output_name = "libfrrospfapiclient",
+    allow_undefined = True,
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Processed shell wrappers / integration files (autoconf @var@ substitution).
+#
+# The Make build renders tools/*.in via config.status; we reproduce the exact
+# substituted output with sed.  Substitution values were derived by diffing the
+# Make-shipped files against the .in templates:
+#   @e_sbindir@=/usr/lib/frr  @e_frr_sysconfdir@=/etc/frr
+#   @e_frr_runstatedir@=/var/run/frr  @e_bindir@=/usr/bin
+#   @e_vtysh_bin@=/usr/bin/vtysh  @enable_user@=frr  @enable_group@=frr
+#   @enable_vty_group@=frrvty  @enable_configfile_mask@=0640
+#   @DFLT_NAME@=traditional  @TIMEOUT_MIN@=2
+# =============================================================================
+_FRR_SUBST_SED = (
+    "sed " +
+    "-e 's|@e_sbindir@|/usr/lib/frr|g' " +
+    "-e 's|@e_frr_sysconfdir@|/etc/frr|g' " +
+    "-e 's|@e_frr_runstatedir@|/var/run/frr|g' " +
+    "-e 's|@e_bindir@|/usr/bin|g' " +
+    "-e 's|@e_vtysh_bin@|/usr/bin/vtysh|g' " +
+    "-e 's|@enable_user@|frr|g' " +
+    "-e 's|@enable_group@|frr|g' " +
+    "-e 's|@enable_vty_group@|frrvty|g' " +
+    "-e 's|@enable_configfile_mask@|0640|g' " +
+    "-e 's|@DFLT_NAME@|traditional|g' " +
+    "-e 's|@TIMEOUT_MIN@|2|g' "
+)
+
+genrule(
+    name = "frrcommon_sh_gen",
+    srcs = ["frr/tools/frrcommon.sh.in"],
+    outs = ["gen/frrcommon.sh"],
+    cmd = _FRR_SUBST_SED + "$< > $@",
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "frrinit_sh_gen",
+    srcs = ["frr/tools/frrinit.sh.in"],
+    outs = ["gen/frrinit.sh"],
+    cmd = _FRR_SUBST_SED + "$< > $@",
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "watchfrr_sh_gen",
+    srcs = ["frr/tools/watchfrr.sh.in"],
+    outs = ["gen/watchfrr.sh"],
+    cmd = _FRR_SUBST_SED + "$< > $@",
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "frr_service_gen",
+    srcs = ["frr/tools/frr.service.in"],
+    outs = ["gen/frr.service"],
+    cmd = _FRR_SUBST_SED + "$< > $@",
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "frr_at_service_gen",
+    srcs = ["frr/tools/frr@.service.in"],
+    outs = ["gen/frr@.service"],
+    cmd = _FRR_SUBST_SED + "$< > $@",
+    visibility = ["//visibility:public"],
+)
+
+# Make's etc/init.d/frr is byte-identical to the processed frrinit.sh.
+genrule(
+    name = "frr_initd_gen",
+    srcs = [":frrinit_sh_gen"],
+    outs = ["gen/initd/frr"],
+    cmd = "cp $< $@",
+    visibility = ["//visibility:public"],
+)
+
+# changelog.Debian.gz -- gzip the upstream debian/changelog.  NOTE: the Make
+# baseline ships a gbp-dch-generated changelog (sonic-0 version + per-patch
+# entries) which is not hermetically reproducible; this is a best-effort
+# content match at the identical path.
+genrule(
+    name = "changelog_debian_gz",
+    srcs = ["frr/debian/changelog"],
+    outs = ["gen/changelog.Debian.gz"],
+    cmd = "gzip -9 -n -c $< > $@",
+    visibility = ["//visibility:public"],
+)
+
+# etc/pam.d/frr <- debian/frr.pam (rename basename to frr).
+genrule(
+    name = "frr_pam_gen",
+    srcs = ["frr/debian/frr.pam"],
+    outs = ["gen/pam/frr"],
+    cmd = "cp $< $@",
+    visibility = ["//visibility:public"],
+)
+
+# usr/share/lintian/overrides/frr <- debian/frr.lintian-overrides (rename).
+genrule(
+    name = "frr_lintian_gen",
+    srcs = ["frr/debian/frr.lintian-overrides"],
+    outs = ["gen/lintian/frr"],
+    cmd = "cp $< $@",
+    visibility = ["//visibility:public"],
+)
+
+# The 10 IETF/deviation yang models shipped flat under /usr/share/yang
+# (dist_yangmodels_DATA yang/ietf/*).  Kept separate from frr_yang_models so
+# the deb content key can wildcard-flatten the ietf/ subdir prefix.
+filegroup(
+    name = "frr_ietf_yang_models",
+    srcs = [
+        "frr/yang/ietf/ietf-bgp-types.yang",
+        "frr/yang/ietf/ietf-interfaces.yang",
+        "frr/yang/ietf/ietf-key-chain.yang",
+        "frr/yang/ietf/ietf-netconf-acm.yang",
+        "frr/yang/ietf/ietf-netconf-with-defaults.yang",
+        "frr/yang/ietf/ietf-netconf.yang",
+        "frr/yang/ietf/ietf-routing-types.yang",
+        "frr/yang/ietf/ietf-srv6-types.yang",
+        "frr/yang/ietf/ietf-syslog-types.yang",
+        "frr/yang/ietf/frr-deviations-ietf-key-chain.yang",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Packaging filegroups (referenced by the sonic-frr deb assembly).
+# =============================================================================
+filegroup(
+    name = "frr_yang_models",
+    srcs = glob(["frr/yang/*.yang"]),
+    visibility = ["//visibility:public"],
+)
+
+exports_files(glob([
+    "frr/tools/**",
+    "frr/debian/**",
+    "frr/ospfclient/ospfclient.py",
+]))
+
+# =============================================================================
+# SNMP plugin modules (frr-snmp.deb): <daemon>_snmp.so + libfrrsnmp.
+# Each links libfrrsnmp + libsnmp (Net-SNMP AgentX).
+# =============================================================================
+SNMP_PLUGIN_COPTS = PLUGIN_COPTS + ["-DSNMP_AGENTX"]
+
+# bgpd_snmp.so needs the bgp_snmp clippy companion.
+clippy_genrule(
+    name = "bgpd_bgp_snmp_clippy",
+    src = "frr/bgpd/bgp_snmp.c",
+    basename = "frr/bgpd/bgp_snmp",
+    clippy = ":clippy",
+    clidef = "frr/python/clidef.py",
+    clippy_pkg = glob(["frr/python/clippy/*.py", "frr/python/*.py"]),
+    frr_extra_inputs = CLIPPY_FRR_INPUTS,
+)
+
+cc_library(
+    name = "bgpd_snmp_clippy_textual_hdrs",
+    textual_hdrs = [":bgpd_bgp_snmp_clippy"],
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "bgpd_snmp_objs",
+    srcs = [
+        "frr/bgpd/bgp_snmp_bgp4.c",
+        "frr/bgpd/bgp_snmp_bgp4v2.c",
+        "frr/bgpd/bgp_snmp.c",
+        "frr/bgpd/bgp_mplsvpn_snmp.c",
+    ],
+    deps = [
+        ":bgpd_v_hdrs",
+        ":bgpd_snmp_clippy_textual_hdrs",
+        ":frr_assert_hdrs",
+        ":frr_lib_v_hdrs",
+        ":frr_v_hdrs",
+        ":frr_lib_hdrs",
+        "@libyang3//:yang_hdrs_prefixed",
+        ":libfrr",
+        ":libfrrsnmp",
+        "@frr_deps//libcap-dev:libcap",
+        "@frr_deps//libjson-c-dev:libjson-c",
+        "@frr_deps//libsnmp-dev:libsnmp",
+    ],
+    copts = SNMP_PLUGIN_COPTS,
+    visibility = ["//visibility:private"],
+)
+
+cc_shared_library(
+    name = "bgpd_snmp_shared",
+    deps = [":bgpd_snmp_objs"],
+    dynamic_deps = [":libfrr_shared", ":libfrrsnmp_shared", "@libyang3//:yang_shared"],
+    user_link_flags = ["-Wl,-soname,bgpd_snmp.so"],
+    shared_lib_name = "bgpd_snmp.so",
+    visibility = ["//visibility:public"],
+)
+
+# Simple single-source snmp plugins.
+[
+    cc_library(
+        name = "{}_snmp_objs".format(d),
+        srcs = ["frr/{}/{}.c".format(d, src)],
+        deps = [
+            ":{}_v_hdrs".format(hdrdaemon),
+            ":frr_uapi_hdrs",
+            ":frr_assert_hdrs",
+            ":frr_lib_v_hdrs",
+            ":frr_v_hdrs",
+            ":frr_lib_hdrs",
+            "@libyang3//:yang_hdrs_prefixed",
+            ":libfrr",
+            ":libfrrsnmp",
+            "@frr_deps//libcap-dev:libcap",
+            "@frr_deps//libjson-c-dev:libjson-c",
+            "@frr_deps//libsnmp-dev:libsnmp",
+        ],
+        copts = SNMP_PLUGIN_COPTS,
+        visibility = ["//visibility:private"],
+    )
+    for d, src, hdrdaemon in [
+        ("isisd", "isis_snmp", "isisd"),
+        ("ldpd", "ldp_snmp", "ldpd"),
+        ("ospf6d", "ospf6_snmp", "ospf6d"),
+        ("ospfd", "ospf_snmp", "ospfd"),
+        ("ripd", "rip_snmp", "ripd"),
+        ("zebra", "zebra_snmp", "zebra"),
+    ]
+]
+
+[
+    cc_shared_library(
+        name = "{}_snmp_shared".format(d),
+        deps = [":{}_snmp_objs".format(d)],
+        dynamic_deps = [":libfrr_shared", ":libfrrsnmp_shared", "@libyang3//:yang_shared"],
+        user_link_flags = ["-Wl,-soname,{}_snmp.so".format(d)],
+        shared_lib_name = "{}_snmp.so".format(d),
+        visibility = ["//visibility:public"],
+    )
+    for d in ["isisd", "ldpd", "ospf6d", "ospfd", "ripd", "zebra"]
+]

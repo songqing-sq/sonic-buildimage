@@ -1,0 +1,9 @@
+package(default_visibility = ["//visibility:public"])
+
+exports_files(glob(["*.patch"]) + ["series"])
+
+filegroup(
+    name = "all_patches",
+    srcs = glob(["*.patch"]) + ["series"],
+    visibility = ["//visibility:public"],
+)

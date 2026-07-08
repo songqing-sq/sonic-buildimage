@@ -1,0 +1,251 @@
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "10.5.4-sonic-0"
+
+# =============================================================================
+# frr-pythontools_<ver>_all.deb  (frr-pythontools.install)
+# =============================================================================
+sonic_deb(
+    name = "frr-pythontools_{}_all.deb".format(VERSION),
+    package = "frr-pythontools",
+    version = VERSION,
+    architecture = "all",
+    section = "net",
+    homepage = "https://frrouting.org/",
+    maintainer = "FRRouting-Dev <dev@lists.frrouting.org>",
+    description = "FRRouting suite - Python tools\n The FRRouting suite uses a small Python tool to provide configuration\n reload functionality, particularly useful when the interactive configuration\n shell is not used.",
+    depends = [
+        "frr (<< 10.5.5-~)",
+        "frr (>= 10.5.4~)",
+        "python3",
+    ],
+    content = {
+        "/usr/lib/frr:*:0755": [
+            "@frr_patched//:frr/tools/frr-reload.py",
+            "@frr_patched//:frr/tools/generate_support_bundle.py",
+            "@frr_patched//:frr/tools/frr_babeltrace.py",
+            "@frr_patched//:frr/ospfclient/ospfclient.py",
+        ],
+    },
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# frr_<ver>_<arch>.deb  (main package; frr.install + frr.dirs)
+#
+# Multiarch shared libs + plugin modules install under ${LIBDIR}/frr
+# (= /usr/lib/<multiarch>/frr) via the sonic_deb builtin LIBDIR content var
+# (Lesson 11: no hardcoded x86_64-linux-gnu).
+# =============================================================================
+ALL_DAEMON_TARGETS = [
+    "@frr_patched//:zebra",
+    "@frr_patched//:bgpd",
+    "@frr_patched//:staticd",
+    "@frr_patched//:bfdd",
+    "@frr_patched//:isisd",
+    "@frr_patched//:fabricd",
+    "@frr_patched//:pathd",
+    "@frr_patched//:ospfd",
+    "@frr_patched//:ospf6d",
+    "@frr_patched//:ldpd",
+    "@frr_patched//:ripd",
+    "@frr_patched//:ripngd",
+    "@frr_patched//:pimd",
+    "@frr_patched//:pim6d",
+    "@frr_patched//:nhrpd",
+    "@frr_patched//:eigrpd",
+    "@frr_patched//:pbrd",
+    "@frr_patched//:babeld",
+    "@frr_patched//:vrrpd",
+    "@frr_patched//:sharpd",
+    "@frr_patched//:mgmtd",
+    "@frr_patched//:watchfrr",
+]
+
+sonic_deb(
+    name = "frr_{}_amd64.deb".format(VERSION),
+    package = "frr",
+    version = VERSION,
+    section = "net",
+    homepage = "https://www.frrouting.org/",
+    maintainer = "FRRouting-Dev <dev@lists.frrouting.org>",
+    description = "FRRouting suite of internet protocols (BGP, OSPF, IS-IS, ...)\n FRRouting implements the routing protocols commonly used in the\n internet and private networks to exchange information between routers.\n Both IP and IPv6 are supported, as are BGP, OSPFv2, OSPFv3, IS-IS, BABEL,\n EIGRP, RIP, RIPng, LDP, BFD, PIM, VRRP, PBR, and NHRP.\n .\n These protocols are used to turn your system into a dynamic router,\n exchanging information about available connections with other routers\n in a standards-compliant way.  The actual packet forwarding\n functionality is provided by the OS kernel.\n .\n FRRouting is a fork of Quagga with an open community model. The main\n git lives on https://github.com/frrouting/frr.git and the project name\n is commonly abbreviated as \"FRR.\"",
+    # Runtime Depends -- derived by reverse `readelf -d` over every shipped ELF
+    # in the Make baseline, mapped to trixie runtime debs; plus the functional
+    # deps (iproute2/logrotate/lsof) that mirror upstream debian/control.
+    depends = [
+        "iproute2",
+        "logrotate (>= 3.2-11)",
+        "lsof",
+        "libc6 (>= 2.38)",
+        "libcap2 (>= 1:2.10)",
+        "libcares2 (>= 1.16.0)",
+        "libcrypt1 (>= 1:4.1.0)",
+        "libgcc-s1 (>= 3.0)",
+        "libgoogle-perftools4t64 (>= 2.16)",
+        "libjson-c5 (>= 0.15)",
+        "libpam0g (>= 0.99.7.1)",
+        "libpcre2-posix3 (>= 10.34)",
+        "libreadline8t64 (>= 7.0~rc1)",
+        "libunwind8",
+        "libyang3 (>= 3.12.2)",
+    ],
+    pre_depends = ["adduser"],
+    recommends = ["frr-pythontools"],
+    suggests = ["frr-doc"],
+    conflicts = [
+        "pimd",
+        "quagga",
+        "quagga-bgpd",
+        "quagga-core",
+        "quagga-isisd",
+        "quagga-ospf6d",
+        "quagga-ospfd",
+        "quagga-pimd",
+        "quagga-ripd",
+        "quagga-ripngd",
+        "zebra",
+        "zebra-pj",
+    ],
+    replaces = [
+        "zebra",
+        "zebra-pj",
+    ],
+    # Maintainer scripts + conffiles reproduced verbatim from the Make baseline
+    # (create frr/frrvty users/groups, /var/log/frr + /var/lib/frr dirs, systemd
+    # + init.d wiring). conffiles = the 9 /etc config files.
+    preinst = "//debian_pkg:preinst",
+    postinst = "//debian_pkg:postinst",
+    prerm = "//debian_pkg:prerm",
+    postrm = "//debian_pkg:postrm",
+    shlibs = "//debian_pkg:shlibs",
+    conffiles_file = "//debian_pkg:conffiles",
+    gen_dbg = True,
+    content = {
+        # /usr/lib/tmpfiles.d/frr.conf
+        "/usr/lib/tmpfiles.d:*:0644": [
+            "@frr_patched//:frr/debian/frr.conf",
+        ],
+        # /etc/frr/*
+        "/etc/frr:*:0644": [
+            "@frr_patched//:frr/tools/etc/frr/frr.conf",
+            "@frr_patched//:frr/tools/etc/frr/daemons",
+            "@frr_patched//:frr/tools/etc/frr/vtysh.conf",
+            "@frr_patched//:frr/tools/etc/frr/support_bundle_commands.conf",
+        ],
+        # /etc/logrotate.d/frr
+        "/etc/logrotate.d:*:0644": [
+            "@frr_patched//:frr/tools/etc/logrotate.d/frr",
+        ],
+        # /etc/iproute2/rt_protos.d/frr.conf
+        "/etc/iproute2/rt_protos.d:*:0644": [
+            "@frr_patched//:frr/tools/etc/iproute2/rt_protos.d/frr.conf",
+        ],
+        # /etc/init.d/frr (rendered frrinit.sh, byte-identical to Make)
+        "/etc/init.d:*:0755": [
+            "@frr_patched//:frr_initd_gen",
+        ],
+        # /etc/pam.d/frr
+        "/etc/pam.d:*:0644": [
+            "@frr_patched//:frr_pam_gen",
+        ],
+        # /etc/rsyslog.d/45-frr.conf (patch 0004)
+        "/etc/rsyslog.d:*:0644": [
+            "@frr_patched//:frr/tools/etc/rsyslog.d/45-frr.conf",
+        ],
+        # systemd units
+        "/usr/lib/systemd/system:*:0644": [
+            "@frr_patched//:frr_service_gen",
+            "@frr_patched//:frr_at_service_gen",
+        ],
+        # /usr/lib/frr/<daemon> + frr-reload + processed shell wrappers
+        # (frrcommon.sh/frrinit.sh/watchfrr.sh -- @var@ substituted, NOT .in).
+        "/usr/lib/frr:*:0755": ALL_DAEMON_TARGETS + [
+            "@frr_patched//:frr/tools/frr-reload",
+            "@frr_patched//:frrcommon_sh_gen",
+            "@frr_patched//:frrinit_sh_gen",
+            "@frr_patched//:watchfrr_sh_gen",
+        ],
+        # /usr/bin/{vtysh,mtracebis}
+        "/usr/bin:*:0755": [
+            "@frr_patched//:vtysh",
+            "@frr_patched//:mtracebis",
+        ],
+        # ${LIBDIR}/frr/lib*.so.*  (versioned shared libs)
+        "${LIBDIR}/frr:*:0644": [
+            "@frr_patched//:libfrr_files",
+            "@frr_patched//:libfrrcares_files",
+            "@frr_patched//:libfrrospfapiclient_files",
+            "@frr_patched//:libmgmt_be_nb_files",
+        ],
+        # ${LIBDIR}/frr/modules/<plugin>.so
+        "${LIBDIR}/frr/modules:*:0644": [
+            "@frr_patched//:bgpd_bmp_shared",
+            "@frr_patched//:dplane_fpm_nl_shared",
+            "@frr_patched//:dplane_fpm_sonic_shared",
+            "@frr_patched//:zebra_cumulus_mlag_shared",
+            "@frr_patched//:zebra_fpm_shared",
+            "@frr_patched//:pathd_pcep_shared",
+        ],
+        # /usr/share/yang/<model>.yang (frr-* top-level + the 10 ietf/deviation
+        # models flattened from yang/ietf/).
+        "/usr/share/yang:*:0644": [
+            "@frr_patched//:frr_yang_models",
+            "@frr_patched//:frr_ietf_yang_models",
+        ],
+        # /usr/share/doc/frr/{copyright,README.Debian,zebra.el,changelog.Debian.gz}
+        "/usr/share/doc/frr:*:0644": [
+            "@frr_patched//:frr/debian/copyright",
+            "@frr_patched//:frr/debian/README.Debian",
+            "@frr_patched//:frr/tools/zebra.el",
+            "@frr_patched//:changelog_debian_gz",
+        ],
+        # /usr/share/lintian/overrides/frr
+        "/usr/share/lintian/overrides:*:0644": [
+            "@frr_patched//:frr_lintian_gen",
+        ],
+        # NOTE: man pages (usr/share/man/man1/{frr,vtysh}.1.gz +
+        # man8/frr-*.8.gz + mtracebis.8.gz) are NOT shipped. The Make build
+        # renders them from doc/manpages/*.rst via sphinx-build, which is not
+        # available in the hermetic Bazel action environment (no sphinx /
+        # docutils / rst2man). Documented accepted gap -- see verification
+        # report. Man pages are non-functional documentation only.
+    },
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# frr-snmp_<ver>_<arch>.deb  (frr-snmp.install; ENABLE_FRR_SNMP_AGENT)
+#   ${LIBDIR}/frr/libfrrsnmp.*  +  ${LIBDIR}/frr/modules/*_snmp.so
+# =============================================================================
+sonic_deb(
+    name = "frr-snmp_{}_amd64.deb".format(VERSION),
+    package = "frr-snmp",
+    version = VERSION,
+    section = "net",
+    homepage = "https://frrouting.org/",
+    maintainer = "FRRouting-Dev <dev@lists.frrouting.org>",
+    description = "FRRouting suite - SNMP support\n Adds SNMP support to FRR's daemons by attaching to net-snmp's snmpd\n through the AgentX protocol.",
+    depends = [
+        "frr (= {})".format(VERSION),
+        "snmpd",
+    ],
+    gen_dbg = True,
+    content = {
+        "${LIBDIR}/frr:*:0644": [
+            "@frr_patched//:libfrrsnmp_files",
+        ],
+        "${LIBDIR}/frr/modules:*:0644": [
+            "@frr_patched//:bgpd_snmp_shared",
+            "@frr_patched//:isisd_snmp_shared",
+            "@frr_patched//:ldpd_snmp_shared",
+            "@frr_patched//:ospf6d_snmp_shared",
+            "@frr_patched//:ospfd_snmp_shared",
+            "@frr_patched//:ripd_snmp_shared",
+            "@frr_patched//:zebra_snmp_shared",
+        ],
+    },
+    visibility = ["//visibility:public"],
+)
