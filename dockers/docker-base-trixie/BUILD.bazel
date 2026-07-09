@@ -1,0 +1,261 @@
+load("@rules_deb//distroless:defs.bzl", "flatten", "group", "passwd")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@sonic_build_infra//config:arch.bzl", "DEBIAN_ARCH")
+load("@sonic_build_infra//python:site_packages.bzl", "site_packages")
+load("@tar.bzl", "mutate", "tar")
+
+exports_files(["etc/rsyslog.conf"])
+
+# jinjanator provides `j2` (trixie's Dockerfile.j2 uses `pip3 install jinjanator`,
+# unlike bookworm which used the older j2cli).
+site_packages(
+    name = "pip_layer",
+    srcs = [
+        "@pip//jinjanator",
+        "@pip//supervisor",
+        "@pip//supervisord_dependent_startup",
+        # supervisor 4.2.5 imports pkg_resources at module load; provide it
+        # via pip since the system python3-setuptools .deb is not in the flat
+        # layer (rules_distroless mixed-arch bug on Architecture:all packages).
+        "@pip//setuptools",
+    ],
+    visibility = [":__subpackages__"],
+)
+
+# Single Python content layer: pip-installed packages (via site_packages) +
+# sonic-built wheels' :install tars, deduplicated.
+flatten(
+    name = "python_layer",
+    deduplicate = True,
+    tars = [
+        ":pip_layer",
+        "@sonic-supervisord-utilities//:install",
+    ],
+    visibility = [":__subpackages__"],
+)
+
+passwd(
+    name = "passwd",
+    entries = [
+        {
+            "uid": 0,
+            "gid": 0,
+            "home": "/root",
+            "shell": "/bin/bash",
+            "username": "root",
+        },
+    ],
+)
+
+group(
+    name = "group",
+    entries = [
+        {
+            "name": "root",
+            "gid": 0,
+        },
+        {
+            "name": "adm",
+            "gid": 4,
+        },
+    ],
+)
+
+tar(
+    name = "rootfs",
+    srcs = glob([
+        "etc/**/*",
+        "root/*",
+    ]),
+    mutate = mutate(strip_prefix = package_name()),
+)
+
+# Extra directories + the vim.tiny -> vim hardlink that the Make Dockerfile.j2
+# performs at the end (`RUN ln /usr/bin/vim.tiny /usr/bin/vim`). Using a
+# symlink here is close enough — Bazel oci tarballs cannot express hardlinks.
+tar(
+    name = "rootdirslinks",
+    mtree = [
+        "./bin/sh type=link link=/bin/bash",
+        "./var/log/supervisor type=dir",
+        "./etc/supervisor/conf.d type=dir",
+        "./usr/bin/vim type=link link=/usr/bin/vim.tiny",
+        # The pip-installed supervisord entry-point uses a shell shebang that
+        # resolves `python3` as a sibling of the script under /usr/local/bin
+        # (i.e. `$(dirname $0)/python3`). Debian's python3 lives at
+        # /usr/bin/python3, so add a symlink so supervisord (and any other
+        # /usr/local/bin scripts from pip installs) can find it.
+        "./usr/local/bin/python3 type=link link=/usr/bin/python3",
+    ],
+)
+
+# Debian package closure pulled from the @trixie apt repo. apt resolves
+# transitive deps automatically; listing the direct Dockerfile.j2 packages plus
+# the base rootfs set is sufficient.
+flatten(
+    name = "flat",
+    deduplicate = True,
+    tars = [
+        # NOTE on `:data` vs bare label:
+        #   rules_distroless generates two forms per package:
+        #     1. `@trixie//<pkg>` — top-level filegroup that select()s into
+        #        `//<pkg>/<arch>`, which is itself a filegroup listing the
+        #        package + all of its arch-specific apt-resolved transitive
+        #        deps. This is the DESIRED shape and pulls a clean single-arch
+        #        subtree for arch-specific packages.
+        #     2. `@trixie//<pkg>:data` — an alias to just the package's own
+        #        .deb data tar (single arch via select), no transitives.
+        #
+        #   BUG: for Architecture:all packages (ca-certificates, python-is-
+        #   python3, python3-pip, python3-setuptools, python3-wheel), the
+        #   `//<pkg>/amd64` filegroup incorrectly hardcodes BOTH amd64 AND
+        #   arm64 sibling deps (`<pkg>/amd64/BUILD.bazel` in
+        #   rules_distroless++apt+trixie has both arch labels in `srcs`).
+        #   Referencing the bare label leaks arm64 files into the amd64 image.
+        #   For these packages we use `:data` (own data only) and rely on the
+        #   arch-specific packages in this same list to supply their
+        #   transitive runtime deps (libc6, libssl3t64, gcc-14-base, etc.).
+        # base rootfs
+        "@trixie//base-files",
+        "@trixie//base-passwd",
+        "@trixie//ca-certificates:data",  # arch:all — bare label buggy
+        "@trixie//libc6",
+        "@trixie//libc-bin",
+        "@trixie//libssl3t64",
+        "@trixie//netbase",
+        "@trixie//openssl",
+        "@trixie//tzdata",
+        "@trixie//media-types",
+        "@trixie//gcc-14-base",
+        "@trixie//libgcc-s1",
+        "@trixie//libstdc++6",
+        ":passwd",
+        ":group",
+
+        # shell / coreutils
+        "@trixie//bash",
+        "@trixie//coreutils",
+        "@trixie//dash",
+        "@trixie//debianutils",
+        "@trixie//diffutils",
+        "@trixie//findutils",
+        "@trixie//grep",
+        "@trixie//gzip",
+        "@trixie//hostname",
+        "@trixie//mount",
+        "@trixie//ncurses-base",
+        "@trixie//ncurses-bin",
+        "@trixie//sed",
+        "@trixie//util-linux",
+        "@trixie//login",
+        "@trixie//sysvinit-utils",
+
+        # Dockerfile.j2 explicit installs
+        "@trixie//curl",
+        "@trixie//less",
+        "@trixie//perl",
+        "@trixie//procps",
+        "@trixie//python3",
+        # python3-pip, python3-setuptools, python3-wheel, python-is-python3
+        # are Architecture:all packages with the buggy per-arch filegroup —
+        # use `:data` so only their own data tar (Arch:all, single tar) is
+        # pulled. Their runtime deps are the same python3 stack pulled by
+        # `@trixie//python3` above, which is clean.
+        "@trixie//python3-pip:data",
+        "@trixie//python3-setuptools:data",
+        "@trixie//python3-wheel:data",
+        "@trixie//python-is-python3:data",
+        "@trixie//vim-tiny",
+        "@trixie//rsyslog",
+        "@trixie//rsyslog-relp",
+        "@trixie//rsync",
+        "@trixie//redis-tools",
+        "@trixie//libdaemon0",
+        "@trixie//libdbus-1-3",
+        "@trixie//libjansson4",
+        "@trixie//net-tools",
+        "@trixie//jq",
+        "@trixie//libzmq5",
+        "@trixie//libwrap0",
+        "@trixie//libatomic1",
+        "@trixie//libbpf1",
+        "@trixie//libmnl0",
+
+        # Explicit transitive registration to guarantee inclusion. All arch-
+        # specific here — safe to use the bare label.
+        "@trixie//libpython3-stdlib",
+        "@trixie//libpython3.13-stdlib",
+        "@trixie//libpython3.13-minimal",
+        "@trixie//python3.13",
+        "@trixie//python3.13-minimal",
+        "@trixie//python3-minimal",
+        "@trixie//libgmp10",
+        "@trixie//libpcre2-8-0",
+    ],
+)
+
+# SONiC-built .debs (data tars). rules/docker-base-trixie.mk L6-L7 lists
+# SOCAT and IPROUTE2 as _DEPENDS. Both are re-wrapped upstream apt data tars
+# (see src/socat/BUILD.bazel and src/iproute2/BUILD.bazel — they expose only
+# `_data`, no `_statusd` alias).
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        "@iproute2//:iproute2_6.15.0-1.deb_data",
+        "@socat//:socat_1.8.0.3-1.deb_data",
+    ],
+)
+
+oci_image(
+    name = "docker-base-trixie",
+    architecture = DEBIAN_ARCH,
+    entrypoint = ["/usr/local/bin/supervisord"],
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+        # sonic_rules/python/version.bzl hardcodes PYTHON_MAJOR_MINOR = "3.11"
+        # (bookworm's system python). The site_packages awk mutator uses that
+        # constant to rewrite `install/lib/python3.11/site-packages/*` into
+        # /usr/lib/python3/dist-packages/. Trixie ships python 3.13, so the
+        # wheel content ends up under /usr/local/lib/python3.13/site-packages/
+        # (via the awk's `install/` -> `/usr/local/` fallback branch), which
+        # is NOT on the default sys.path. Setting PYTHONPATH here surfaces
+        # the pip-installed modules to trixie's python without modifying
+        # sonic_rules (forbidden by the migration rules).
+        "PYTHONPATH": "/usr/local/lib/python3.13/site-packages",
+    },
+    os = "linux",
+    tars = [
+        ":rootfs",
+        ":rootdirslinks",
+        ":flat",
+        ":python_layer",
+        ":sonic_pkgs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = ":docker-base-trixie",
+    repo_tags = ["docker-base-trixie:latest"],
+)
+
+# Debug tools layer, shared by all trixie debug image variants. Not baked
+# into the base image; overlaid onto debug variant images. Mirrors bookworm's
+# split for _DBG_IMAGE_PACKAGES.
+flatten(
+    name = "debug-packages",
+    deduplicate = True,
+    tars = [
+        "@trixie//gdb:data",
+        "@trixie//gdbserver:data",
+        # trixie's `vim` apt metapackage resolves to the concrete `vim-nox`
+        # binary package; that's the repo directory rules_distroless emits.
+        "@trixie//vim-nox:data",
+        "@trixie//openssh-client:data",
+        "@trixie//sshpass:data",
+        "@trixie//strace:data",
+    ],
+    visibility = ["//visibility:public"],
+)

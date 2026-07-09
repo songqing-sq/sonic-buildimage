@@ -345,3 +345,10 @@ local_path_override(
     module_name = "gnoi",
     path = "src/sonic-sysmgr/gnoi-bazel",
 )
+
+# NOTE: docker-base-trixie's apt sources_list must be the LAST-registered
+# so rules_distroless's `sources[suite] = ...` overwrite keeps our
+# snapshot.debian.org URIs (which retain older versions) instead of being
+# clobbered by other modules' deb.debian.org URIs (which purge older
+# versions and 404 on the exact filenames our Packages.xz references).
+include("//dockers/docker-base-trixie:base_trixie.MODULE.bazel")
