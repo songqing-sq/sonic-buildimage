@@ -165,6 +165,12 @@ local_path_override(
     path = "src/sonic-supervisord-utilities-rs",
 )
 
+bazel_dep(name = "sonic-dash-ha", version = "1.0.0")
+local_path_override(
+    module_name = "sonic-dash-ha",
+    path = "src/sonic-dash-ha",
+)
+
 bazel_dep(name = "redis-dump-load-py3", version = "1.1")
 local_path_override(
     module_name = "redis-dump-load-py3",
