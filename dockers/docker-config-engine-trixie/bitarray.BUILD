@@ -18,6 +18,24 @@ load("@tar.bzl", "tar")
 
 package(default_visibility = ["//visibility:public"])
 
+# Compile flags mirroring what setuptools uses on the Make path: Python's
+# sysconfig CFLAGS for the hermetic 3.13.4 interpreter are
+#   -fno-strict-overflow -Wsign-compare -Wunreachable-code -DNDEBUG -g -O3 -Wall -fPIC
+# (CCSHARED adds -fPIC). We replicate them here so the Bazel-compiled .so
+# matches Make's optimization level / macros (-O3 -DNDEBUG) rather than
+# Bazel's default -O2. -std=c99 pins the C standard bitarray's sources use.
+_COPTS = [
+    "-fPIC",
+    "-std=c99",
+    "-O3",
+    "-DNDEBUG",
+    "-g",
+    "-fno-strict-overflow",
+    "-Wsign-compare",
+    "-Wunreachable-code",
+    "-Wall",
+]
+
 # Local headers (bitarray.h, pythoncapi_compat.h) live next to the .c sources.
 cc_library(
     name = "_bitarray_obj",
@@ -26,10 +44,7 @@ cc_library(
         "bitarray/bitarray.h",
         "bitarray/pythoncapi_compat.h",
     ],
-    copts = [
-        "-fPIC",
-        "-std=c99",
-    ],
+    copts = _COPTS,
     # Headers are included as `#include "bitarray.h"`, so expose bitarray/ dir.
     includes = ["bitarray"],
     deps = ["@rules_python//python/cc:current_py_cc_headers"],
@@ -42,10 +57,7 @@ cc_library(
         "bitarray/bitarray.h",
         "bitarray/pythoncapi_compat.h",
     ],
-    copts = [
-        "-fPIC",
-        "-std=c99",
-    ],
+    copts = _COPTS,
     includes = ["bitarray"],
     deps = ["@rules_python//python/cc:current_py_cc_headers"],
 )
@@ -68,25 +80,6 @@ cc_shared_library(
         "@platforms//cpu:aarch64": "_util.cpython-313-aarch64-linux-gnu.so",
     }),
     deps = [":_util_obj"],
-)
-
-# Pure-Python sources + type stubs + data shipped in the Make image's
-# dist-packages/bitarray/ (excluding the .c sources, which are compile-only).
-filegroup(
-    name = "py_sources",
-    srcs = [
-        "bitarray/__init__.py",
-        "bitarray/__init__.pyi",
-        "bitarray/util.py",
-        "bitarray/util.pyi",
-        "bitarray/py.typed",
-        "bitarray/bitarray.h",
-        "bitarray/pythoncapi_compat.h",
-        "bitarray/test_bitarray.py",
-        "bitarray/test_util.py",
-        "bitarray/test_150.pickle",
-        "bitarray/test_281.pickle",
-    ],
 )
 
 # Ready-to-layer tar placing the compiled extensions + python sources under
