@@ -1,0 +1,7 @@
+exports_files(
+    [
+        "readiness_probe.sh",
+        "container_startup.py",
+    ],
+    visibility = ["//visibility:public"],
+)

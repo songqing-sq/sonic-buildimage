@@ -346,6 +346,22 @@ local_path_override(
     path = "src/sonic-sysmgr/gnoi-bazel",
 )
 
+# bitarray 2.8.1 (pinned by sonic-config-engine's install_requires) ships no
+# cp313 wheel on PyPI (only up to cp311), so on trixie's Python 3.13 its C
+# extensions must be compiled from source. We fetch the sdist here and build it
+# with the project's hermetic GCC via cc rules in bitarray.BUILD, instead of
+# aspect_rules_py's sdist_build (which uses the interpreter's clang sysconfig
+# and a non-hermetic host compiler). Consumed by docker-config-engine-trixie.
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "bitarray_src",
+    build_file = "//dockers/docker-config-engine-trixie:bitarray.BUILD",
+    sha256 = "e68ceef35a88625d16169550768fcc8d3894913e363c24ecbf6b8c07eb02c8f3",
+    strip_prefix = "bitarray-2.8.1",
+    urls = ["https://files.pythonhosted.org/packages/2b/22/b33fdaea9cb2de8a5b00b4b57bc91edef10c7e4aebec1f5c6235d501ba91/bitarray-2.8.1.tar.gz"],
+)
+
 # NOTE: docker-base-trixie's apt sources_list must be the LAST-registered
 # so rules_distroless's `sources[suite] = ...` overwrite keeps our
 # snapshot.debian.org URIs (which retain older versions) instead of being

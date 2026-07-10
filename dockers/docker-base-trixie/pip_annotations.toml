@@ -1,0 +1,17 @@
+# uv requirement annotations for the pip_ce hub / default venv.
+#
+# The aspect_rules_py uv extension hardcodes its sdist build venv deps to only
+# {setuptools, build} (see extension.bzl `_default_annotations.default_build_deps`,
+# which carries a "FIXME: Allow the default build deps to be changed"). Packages
+# whose sdist build backend also needs `wheel` therefore fail with
+#   ERROR Unmet dependencies ... wheel ... found: not installed
+# unless `wheel` is attached as a per-package build-dependency here.
+#
+# bitarray==2.8.1 (pinned by sonic-config-engine) has no cp313 wheel on PyPI
+# (only up to cp310/cp311), so on trixie's Python 3.13 it must be built from
+# sdist — and its setuptools build backend imports `wheel`.
+version = "0.0.0"
+
+[[package]]
+name = "bitarray"
+build-dependencies = [{ name = "wheel" }]

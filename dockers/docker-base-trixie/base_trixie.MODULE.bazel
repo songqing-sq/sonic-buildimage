@@ -99,6 +99,17 @@ apt.install(
         "libgmp10",
         "libpcre2-8-0",
 
+        # -------- docker-config-engine-trixie runtime apt deps --------
+        # From docker-config-engine-trixie/Dockerfile.j2's `apt install`. Only
+        # the runtime survivors are listed here — build-essential and
+        # python3-dev are apt-purged at the end of that Dockerfile, so they are
+        # build-only and not shipped. The @trixie apt pool is shared across all
+        # trixie dockers, so these live here rather than in a per-docker pool.
+        "apt-utils",
+        "python3-cffi",
+        "python3-redis",
+        "python3-yaml",
+
         # -------- Debug-only variant packages (rules/docker-base-trixie.mk _DBG_IMAGE_PACKAGES) --------
         # These are NOT baked into the base image (see BUILD.bazel `flat` list),
         # but registered here so the `debug-packages` flatten target can pull
@@ -121,15 +132,30 @@ apt.lock(
 )
 use_repo(apt, "trixie")
 
+# Hub name is "pip_ce" (not "pip"). The aspect_rules_py uv extension marks
+# itself reproducible=True, so Bazel caches its generated hub repo and does NOT
+# re-evaluate it when only uv.lock's contents change (adding config-engine's
+# pip deps). Using a distinct hub name forces a fresh evaluation that reads the
+# current uv.lock package closure. All consumers reference @pip_ce//<pkg>.
 uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
-uv.declare_hub(hub_name = "pip")
+uv.declare_hub(hub_name = "pip_ce")
 uv.declare_venv(
-    hub_name = "pip",
+    hub_name = "pip_ce",
     venv_name = "default",
 )
 uv.lockfile(
     src = "//dockers/docker-base-trixie:uv.lock",
-    hub_name = "pip",
+    hub_name = "pip_ce",
     venv_name = "default",
 )
-use_repo(uv, "pip")
+
+# Attach `wheel` as a build-dependency for sdist-only packages (bitarray on
+# Python 3.13). The extension's default sdist build venv only has
+# {setuptools, build}; this annotation adds `wheel` so bitarray's setuptools
+# backend can build. See pip_annotations.toml for details.
+uv.unstable_annotate_requirements(
+    hub_name = "pip_ce",
+    venv_name = "default",
+    src = "//dockers/docker-base-trixie:pip_annotations.toml",
+)
+use_repo(uv, "pip_ce")

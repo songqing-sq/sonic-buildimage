@@ -1,0 +1,150 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@sonic_build_infra//python:site_packages.bzl", "site_packages")
+load("@tar.bzl", "tar")
+
+# APT-sourced runtime debs. From docker-config-engine-trixie/Dockerfile.j2's
+# `apt install` list, keeping only the packages that survive the final
+# `apt purge` (build-essential + python3-dev are build-only and purged, so not
+# shipped). These packages are declared in the shared @trixie apt pool
+# (dockers/docker-base-trixie/base_trixie.MODULE.bazel).
+#   - apt-utils:     Dockerfile explicit install
+#   - python3-cffi:  trixie uses apt python3-cffi (bookworm had none; the libyang
+#                    python bindings and pyangbind need cffi at runtime)
+#   - python3-redis: trixie uses apt python3-redis (bookworm used pip redis==5.0.1)
+#   - python3-yaml:  Dockerfile explicit install
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//apt-utils:data",
+        "@trixie//python3-cffi:data",
+        "@trixie//python3-redis:data",
+        "@trixie//python3-yaml:data",
+    ],
+)
+
+# SONiC-built debs (Dockerfile.j2: install_debian_packages). Mirrors the
+# _DEPENDS list in rules/docker-config-engine-trixie.mk. Each package ships
+# both `_data` (file contents) and `_statusd` (dpkg status.d stub) so
+# `dpkg -l` inside the container lists them.
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        # LIBSWSSCOMMON / PYTHON3_SWSSCOMMON / SONIC_DB_CLI
+        "@sonic-swss-common//:libswsscommon_1.0.0.deb_data",
+        "@sonic-swss-common//:libswsscommon_1.0.0.deb_statusd",
+        "@sonic-swss-common//:python3-swsscommon_1.0.0.deb_data",
+        "@sonic-swss-common//:python3-swsscommon_1.0.0.deb_statusd",
+        "@sonic-swss-common//:sonic-db-cli_1.0.0.deb_data",
+        "@sonic-swss-common//:sonic-db-cli_1.0.0.deb_statusd",
+        # LIBYANG3
+        "@libyang3//:libyang3_3.12.2-1.deb_data",
+        "@libyang3//:libyang3_3.12.2-1.deb_statusd",
+        # LIBYANG3_PY3
+        "@libyang3-py3//:python3-libyang_3.1.0-1.deb_data",
+        "@libyang3-py3//:python3-libyang_3.1.0-1.deb_statusd",
+        # SONIC_EVENTD
+        "@sonic-eventd//:sonic-eventd_1.0.0-0.deb_data",
+        "@sonic-eventd//:sonic-eventd_1.0.0-0.deb_statusd",
+        # SONIC_SUPERVISORD_UTILITIES_RS
+        "@sonic-supervisord-utilities-rs//:sonic-supervisord-utilities-rs_1.0.0.deb_data",
+        "@sonic-supervisord-utilities-rs//:sonic-supervisord-utilities-rs_1.0.0.deb_statusd",
+    ],
+)
+
+# Pip-only layer: third-party PyPI packages installed via uv, sourced from the
+# shared @pip hub (dockers/docker-base-trixie/pyproject.toml + uv.lock).
+# Covers the Dockerfile.j2 `pip3 install pyangbind==0.8.7` plus the
+# install_requires of the sonic wheels bundled below. enum34 is dropped via
+# `[tool.uv] override-dependencies` in the base-trixie pyproject (equivalent to
+# the Dockerfile's `pip3 uninstall -y enum34`). Note redis/cffi/yaml come from
+# apt (see apt_layer), NOT pip — matching the Make Dockerfile for trixie.
+site_packages(
+    name = "pip_layer",
+    srcs = [
+        # Dockerfile.j2 explicit pip3 install.
+        "@pip_ce//pyangbind",
+        # sonic-config-engine install_requires (bitarray is compiled from
+        # source in bitarray_layer below — no cp313 wheel exists).
+        "@pip_ce//lxml",
+        "@pip_ce//netaddr",
+        # sonic-yang-mgmt install_requires.
+        "@pip_ce//ijson",
+        "@pip_ce//jsonpointer",
+        "@pip_ce//jsondiff",
+        "@pip_ce//tabulate",
+        # sonic-py-common install_requires.
+        "@pip_ce//natsort",
+    ],
+    venv = "default",
+)
+
+# Single Python content layer: pip layer (third-party) + every sonic wheel's
+# :install tar (mirrors what `pip3 install <wheel>.whl` lays out on Debian
+# system python). Mirrors _PYTHON_WHEELS in rules/docker-config-engine-trixie.mk.
+flatten(
+    name = "python_layer",
+    deduplicate = True,
+    tars = [
+        ":pip_layer",
+        # bitarray C extension compiled from sdist with hermetic GCC (no cp313
+        # wheel on PyPI); lays out dist-packages/bitarray/ with the two .so.
+        "@bitarray_src//:bitarray_install",
+        # redis-dump-load ships as a SONiC wheel (sonic-py-common depends on it).
+        "@redis-dump-load-py3//:install",
+        # SONIC_PY_COMMON_PY3
+        "@sonic-py-common//:install",
+        # SONIC_YANG_MGMT_PY3
+        "@sonic-yang-mgmt//:install",
+        # SONIC_YANG_MODELS_PY3
+        "@sonic-yang-models//:install",
+        # SONIC_CONTAINERCFGD
+        "@sonic-containercfgd//:install",
+        # SONIC_CONFIG_ENGINE_PY3
+        "@sonic-config-engine//:install",
+        # SONIC_SUPERVISORD_UTILITIES
+        "@sonic-supervisord-utilities//:install",
+    ],
+)
+
+# COPY files (Dockerfile.j2 lines 48-50). Only these 3 files land in the Make
+# image — the container script and rsyslog_plugin.conf.j2 are declared in the
+# .mk _FILES but never COPY'd by the Dockerfile, so they are not shipped.
+tar(
+    name = "files",
+    srcs = [
+        "//files/build_templates:swss_vars.j2",
+        "//src/sonic-ctrmgrd/ctrmgr:readiness_probe.sh",
+        "//src/sonic-ctrmgrd/ctrmgr:container_startup.py",
+    ],
+    mtree = [
+        "./usr/share/sonic/templates/swss_vars.j2 uid=0 gid=0 mode=0644 type=file content=$(location //files/build_templates:swss_vars.j2)",
+        "./usr/bin/readiness_probe.sh uid=0 gid=0 mode=0755 type=file content=$(location //src/sonic-ctrmgrd/ctrmgr:readiness_probe.sh)",
+        "./usr/share/sonic/scripts/container_startup.py uid=0 gid=0 mode=0755 type=file content=$(location //src/sonic-ctrmgrd/ctrmgr:container_startup.py)",
+    ],
+)
+
+# The Make config-engine Dockerfile.j2 declares no ENTRYPOINT and no extra ENV,
+# so the image inherits both from docker-base-trixie (Make image: Entrypoint=
+# null, Env=PATH only). We intentionally do NOT re-set entrypoint/env here
+# (son624 redundantly re-set entrypoint=supervisord); config-engine just layers
+# its content tars on top of the base.
+oci_image(
+    name = "docker-config-engine-trixie",
+    base = "//dockers/docker-base-trixie:docker-base-trixie",
+    tars = [
+        ":apt_layer",
+        ":sonic_pkgs",
+        ":python_layer",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-config-engine-trixie",
+    repo_tags = ["docker-config-engine-trixie:latest"],
+)

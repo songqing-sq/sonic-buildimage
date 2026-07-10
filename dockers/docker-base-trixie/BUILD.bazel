@@ -11,13 +11,13 @@ exports_files(["etc/rsyslog.conf"])
 site_packages(
     name = "pip_layer",
     srcs = [
-        "@pip//jinjanator",
-        "@pip//supervisor",
-        "@pip//supervisord_dependent_startup",
+        "@pip_ce//jinjanator",
+        "@pip_ce//supervisor",
+        "@pip_ce//supervisord_dependent_startup",
         # supervisor 4.2.5 imports pkg_resources at module load; provide it
         # via pip since the system python3-setuptools .deb is not in the flat
         # layer (rules_distroless mixed-arch bug on Architecture:all packages).
-        "@pip//setuptools",
+        "@pip_ce//setuptools",
     ],
     visibility = [":__subpackages__"],
 )
@@ -121,9 +121,11 @@ flatten(
         "@trixie//ca-certificates:data",  # arch:all — bare label buggy
         "@trixie//libc6",
         "@trixie//libc-bin",
-        "@trixie//libssl3t64",
+        # libssl3t64 + openssl are supplied by the FIPS layer (fips_pkgs)
+        # below, since Make defaults to INCLUDE_FIPS=y. Do not pull the
+        # Debian versions here — they would conflict with the FIPS-patched
+        # libcrypto/libssl and openssl binary.
         "@trixie//netbase",
-        "@trixie//openssl",
         "@trixie//tzdata",
         "@trixie//media-types",
         "@trixie//gcc-14-base",
@@ -207,22 +209,46 @@ flatten(
     ],
 )
 
+# FIPS package layer. Make defaults to INCLUDE_FIPS=y (rules/config L380),
+# and rules/docker-base-trixie.mk L16-18 adds 8 FIPS debs to _DEPENDS. These
+# replace Debian's libssl3t64/openssl (removed from the flat layer above) with
+# SONiC's FIPS-patched OpenSSL + SymCrypt provider + FIPS krb5. Each package
+# contributes _data (file content) and _statusd (dpkg status.d stub for
+# `dpkg -l`). From @sonic-fips (external_fips_deb macro).
+flatten(
+    name = "fips_pkgs",
+    deduplicate = True,
+    tars = [
+        "@sonic-fips//:libssl3t64_3.5.4-1+fips.deb_data",
+        "@sonic-fips//:libssl3t64_3.5.4-1+fips.deb_statusd",
+        "@sonic-fips//:libssl-dev_3.5.4-1+fips.deb_data",
+        "@sonic-fips//:libssl-dev_3.5.4-1+fips.deb_statusd",
+        "@sonic-fips//:openssl_3.5.4-1+fips.deb_data",
+        "@sonic-fips//:openssl_3.5.4-1+fips.deb_statusd",
+        "@sonic-fips//:symcrypt-openssl_1.9.4.deb_data",
+        "@sonic-fips//:symcrypt-openssl_1.9.4.deb_statusd",
+        "@sonic-fips//:libk5crypto3_1.21.3-5+fips.deb_data",
+        "@sonic-fips//:libk5crypto3_1.21.3-5+fips.deb_statusd",
+        "@sonic-fips//:libkrb5support0_1.21.3-5+fips.deb_data",
+        "@sonic-fips//:libkrb5support0_1.21.3-5+fips.deb_statusd",
+        "@sonic-fips//:libkrb5-3_1.21.3-5+fips.deb_data",
+        "@sonic-fips//:libkrb5-3_1.21.3-5+fips.deb_statusd",
+        "@sonic-fips//:libgssapi-krb5-2_1.21.3-5+fips.deb_data",
+        "@sonic-fips//:libgssapi-krb5-2_1.21.3-5+fips.deb_statusd",
+    ],
+)
+
 oci_image(
     name = "docker-base-trixie",
     architecture = DEBIAN_ARCH,
-    entrypoint = ["/usr/local/bin/supervisord"],
+    # Match the Make base-trixie image: no ENTRYPOINT (Dockerfile declares
+    # none; Make image Entrypoint=null) and Env carries only PATH. The former
+    # entrypoint=supervisord + DEBIAN_FRONTEND/PYTHONPATH were son624-derived
+    # deviations. PYTHONPATH is no longer needed: PYTHON_MAJOR_MINOR is now
+    # 3.13 in sonic_rules, so site_packages lays pip content into
+    # /usr/lib/python3/dist-packages/ (already on sys.path).
     env = {
-        "DEBIAN_FRONTEND": "noninteractive",
-        # sonic_rules/python/version.bzl hardcodes PYTHON_MAJOR_MINOR = "3.11"
-        # (bookworm's system python). The site_packages awk mutator uses that
-        # constant to rewrite `install/lib/python3.11/site-packages/*` into
-        # /usr/lib/python3/dist-packages/. Trixie ships python 3.13, so the
-        # wheel content ends up under /usr/local/lib/python3.13/site-packages/
-        # (via the awk's `install/` -> `/usr/local/` fallback branch), which
-        # is NOT on the default sys.path. Setting PYTHONPATH here surfaces
-        # the pip-installed modules to trixie's python without modifying
-        # sonic_rules (forbidden by the migration rules).
-        "PYTHONPATH": "/usr/local/lib/python3.13/site-packages",
+        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     },
     os = "linux",
     tars = [
@@ -231,6 +257,7 @@ oci_image(
         ":flat",
         ":python_layer",
         ":sonic_pkgs",
+        ":fips_pkgs",
     ],
     visibility = ["//visibility:public"],
 )

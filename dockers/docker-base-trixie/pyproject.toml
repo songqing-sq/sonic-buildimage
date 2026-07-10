@@ -17,4 +17,39 @@ dependencies = [
     # removed the bundled `pkg_resources` module and supervisor 4.2.5 still
     # references it.
     "setuptools<68",
+    # PEP517 build backend. Required by the aspect uv extension whenever any
+    # dependency is sdist-only (bitarray==2.8.1 below has no prebuilt wheel and
+    # must be built from source); uv needs `build` + `setuptools` present in the
+    # lockfile to enable sdist support.
+    "build",
+    "wheel",
+
+    # ---- docker-config-engine-trixie deps ----
+    # Dockerfile.j2 explicit `pip3 install pyangbind==0.8.7`. Note trixie pins
+    # 0.8.7 (bookworm used 0.8.2). pyangbind transitively pulls pyang/regex/ply.
+    "pyangbind==0.8.7",
+    # sonic-config-engine install_requires. NOTE: bitarray==2.8.1 is NOT here —
+    # it has no cp313 wheel and is compiled from its sdist with hermetic GCC
+    # (see root MODULE.bazel @bitarray_src + docker-config-engine-trixie/
+    # bitarray.BUILD), not resolved via uv/pip.
+    "lxml>=4.9.1",
+    "netaddr==0.8.0",
+    # sonic-yang-mgmt setup.py install_requires.
+    "ijson>=3.2.3",
+    "jsonpointer>=1.9",
+    "jsondiff>=1.2.0",
+    "tabulate==0.9.0",
+    # sonic-py-common setup.py install_requires (pyyaml already provided above
+    # for jinjanator; redis-dump-load ships as its own SONiC wheel :install,
+    # not via pip).
+    "natsort",
+]
+
+# pyangbind unconditionally depends on enum34, which on Python 3 shadows the
+# stdlib `enum` and breaks the `re` module. The Make Dockerfile.j2 explicitly
+# runs `pip3 uninstall -y enum34` after installing pyangbind; we drop it from
+# the resolution instead (equivalent, and avoids shipping it at all).
+[tool.uv]
+override-dependencies = [
+    "enum34 ; python_version < '3'",
 ]
