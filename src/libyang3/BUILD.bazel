@@ -108,6 +108,8 @@ sonic_deb(
     name = "libyang3_{}.deb".format(FULL_VERSION),
     package = "libyang3",
     version = FULL_VERSION,
+    breaks = ["libyang2", "libyang2t64"],
+    replaces = ["libyang2", "libyang2t64"],
     content = {
         "${LIBDIR}:*:0644": [":yang_files"],
         "/usr/share/yang/modules/libyang:models:0644": [":yang_modules"],
@@ -121,6 +123,7 @@ sonic_deb(
         "libxxhash0 (>= 0.7.0)",
     ],
     maintainer = "SONiC Maintainers",
+    multi_arch = "same",
     description = "YANG data modelling language parser and toolkit (C library)",
     gen_dbg = True,
     homepage = "https://github.com/CESNET/libyang",
@@ -134,6 +137,8 @@ sonic_deb(
     name = "libyang-dev_{}.deb".format(FULL_VERSION),
     package = "libyang-dev",
     version = FULL_VERSION,
+    breaks = ["libyang2-dev"],
+    replaces = ["libyang2-dev"],
     content = {
         "${LIBDIR}:*:0644": [":yang_dev_link"],
         # 21 public headers (20 from upstream ${headers} + version.h/ly_config.h
@@ -163,6 +168,8 @@ sonic_deb(
     name = "libyang3-tools_{}.deb".format(FULL_VERSION),
     package = "libyang3-tools",
     version = FULL_VERSION,
+    breaks = ["libyang2-tools"],
+    replaces = ["libyang2-tools"],
     content = {
         "/usr/bin:*:0755": [
             ":yanglint",
@@ -176,6 +183,7 @@ sonic_deb(
         "libyang3 (>= {})".format(VERSION),
     ],
     maintainer = "SONiC Maintainers",
+    multi_arch = "foreign",
     description = "Command-line tools for libyang (yanglint, yangre)",
     gen_dbg = True,
     homepage = "https://github.com/CESNET/libyang",

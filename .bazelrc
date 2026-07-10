@@ -12,6 +12,10 @@ common:aarch64 --platforms=@@sonic-build-infra+//platform:aarch64_trixie
 
 build --workspace_status_command=scripts/workspace_status.sh
 build --stamp
+# Do not write Bazel sandbox rpath ($ORIGIN/../../_solib_k8/...) into ELF
+# DT_RPATH. Packaged artifacts run inside the docker image where deps live in
+# standard multiarch dirs; the Make build emits no RPATH, so match it.
+build --features=-runtime_library_search_directories
 # === Remote Cache ===
 common --remote_cache=grpc://11.159.98.184:9092
 common --experimental_remote_downloader=grpc://11.159.98.184:9092

@@ -6,6 +6,11 @@ package(default_visibility = ["//visibility:public"])
 
 VERSION = "3.6.0-7.1"
 
+# Debian control Version carries the epoch "1:" (Make ships 1:3.6.0-7.1),
+# but the .deb filename must NOT include the epoch (Debian filename convention).
+# So target names use VERSION (no epoch); sonic_deb(version=) uses CONTROL_VERSION.
+CONTROL_VERSION = "1:" + VERSION
+
 # =============================================================================
 # lm-sensors family: Approach A (apt repackage) for lm-sensors, libsensors5,
 # fancontrol + Approach B (cc rebuild) for sensord.
@@ -69,16 +74,16 @@ genrule(
 sonic_deb(
     name = "lm-sensors_{}.deb".format(VERSION),
     package = "lm-sensors",
-    version = VERSION,
+    version = CONTROL_VERSION,
     content = {},
     data = "@lm_sensors_apt//lm-sensors:data",
     md5sums_file = ":lm-sensors_md5sums",
     depends = [
+        "sed (>= 4.0.5-1)",
+        "lsb-base (>= 3.2-13)",
         "libc6 (>= 2.34)",
-        "libsensors-config",
-        "libsensors5 (>= 1:3.6.0)",
+        "libsensors5 (>= 1:3.5.0)",
         "perl:any",
-        "kmod",
     ],
     maintainer = "SONiC Maintainers",
     description = "utilities to read temperature/voltage/fan sensors",
@@ -88,15 +93,16 @@ sonic_deb(
 sonic_deb(
     name = "libsensors5_{}.deb".format(VERSION),
     package = "libsensors5",
-    version = VERSION,
+    version = CONTROL_VERSION,
     content = {},
     data = "@lm_sensors_apt//libsensors5:data",
     md5sums_file = ":libsensors5_md5sums",
     depends = [
         "libsensors-config",
-        "libc6 (>= 2.34)",
+        "libc6 (>= 2.38)",
     ],
     maintainer = "SONiC Maintainers",
+    multi_arch = "same",
     description = "library to read temperature/voltage/fan sensors",
     section = "libs",
 )
@@ -104,14 +110,13 @@ sonic_deb(
 sonic_deb(
     name = "fancontrol_{}_all.deb".format(VERSION),
     package = "fancontrol",
-    version = VERSION,
+    version = CONTROL_VERSION,
     architecture = "all",
     content = {},
     data = ":fancontrol_data_rewritten",
     md5sums_file = ":fancontrol_md5sums",
     depends = [
-        "lm-sensors",
-        "lsb-base (>= 3.0-6)",
+        "lsb-base (>= 3.2-13)",
     ],
     maintainer = "SONiC Maintainers",
     description = "utility to control the fan speed",
@@ -192,17 +197,18 @@ genrule(
 sonic_deb(
     name = "sensord_{}.deb".format(VERSION),
     package = "sensord",
-    version = VERSION,
+    version = CONTROL_VERSION,
     content = {
         "/usr/sbin:*:0755": [":sensord"],
         "/etc/default:*:0644": [":sensord_default_renamed"],
         "/etc/init.d:*:0755": [":sensord_init_renamed"],
     },
     depends = [
-        "libc6 (>= 2.34)",
-        "libsensors5 (>= 1:3.6.0)",
-        "librrd8t64 (>= 1.6.0)",
         "lm-sensors",
+        "lsb-base (>= 3.2-13)",
+        "libc6 (>= 2.34)",
+        "librrd8t64 (>= 1.3.0)",
+        "libsensors5 (>= 1:3.5.0)",
     ],
     maintainer = "SONiC Maintainers",
     description = "hardware sensor information logging daemon",

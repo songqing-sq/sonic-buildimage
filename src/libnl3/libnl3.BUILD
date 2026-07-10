@@ -368,6 +368,7 @@ sonic_deb(
     package = "libnl-3-200",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    multi_arch = "same",
     section = "libs",
     description = "libnl generic netlink library",
     content = {
@@ -389,6 +390,10 @@ sonic_deb(
     package = "libnl-3-dev",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    multi_arch = "same",
+    breaks = ["libnl3-dev"],
+    conflicts = ["libnl-dev", "libnl2-dev"],
+    replaces = ["libnl3-dev"],
     section = "libdevel",
     description = "development library and header files for libnl-3",
     content = {
@@ -413,6 +418,7 @@ sonic_deb(
     package = "libnl-genl-3-200",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    multi_arch = "same",
     section = "libs",
     description = "libnl generic netlink library",
     content = {
@@ -435,6 +441,7 @@ sonic_deb(
     package = "libnl-genl-3-dev",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    multi_arch = "same",
     section = "libdevel",
     description = "development library and header files for libnl-genl-3",
     content = {
@@ -460,6 +467,7 @@ sonic_deb(
     package = "libnl-route-3-200",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    multi_arch = "same",
     section = "libs",
     description = "libnl route library",
     content = {
@@ -481,6 +489,7 @@ sonic_deb(
     package = "libnl-route-3-dev",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    multi_arch = "same",
     section = "libdevel",
     description = "development library and header files for libnl-route-3",
     content = {
@@ -505,6 +514,7 @@ sonic_deb(
     package = "libnl-nf-3-200",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    multi_arch = "same",
     description = "libnl netfilter library",
     section = "libs",
     content = {
@@ -526,6 +536,7 @@ sonic_deb(
     package = "libnl-nf-3-dev",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    multi_arch = "same",
     section = "libdevel",
     description = "development library and header files for libnl-nf-3",
     content = {
@@ -551,6 +562,7 @@ sonic_deb(
     package = "libnl-cli-3-200",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    multi_arch = "same",
     section = "libs",
     description = "libnl CLI library",
     content = {
@@ -588,6 +600,7 @@ sonic_deb(
     package = "libnl-cli-3-dev",
     version = LIBNL_VERSION,
     maintainer = "SONiC Maintainers",
+    multi_arch = "same",
     description = "development library and header files for libnl-cli-3",
     section = "libdevel",
     content = {
