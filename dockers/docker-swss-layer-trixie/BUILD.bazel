@@ -1,0 +1,79 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+
+# APT-sourced runtime debs. Mirrors what `apt install` lays down in
+# docker-swss-layer-trixie/Dockerfile.j2 that is NOT already present in the
+# docker-config-engine-trixie base:
+#   - iputils-ping:       Dockerfile.j2 `apt install -y iputils-ping`.
+#   - libprotobuf32t64:   pulled transitively by `apt install swss.deb`
+#                         (swss Depends libprotobuf32t64); config-engine-trixie
+#                         does not ship it.
+# Both are declared in the shared @trixie pool
+# (dockers/docker-base-trixie/base_trixie.MODULE.bazel).
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//iputils-ping:data",
+        "@trixie//libprotobuf32t64:data",
+    ],
+)
+
+# SONiC-built debs. In the Make image these land via `apt install swss.deb`,
+# which installs swss plus every Depends not already in config-engine-trixie.
+# `flatten(deb_data)` does NOT resolve Depends, so each runtime dependency the
+# Make image gained is listed explicitly here. Verified against the Make image
+# package delta (docker-swss-layer-trixie minus docker-config-engine-trixie):
+#   swss, libsairedis, libsaimetadata, libdashapi, libnexthopgroup,
+#   libteam5, libteamdctl0 (+ libprotobuf32t64 in apt_layer above).
+# NOTE: unlike docker-swss-layer-bookworm, trixie does NOT add libnftnl11 —
+# the trixie swss deb's dpkg-shlibdeps output does not require it.
+# Each package ships both `_data` (contents) and `_statusd` (dpkg status.d
+# stub) so `dpkg -l` inside the container lists it.
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        # SWSS (rules/docker-swss-layer-trixie.mk: _DEPENDS += $(SWSS)).
+        "@sonic-swss//:swss_1.0.0.deb_data",
+        "@sonic-swss//:swss_1.0.0.deb_statusd",
+        # libsairedis / libsaimetadata (swss Depends; from sonic-sairedis).
+        "@sonic-sairedis//:libsairedis_1.0.0.deb_data",
+        "@sonic-sairedis//:libsairedis_1.0.0.deb_statusd",
+        "@sonic-sairedis//:libsaimetadata_1.0.0.deb_data",
+        "@sonic-sairedis//:libsaimetadata_1.0.0.deb_statusd",
+        # libdashapi (transitive dep of libsairedis; from sonic-dash-api).
+        "@sonic-dash-api//:libdashapi_1.0.0.deb_data",
+        "@sonic-dash-api//:libdashapi_1.0.0.deb_statusd",
+        # libnexthopgroup (transitive dep of libsairedis; from sonic-fib).
+        "@sonic-fib//:libnexthopgroup_1.0.0.deb_data",
+        "@sonic-fib//:libnexthopgroup_1.0.0.deb_statusd",
+        # libteam5 / libteamdctl0 (swss Depends; from libteam).
+        "@libteam//:libteam5_1.31-1.deb_data",
+        "@libteam//:libteam5_1.31-1.deb_statusd",
+        "@libteam//:libteamdctl0_1.31-1.deb_data",
+        "@libteam//:libteamdctl0_1.31-1.deb_statusd",
+    ],
+)
+
+# Make swss-layer-trixie image config (docker inspect): Entrypoint=
+# ["/usr/local/bin/supervisord"], Env=PATH only, Cmd=null. The trixie
+# Dockerfile.j2's two-stage build sets DEBIAN_FRONTEND only in the builder
+# stage, so it is NOT persisted to the final image — we intentionally do NOT
+# set it here (this is a deliberate difference from docker-swss-layer-bookworm).
+oci_image(
+    name = "docker-swss-layer-trixie",
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    entrypoint = ["/usr/local/bin/supervisord"],
+    tars = [
+        ":apt_layer",
+        ":sonic_pkgs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-swss-layer-trixie",
+    repo_tags = ["docker-swss-layer-trixie:latest"],
+)

@@ -110,6 +110,15 @@ apt.install(
         "python3-redis",
         "python3-yaml",
 
+        # -------- docker-swss-layer-trixie runtime apt deps --------
+        # iputils-ping: docker-swss-layer-trixie/Dockerfile.j2 `apt install -y
+        # iputils-ping`. libprotobuf32t64: pulled in by `apt install swss.deb`
+        # (swss Depends libprotobuf32t64); it is not shipped by
+        # docker-config-engine-trixie, so the swss layer is the first image to
+        # carry it. Both live in the shared @trixie pool per project convention.
+        "iputils-ping",
+        "libprotobuf32t64",
+
         # -------- Debug-only variant packages (rules/docker-base-trixie.mk _DBG_IMAGE_PACKAGES) --------
         # These are NOT baked into the base image (see BUILD.bazel `flat` list),
         # but registered here so the `debug-packages` flatten target can pull
