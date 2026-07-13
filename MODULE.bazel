@@ -173,6 +173,12 @@ local_path_override(
     path = "src/sonic-platform-common",
 )
 
+bazel_dep(name = "sonic-platform-pddf-common", version = "1.0")
+local_path_override(
+    module_name = "sonic-platform-pddf-common",
+    path = "platform/pddf/platform-api-pddf-base",
+)
+
 bazel_dep(name = "sonic-utilities", version = "1.2")
 local_path_override(
     module_name = "sonic-utilities",

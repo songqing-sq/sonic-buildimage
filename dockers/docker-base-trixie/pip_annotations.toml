@@ -1,4 +1,4 @@
-# uv requirement annotations for the pip_ce hub / default venv.
+# uv requirement annotations for the pip_pmon hub / default venv.
 #
 # The aspect_rules_py uv extension hardcodes its sdist build venv deps to only
 # {setuptools, build} (see extension.bzl `_default_annotations.default_build_deps`,
@@ -10,8 +10,22 @@
 # bitarray==2.8.1 (pinned by sonic-config-engine) has no cp313 wheel on PyPI
 # (only up to cp310/cp311), so on trixie's Python 3.13 it must be built from
 # sdist — and its setuptools build backend imports `wheel`.
+#
+# thrift==0.13.0 (pinned by docker-platform-monitor) is an sdist-only 2019
+# release with no cp313 wheel; its setuptools build backend also needs `wheel`.
+#
+# blkinfo==0.2.0 (pinned by docker-platform-monitor) is likewise sdist-only
+# with no prebuilt wheel; its setuptools build backend needs `wheel`.
 version = "0.0.0"
 
 [[package]]
 name = "bitarray"
+build-dependencies = [{ name = "wheel" }]
+
+[[package]]
+name = "thrift"
+build-dependencies = [{ name = "wheel" }]
+
+[[package]]
+name = "blkinfo"
 build-dependencies = [{ name = "wheel" }]

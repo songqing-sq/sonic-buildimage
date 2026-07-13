@@ -1,0 +1,75 @@
+load("@aspect_rules_py//py:defs.bzl", "py_library")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@tar.bzl", "mutate", "tar")
+
+package(default_visibility = ["//visibility:public"])
+
+# platform/pddf/platform-api-pddf-base/setup.py pins version 1.0, distribution
+# name "sonic-platform-pddf-common", single package "sonic_platform_pddf_base".
+# PDDF_PLATFORM_API_BASE_PY3 in rules/docker-platform-monitor.mk (added to
+# _PYTHON_WHEELS only when PDDF_SUPPORT=y). The Make wheel packages ONLY the
+# sonic_platform_pddf_base/ tree — sonic_platform_ref/ and tests/ are excluded.
+VERSION = "1.0"
+
+py_library(
+    name = "sources",
+    srcs = glob(["sonic_platform_pddf_base/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+# bdist_wheel emits top_level.txt listing the top-level import name.
+write_file(
+    name = "top_level_txt",
+    out = "top_level.txt",
+    content = [
+        "sonic_platform_pddf_base",
+        "",
+    ],
+)
+
+# Wheel artifact: sonic_platform_pddf_common-1.0-py3-none-any.whl
+py_wheel(
+    name = "wheel",
+    distribution = "sonic-platform-pddf-common",
+    version = VERSION,
+    # setup.py metadata.
+    author = "SONiC Team",
+    author_email = "linuxnetdev@microsoft.com",
+    summary = "SONIC platform APIs base (2.0) implementation on PDDF supported platforms",
+    homepage = "https://github.com/Azure/sonic-buildimage",
+    license = "Apache 2.0",
+    classifiers = [
+        "Development Status :: 3 - Alpha",
+        "Environment :: Plugins",
+        "Intended Audience :: Developers",
+        "Intended Audience :: Information Technology",
+        "Intended Audience :: System Administrators",
+        "License :: OSI Approved :: Apache Software License",
+        "Natural Language :: English",
+        "Operating System :: POSIX :: Linux",
+        "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3.7",
+        "Topic :: Utilities",
+    ],
+    # setup.py install_requires.
+    requires = ["jsonschema==2.6.0"],
+    extra_distinfo_files = {
+        ":top_level_txt": "top_level.txt",
+    },
+    deps = [":sources"],
+    visibility = ["//visibility:public"],
+)
+
+# Install tar layer (OCI image consumer). setup.py declares only `packages=[...]`
+# (no scripts, no data_files), so a single mutate lays every .py under
+# /usr/lib/python3/dist-packages/sonic_platform_pddf_base/...
+tar(
+    name = "install",
+    srcs = glob(["sonic_platform_pddf_base/**/*.py"]),
+    mutate = mutate(
+        package_dir = "/usr/lib/python3/dist-packages",
+    ),
+    visibility = ["//visibility:public"],
+)

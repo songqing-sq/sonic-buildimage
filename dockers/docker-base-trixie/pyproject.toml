@@ -43,6 +43,22 @@ dependencies = [
     # for jinjanator; redis-dump-load ships as its own SONiC wheel :install,
     # not via pip).
     "natsort",
+
+    # ---- docker-platform-monitor deps ----
+    # From docker-platform-monitor/Dockerfile.j2's explicit `pip3 install`
+    # commands (runtime tools used by platform daemons / vendor sonic_platform
+    # packages). grpcio/grpcio-tools pinned to 1.71.0 to match the slave
+    # container (Dockerfile comment). netifaces is NOT here — trixie pmon uses
+    # apt python3-netifaces instead of the pip package.
+    "grpcio==1.71.0",
+    "grpcio-tools==1.71.0",
+    "thrift==0.13.0",
+    "requests",
+    "python-dateutil==2.9.0.post0",
+    "libpci",
+    "psutil",
+    "blkinfo",
+    "smbus2",
 ]
 
 # pyangbind unconditionally depends on enum34, which on Python 3 shadows the
