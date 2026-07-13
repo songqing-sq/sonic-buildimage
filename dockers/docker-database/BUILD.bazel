@@ -1,0 +1,163 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@sonic_build_infra//python:site_packages.bzl", "site_packages")
+load("@tar.bzl", "tar")
+
+# Dockerfile.j2 line 18: `pip3 install click` (SONiC CLI utilities in the
+# container import click). Make resolved click 8.4.2; declared in the shared
+# @pip_ce2 hub (dockers/docker-base-trixie/pyproject.toml + uv.lock).
+site_packages(
+    name = "pip_layer",
+    srcs = ["@pip_ce2//click"],
+    venv = "default",
+)
+
+# Dockerfile.j2 line 15: `apt install -y redis-tools redis-server`. redis-tools
+# (redis-cli et al.) is already present in the docker-config-engine-trixie base,
+# so it adds no new files; only redis-server's apt data is layered here.
+# libprotobuf32t64 is the protobuf runtime that Make's `apt install
+# libdashapi.deb` pulls in implicitly (libdashapi Depends libprotobuf32t64) —
+# it is not in the config-engine base, so docker-database carries it.
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//redis-server:data",
+        "@trixie//libprotobuf32t64:data",
+    ],
+)
+
+# SONiC-built debs. rules/docker-database.mk: $(DOCKER_DATABASE)_DEPENDS +=
+# $(LIB_SONIC_DASH_API). LIBSWSSCOMMON and SONIC_DB_CLI are already installed in
+# the docker-config-engine-trixie base. Each package ships `_data` (contents)
+# and `_statusd` (dpkg status.d stub).
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        "@sonic-dash-api//:libdashapi_1.0.0.deb_data",
+        "@sonic-dash-api//:libdashapi_1.0.0.deb_statusd",
+    ],
+)
+
+# Dockerfile.common.j2 lines 9-18: in-place sed edits to /etc/redis/redis.conf.
+# Extract the original from the redis-server apt data tar and apply the same
+# substitutions; the output rides on top in :files to override the apt copy.
+genrule(
+    name = "redis_conf",
+    srcs = ["@trixie//redis-server:data"],
+    outs = ["redis.conf"],
+    cmd = r"""tar -xOf $(location @trixie//redis-server:data) ./etc/redis/redis.conf | sed -E '
+s/^# save ""$$/save ""/g
+s/^daemonize yes$$/daemonize no/
+s/^logfile .*$$/logfile ""/
+s/^# syslog-enabled no$$/syslog-enabled no/
+s/^# unixsocket/unixsocket/
+s/redis-server.sock/redis.sock/g
+s/^client-output-buffer-limit pubsub [0-9]+mb [0-9]+mb [0-9]+/client-output-buffer-limit pubsub 0 0 0/
+s/^notify-keyspace-events ""$$/notify-keyspace-events AKE/
+s/^databases [0-9]+$$/databases 100/
+' > $@
+""",
+)
+
+# Distroless images do not run dpkg maintainer scripts. The redis-server
+# postinst (update-rc.d + `systemctl enable` via deb-systemd-helper) generates
+# the SysV rc symlinks, the systemd .wants/alias symlinks, and the
+# deb-systemd-helper bookkeeping files. The bookkeeping files are replicated
+# here: `redis-server.service.dsh-also` lists the units it enabled; the other
+# two are empty marker files.
+genrule(
+    name = "redis_dsh_files",
+    outs = [
+        "redis-server.service.dsh-also",
+        "dsh_redis.service",
+        "dsh_multiuser_redis-server.service",
+    ],
+    cmd = r"""
+printf '/etc/systemd/system/redis.service\n/etc/systemd/system/multi-user.target.wants/redis-server.service\n' > $(location redis-server.service.dsh-also)
+: > $(location dsh_redis.service)
+: > $(location dsh_multiuser_redis-server.service)
+""",
+)
+
+# COPY'd SONiC files (Dockerfile.j2 + Dockerfile.common.j2), the sed-modified
+# redis.conf, and the redis postinst emulation. This tar is layered LAST so its
+# redis.conf overrides the apt original.
+tar(
+    name = "files",
+    srcs = [
+        "supervisord.conf.j2",
+        "critical_processes.j2",
+        "docker-database-init.sh",
+        "flush_unused_database",
+        "database_config.json.j2",
+        "database_global.json.j2",
+        "multi_database_config.json.j2",
+        "//files/scripts:update_chassisdb_config",
+        "//files/image_config/sysctl:90-sonic.conf",
+        ":redis.conf",
+        "redis-server.service.dsh-also",
+        "dsh_redis.service",
+        "dsh_multiuser_redis-server.service",
+    ],
+    mtree = [
+        # SONiC templates + scripts.
+        "./usr/share/sonic/templates/supervisord.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location supervisord.conf.j2)",
+        "./usr/share/sonic/templates/critical_processes.j2 uid=0 gid=0 mode=0644 type=file content=$(location critical_processes.j2)",
+        "./usr/local/bin/docker-database-init.sh uid=0 gid=0 mode=0755 type=file content=$(location docker-database-init.sh)",
+        "./usr/local/bin/flush_unused_database uid=0 gid=0 mode=0755 type=file content=$(location flush_unused_database)",
+        "./usr/share/sonic/templates/database_config.json.j2 uid=0 gid=0 mode=0644 type=file content=$(location database_config.json.j2)",
+        "./usr/share/sonic/templates/database_global.json.j2 uid=0 gid=0 mode=0644 type=file content=$(location database_global.json.j2)",
+        "./usr/share/sonic/templates/multi_database_config.json.j2 uid=0 gid=0 mode=0644 type=file content=$(location multi_database_config.json.j2)",
+        "./usr/local/bin/update_chassisdb_config uid=0 gid=0 mode=0755 type=file content=$(location //files/scripts:update_chassisdb_config)",
+        "./usr/lib/sysctl.d/90-sonic.conf uid=0 gid=0 mode=0644 type=file content=$(location //files/image_config/sysctl:90-sonic.conf)",
+        # redis.conf (sed-modified) overriding the apt copy. The redis-server
+        # postinst chowns /etc/redis and its config to the redis user/group
+        # (uid 100 / gid 101, created in the config-engine base).
+        "./etc/redis uid=100 gid=101 mode=2770 type=dir",
+        "./etc/redis/redis.conf uid=100 gid=101 mode=0640 type=file content=$(location :redis.conf)",
+        # redis postinst: SysV rc symlinks (update-rc.d defaults).
+        "./etc/rc0.d/K01redis-server type=link link=../init.d/redis-server",
+        "./etc/rc1.d/K01redis-server type=link link=../init.d/redis-server",
+        "./etc/rc2.d/S01redis-server type=link link=../init.d/redis-server",
+        "./etc/rc3.d/S01redis-server type=link link=../init.d/redis-server",
+        "./etc/rc4.d/S01redis-server type=link link=../init.d/redis-server",
+        "./etc/rc5.d/S01redis-server type=link link=../init.d/redis-server",
+        "./etc/rc6.d/K01redis-server type=link link=../init.d/redis-server",
+        # redis postinst: systemd enablement (multi-user wants + redis.service alias).
+        "./etc/systemd/system/multi-user.target.wants/redis-server.service type=link link=/lib/systemd/system/redis-server.service",
+        "./etc/systemd/system/redis.service type=link link=/lib/systemd/system/redis-server.service",
+        # redis postinst: deb-systemd-helper bookkeeping.
+        "./var/lib/systemd/deb-systemd-helper-enabled/redis-server.service.dsh-also uid=0 gid=0 mode=0644 type=file content=$(location redis-server.service.dsh-also)",
+        "./var/lib/systemd/deb-systemd-helper-enabled/redis.service uid=0 gid=0 mode=0644 type=file content=$(location dsh_redis.service)",
+        "./var/lib/systemd/deb-systemd-helper-enabled/multi-user.target.wants/redis-server.service uid=0 gid=0 mode=0644 type=file content=$(location dsh_multiuser_redis-server.service)",
+    ],
+)
+
+# The Make docker-database final stage sets ENTRYPOINT docker-database-init.sh
+# and two ENV vars (verified via `docker inspect` on the Make image:
+# DEBIAN_FRONTEND=noninteractive, INCLUDE_SYSTEM_EVENTD=y). PATH is inherited
+# from the base.
+oci_image(
+    name = "docker-database",
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    entrypoint = ["/usr/local/bin/docker-database-init.sh"],
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+        "INCLUDE_SYSTEM_EVENTD": "y",
+    },
+    tars = [
+        ":apt_layer",
+        ":sonic_pkgs",
+        ":pip_layer",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-database",
+    repo_tags = ["docker-database:latest"],
+)

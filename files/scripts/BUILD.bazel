@@ -1,0 +1,6 @@
+exports_files(
+    [
+        "update_chassisdb_config",
+    ],
+    visibility = ["//visibility:public"],
+)

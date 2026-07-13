@@ -119,6 +119,15 @@ apt.install(
         "iputils-ping",
         "libprotobuf32t64",
 
+        # -------- docker-database runtime apt deps --------
+        # docker-database/Dockerfile.j2 `apt install -y redis-tools redis-server`.
+        # redis-tools is already registered above (base rootfs). redis-server is
+        # NOT present in docker-config-engine-trixie base, so docker-database is
+        # the first image to carry the redis-server files (daemon binary,
+        # /etc/init.d + systemd units, default redis.conf). libprotobuf32t64 (the
+        # runtime dep of libdashapi's protobuf) is already registered above.
+        "redis-server",
+
         # -------- Debug-only variant packages (rules/docker-base-trixie.mk _DBG_IMAGE_PACKAGES) --------
         # These are NOT baked into the base image (see BUILD.bazel `flat` list),
         # but registered here so the `debug-packages` flatten target can pull
@@ -141,20 +150,22 @@ apt.lock(
 )
 use_repo(apt, "trixie")
 
-# Hub name is "pip_ce" (not "pip"). The aspect_rules_py uv extension marks
-# itself reproducible=True, so Bazel caches its generated hub repo and does NOT
-# re-evaluate it when only uv.lock's contents change (adding config-engine's
-# pip deps). Using a distinct hub name forces a fresh evaluation that reads the
-# current uv.lock package closure. All consumers reference @pip_ce//<pkg>.
+# Hub name has been bumped over time: "pip" -> "pip_ce" -> "pip_ce2". The
+# aspect_rules_py uv extension marks itself reproducible=True, so Bazel caches
+# its generated hub repo and does NOT re-evaluate it when only uv.lock's
+# contents change. Each time the pip closure grows (pip_ce added config-engine's
+# deps; pip_ce2 adds docker-database's click), the hub name must be bumped to
+# force a fresh evaluation that reads the current uv.lock package closure. All
+# consumers reference @pip_ce2//<pkg>.
 uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
-uv.declare_hub(hub_name = "pip_ce")
+uv.declare_hub(hub_name = "pip_ce2")
 uv.declare_venv(
-    hub_name = "pip_ce",
+    hub_name = "pip_ce2",
     venv_name = "default",
 )
 uv.lockfile(
     src = "//dockers/docker-base-trixie:uv.lock",
-    hub_name = "pip_ce",
+    hub_name = "pip_ce2",
     venv_name = "default",
 )
 
@@ -163,8 +174,8 @@ uv.lockfile(
 # {setuptools, build}; this annotation adds `wheel` so bitarray's setuptools
 # backend can build. See pip_annotations.toml for details.
 uv.unstable_annotate_requirements(
-    hub_name = "pip_ce",
+    hub_name = "pip_ce2",
     venv_name = "default",
     src = "//dockers/docker-base-trixie:pip_annotations.toml",
 )
-use_repo(uv, "pip_ce")
+use_repo(uv, "pip_ce2")

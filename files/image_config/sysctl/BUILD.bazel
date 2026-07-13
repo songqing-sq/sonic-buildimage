@@ -1,0 +1,6 @@
+exports_files(
+    [
+        "90-sonic.conf",
+    ],
+    visibility = ["//visibility:public"],
+)
