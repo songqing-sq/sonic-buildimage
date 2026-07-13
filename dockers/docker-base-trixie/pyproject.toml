@@ -59,6 +59,11 @@ dependencies = [
     "psutil",
     "blkinfo",
     "smbus2",
+
+    # ---- docker-database deps ----
+    # docker-database/Dockerfile.j2 explicit `pip3 install click` (SONiC CLI
+    # utilities inside the container import click). Make resolved click 8.4.2.
+    "click==8.4.2",
 ]
 
 # pyangbind unconditionally depends on enum34, which on Python 3 shadows the

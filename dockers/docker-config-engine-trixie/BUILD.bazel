@@ -65,18 +65,18 @@ site_packages(
     name = "pip_layer",
     srcs = [
         # Dockerfile.j2 explicit pip3 install.
-        "@pip_pmon4//pyangbind",
+        "@pip_pmon5//pyangbind",
         # sonic-config-engine install_requires (bitarray is compiled from
         # source in bitarray_layer below — no cp313 wheel exists).
-        "@pip_pmon4//lxml",
-        "@pip_pmon4//netaddr",
+        "@pip_pmon5//lxml",
+        "@pip_pmon5//netaddr",
         # sonic-yang-mgmt install_requires.
-        "@pip_pmon4//ijson",
-        "@pip_pmon4//jsonpointer",
-        "@pip_pmon4//jsondiff",
-        "@pip_pmon4//tabulate",
+        "@pip_pmon5//ijson",
+        "@pip_pmon5//jsonpointer",
+        "@pip_pmon5//jsondiff",
+        "@pip_pmon5//tabulate",
         # sonic-py-common install_requires.
-        "@pip_pmon4//natsort",
+        "@pip_pmon5//natsort",
     ],
     venv = "default",
 )
