@@ -11,13 +11,13 @@ exports_files(["etc/rsyslog.conf"])
 site_packages(
     name = "pip_layer",
     srcs = [
-        "@pip_pmon8//jinjanator",
-        "@pip_pmon8//supervisor",
-        "@pip_pmon8//supervisord_dependent_startup",
+        "@pip_pmon9//jinjanator",
+        "@pip_pmon9//supervisor",
+        "@pip_pmon9//supervisord_dependent_startup",
         # supervisor 4.2.5 imports pkg_resources at module load; provide it
         # via pip since the system python3-setuptools .deb is not in the flat
         # layer (rules_distroless mixed-arch bug on Architecture:all packages).
-        "@pip_pmon8//setuptools",
+        "@pip_pmon9//setuptools",
     ],
     venv = "docker-base-trixie",
     visibility = [":__subpackages__"],

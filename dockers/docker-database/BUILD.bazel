@@ -5,10 +5,10 @@ load("@tar.bzl", "tar")
 
 # Dockerfile.j2 line 18: `pip3 install click` (SONiC CLI utilities in the
 # container import click). Make resolved click 8.4.2; declared in the shared
-# @pip_pmon8 hub (dockers/docker-base-trixie/pyproject.toml + uv.lock).
+# @pip_pmon9 hub (dockers/docker-base-trixie/pyproject.toml + uv.lock).
 site_packages(
     name = "pip_layer",
-    srcs = ["@pip_pmon8//click"],
+    srcs = ["@pip_pmon9//click"],
     venv = "docker-base-trixie",
 )
 
