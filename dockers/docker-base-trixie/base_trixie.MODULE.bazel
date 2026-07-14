@@ -176,6 +176,33 @@ apt.install(
         # base, so docker-router-advertiser is the first image to carry it.
         "radvd",
 
+        # -------- docker-nat runtime apt deps --------
+        # docker-nat/Dockerfile.j2 `apt install -f -y bridge-utils conntrack
+        # iptables` (on trixie iptables comes from Debian repos, not local
+        # builds). None are present in the docker-swss-layer-trixie base, so
+        # docker-nat is the first image to carry them. flatten() does NOT resolve
+        # Depends, so the transitive runtime deps `apt install` pulled in are
+        # listed explicitly. Verified against the Make docker-nat image package
+        # delta vs docker-swss-layer-trixie base (8 packages) PLUS libxtables12:
+        #   bridge-utils, conntrack, iptables, libip4tc2, libip6tc2,
+        #   libnetfilter-conntrack3, libnfnetlink0, libnftnl11, libxtables12.
+        #   - iptables pulls libip4tc2, libip6tc2, libnftnl11, libxtables12.
+        #   - conntrack pulls libnetfilter-conntrack3, libnfnetlink0.
+        # libxtables12 provides libxtables.so.12 (linked by iptables'
+        # xtables-nft-multi). In the Make image it arrives transitively via the
+        # base iproute2, but the Bazel swss-layer base dropped it, so docker-nat
+        # must ship it to keep iptables functional and match the Make final image.
+        # Shared @trixie pool, same convention as the docker-database/-orchagent
+        # runtime deps above.
+        "bridge-utils",
+        "conntrack",
+        "iptables",
+        "libip4tc2",
+        "libip6tc2",
+        "libnetfilter-conntrack3",
+        "libnfnetlink0",
+        "libnftnl11",
+        "libxtables12",
 
         # -------- Debug-only variant packages (rules/docker-base-trixie.mk _DBG_IMAGE_PACKAGES) --------
         # These are NOT baked into the base image (see BUILD.bazel `flat` list),
