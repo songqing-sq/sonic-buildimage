@@ -60,6 +60,9 @@ apt.install(
         "ncurses-bin",
         "sed",
         "util-linux",
+        # bsdutils provides /usr/bin/logger (used by 17 SONiC startup scripts
+        # to write to syslog). Make ships it in the base image.
+        "bsdutils",
         "login",
         "sysvinit-utils",
 
@@ -95,6 +98,21 @@ apt.install(
         # iproute2 transitives).
         "libtirpc3t64",
         "libxtables12",
+        # libseccomp.so.2 — runtime lib present in Make's base image (used by
+        # systemd/util-linux etc.). Bazel doesn't auto-resolve deb Depends.
+        "libseccomp2",
+        # apt main program + its libs (libapt-pkg.so.7.0 / libapt-private.so.0.0).
+        # Make's BASE image already ships apt + these libs; config-engine only
+        # adds apt-utils (apt-ftparchive/apt-sortpkgs). Previously mis-added to
+        # config-engine; moved here to match Make's layering (base has apt).
+        "libapt-pkg7.0",
+        "apt",
+        # libcap2-bin — provides capsh / getcap / getpcaps / setcap under
+        # /usr/sbin. Make's base image inherits these from the debian:trixie
+        # base rootfs (Dockerfile.j2 `FROM debian:trixie`); Bazel builds the
+        # rootfs from scratch and doesn't auto-resolve deb Depends, so it is
+        # declared explicitly to match Make's base layer.
+        "libcap2-bin",
 
         # -------- known transitives to explicitly register --------
         "libpython3-stdlib",
@@ -114,11 +132,9 @@ apt.install(
         # trixie dockers, so these live here rather than in a per-docker pool.
         "apt-utils",
         # apt-utils ships apt-ftparchive / apt-sortpkgs, which link
-        # libapt-pkg.so.7.0 (from libapt-pkg7.0) and libapt-private.so.0.0 (from
-        # the apt package). Bazel doesn't auto-resolve apt-utils' Depends, so add
-        # them explicitly to complete the library closure.
-        "libapt-pkg7.0",
-        "apt",
+        # libapt-pkg.so.7.0 / libapt-private.so.0.0 — those libs (and the apt
+        # main program) are declared in the base rootfs block above (Make ships
+        # apt in base), so config-engine only adds apt-utils here.
         "python3-cffi",
         # python3-cffi is pure-Python and Depends on python3-cffi-backend for the
         # _cffi_backend C extension. Bazel does not auto-resolve deb Depends, so
@@ -126,8 +142,20 @@ apt.install(
         # (and any cffi user) fail with "ModuleNotFoundError: No module named
         # '_cffi_backend'".
         "python3-cffi-backend",
+        # python3-pycparser: cffi imports pycparser at runtime (parses C decls);
+        # python3-ply: pyangbind imports ply (Lex-Yacc for YANG). Both are in
+        # Make's config-engine layer; Bazel doesn't auto-resolve these deps.
+        "python3-pycparser",
+        "python3-ply",
         "python3-redis",
         "python3-yaml",
+        # libyaml-0.so.2 — the C YAML library that python3-yaml (PyYAML's C
+        # extension) links against. Make ships it in config-engine.
+        "libyaml-0-2",
+        # libpython3.13.so.1.0 (+ .so.1 symlink) — the embeddable Python shared
+        # library. Make ships it in config-engine via the libpython3.13 package.
+        # libpython3.13-minimal/-stdlib (already present) do NOT include this .so.
+        "libpython3.13",
         # Runtime dependencies of libswsscommon (sonic-swss-common/BUILD:245-256
         # `Depends:`). Under Make/apt these are auto-pulled by libswsscommon's
         # Depends, but Bazel image assembly does not resolve deb Depends, so the
@@ -168,10 +196,10 @@ apt.install(
         # survivors only — build-essential, python3-dev, librrd-dev are apt-purged
         # (or build-only) and not shipped. Shared @trixie pool, same as the
         # config-engine block above. vs son624 bookworm: librrd8 -> librrd8t64
-        # (trixie t64 rename), drop python3-jsonschema (not needed for trixie
-        # pmon), add python3-bottle + smartmontools (trixie ships smartmontools
-        # in main, no longer needs bookworm-backports). iputils-ping is already
-        # declared in the swss-layer block above (shared).
+        # (trixie t64 rename), add python3-bottle + smartmontools (trixie ships
+        # smartmontools in main, no longer needs bookworm-backports). jsonschema
+        # is provided via pip (see docker-base-trixie/pyproject.toml), matching
+        # Make. iputils-ping is already declared in the swss-layer block above.
         "ipmitool",
         "librrd8t64",
         "rrdtool",

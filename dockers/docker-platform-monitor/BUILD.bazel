@@ -106,6 +106,9 @@ site_packages(
         "@pip_pmon8//psutil",
         "@pip_pmon8//blkinfo",
         "@pip_pmon8//smbus2",
+        # jsonschema — Make pip-installs it into pmon (transitive dep). Pinned
+        # to 2.6.0 in docker-base-trixie/pyproject.toml.
+        "@pip_pmon8//jsonschema",
     ],
     venv = "docker-base-trixie",
 )
@@ -129,6 +132,12 @@ flatten(
     deduplicate = True,
     tars = [
         ":pip_layer",
+        # thrift.protocol.fastbinary C++ acceleration extension. The pip layer
+        # ships pure-Python thrift but aspect classified it py3-none-any and
+        # never compiled fastbinary; we build it from the sdist with hermetic
+        # GCC (see root MODULE.bazel @thrift_fastbinary_src + thrift_fastbinary.
+        # BUILD) and lay it into dist-packages/thrift/protocol/, matching Make.
+        "@thrift_fastbinary_src//:fastbinary_install",
         "@sonic-platform-common//:install",
         "@sonic-py-common//:install",
         "@sonic-config-engine//:install",

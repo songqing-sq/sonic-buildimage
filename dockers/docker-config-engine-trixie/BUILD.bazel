@@ -29,12 +29,14 @@ flatten(
     deduplicate = True,
     tars = [
         "@trixie//apt-utils:data",
-        "@trixie//libapt-pkg7.0:data",
-        "@trixie//apt:data",
         "@trixie//python3-cffi:data",
         "@trixie//python3-cffi-backend:data",
+        "@trixie//python3-pycparser:data",
+        "@trixie//python3-ply:data",
         "@trixie//python3-redis:data",
         "@trixie//python3-yaml:data",
+        "@trixie//libyaml-0-2:data",
+        "@trixie//libpython3.13:data",
         "@trixie//libboost-serialization1.83.0:data",
         "@trixie//libhiredis1.1.0:data",
         "@trixie//libpcre2-16-0:data",
@@ -60,17 +62,26 @@ flatten(
         "@sonic-swss-common//:sonic-db-cli_1.0.0.deb_data",
         "@sonic-swss-common//:sonic-db-cli_1.0.0.deb_statusd",
         # libswsscommon runtime Depends (sonic-built portion): the SONiC-patched
-        # libnl3 runtime libs (libnl-3.so.200 / libnl-route-3.so.200 /
-        # libnl-nf-3.so.200). Bazel image assembly does not auto-resolve deb
-        # Depends, so they are listed explicitly here (the apt portion —
-        # boost/hiredis/pcre2 — is in apt_layer above). Without them
-        # sonic-cfggen fails to import swsscommon at container startup.
+        # libnl3 runtime libs. In Make, libnl-cli/genl/nf/route are all derived
+        # sibling packages of libnl-3-200 (add_derived_package in
+        # rules/libnl3.mk) and the WHOLE family lands in the config-engine image
+        # — verified by comparing Make's docker-config-engine-trixie merged
+        # rootfs (all four libnl-{cli,genl,nf,route}-3.so.200 present). So we put
+        # the whole family here (matching Make's layering), not in swss-layer.
+        # Bazel doesn't auto-resolve deb Depends, so list them explicitly (the
+        # apt portion — boost/hiredis/pcre2 — is in apt_layer above). Without the
+        # 3/route/nf trio sonic-cfggen fails to import swsscommon at startup;
+        # genl/cli are additionally needed by libteam/teamsyncd downstream.
         "@libnl3//:libnl-3-200_3.7.0-0.2+b1sonic1.deb_data",
         "@libnl3//:libnl-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
         "@libnl3//:libnl-route-3-200_3.7.0-0.2+b1sonic1.deb_data",
         "@libnl3//:libnl-route-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
         "@libnl3//:libnl-nf-3-200_3.7.0-0.2+b1sonic1.deb_data",
         "@libnl3//:libnl-nf-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
+        "@libnl3//:libnl-genl-3-200_3.7.0-0.2+b1sonic1.deb_data",
+        "@libnl3//:libnl-genl-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
+        "@libnl3//:libnl-cli-3-200_3.7.0-0.2+b1sonic1.deb_data",
+        "@libnl3//:libnl-cli-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
         # LIBYANG3
         "@libyang3//:libyang3_3.12.2-1.deb_data",
         "@libyang3//:libyang3_3.12.2-1.deb_statusd",

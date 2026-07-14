@@ -63,14 +63,10 @@ flatten(
         # runtime protobuf for the whole SONiC C++ stack.
         "@sonic_build_infra//protobuf:libprotobuf29_29.0.0.deb_data",
         "@sonic_build_infra//protobuf:libprotobuf29_29.0.0.deb_statusd",
-        # libnl-genl-3-200 / libnl-cli-3-200 (from libnl3): runtime deps of
-        # libteam5 / teamsyncd / nbrmgrd (libteam links libnl-genl-3.so.200 and
-        # libnl-cli-3.so.200). swss's own Depends lists only libnl-3/nf/route,
-        # so these come in via libteam and must be shipped explicitly.
-        "@libnl3//:libnl-genl-3-200_3.7.0-0.2+b1sonic1.deb_data",
-        "@libnl3//:libnl-genl-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
-        "@libnl3//:libnl-cli-3-200_3.7.0-0.2+b1sonic1.deb_data",
-        "@libnl3//:libnl-cli-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
+        # NOTE: libnl-genl-3-200 / libnl-cli-3-200 (needed by libteam/teamsyncd)
+        # are NOT listed here — the whole libnl3 family (3/route/nf/genl/cli)
+        # ships in the docker-config-engine-trixie base (matching Make's
+        # layering), so this image inherits them.
     ],
 )
 

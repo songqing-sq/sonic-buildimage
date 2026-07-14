@@ -139,6 +139,19 @@ tar(
         # scripts calling `awk` (e.g. docker-database-init.sh) fail with
         # "awk: command not found". mawk is present in the base rootfs.
         "./usr/bin/awk type=link link=/usr/bin/mawk",
+        # More update-alternatives symlinks that Debian postinst scripts create
+        # (debianutils / mawk / vim-tiny) but the minimal Bazel rootfs doesn't.
+        # All target programs are already present in the base rootfs. `which` is
+        # used by 13 SONiC startup scripts; nawk mirrors awk; vi/view/ex/editor/
+        # rview/pager are the standard editor/pager alternatives.
+        "./usr/bin/which type=link link=/usr/bin/which.debianutils",
+        "./usr/bin/nawk type=link link=/usr/bin/mawk",
+        "./usr/bin/vi type=link link=/usr/bin/vim.tiny",
+        "./usr/bin/view type=link link=/usr/bin/vim.tiny",
+        "./usr/bin/ex type=link link=/usr/bin/vim.tiny",
+        "./usr/bin/editor type=link link=/usr/bin/vim.tiny",
+        "./usr/bin/rview type=link link=/usr/bin/vim.tiny",
+        "./usr/bin/pager type=link link=/usr/bin/less",
     ],
 )
 
@@ -202,6 +215,7 @@ flatten(
         "@trixie//ncurses-bin",
         "@trixie//sed",
         "@trixie//util-linux",
+        "@trixie//bsdutils",
         "@trixie//login",
         "@trixie//sysvinit-utils",
 
@@ -238,6 +252,14 @@ flatten(
         # ss / tc runtime deps (libtirpc.so.3 / libxtables.so.12).
         "@trixie//libtirpc3t64",
         "@trixie//libxtables12",
+        # libseccomp.so.2 + apt main program & libs (libapt-pkg.so.7.0 /
+        # libapt-private.so.0.0) — Make ships these in the base image.
+        "@trixie//libseccomp2",
+        "@trixie//libapt-pkg7.0",
+        "@trixie//apt",
+        # capsh / getcap / getpcaps / setcap — inherited by Make's base from
+        # the debian:trixie base rootfs.
+        "@trixie//libcap2-bin",
 
         # Explicit transitive registration to guarantee inclusion. All arch-
         # specific here — safe to use the bare label.
