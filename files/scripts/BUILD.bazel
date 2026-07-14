@@ -1,5 +1,6 @@
 exports_files(
     [
+        "arp_update",
         "update_chassisdb_config",
     ],
     visibility = ["//visibility:public"],

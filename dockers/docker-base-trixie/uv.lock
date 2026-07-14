@@ -133,6 +133,7 @@ dependencies = [
     { name = "netaddr" },
     { name = "psutil" },
     { name = "pyangbind" },
+    { name = "pyroute2" },
     { name = "python-arptable" },
     { name = "python-dateutil" },
     { name = "requests" },
@@ -163,6 +164,7 @@ requires-dist = [
     { name = "netaddr", specifier = "==0.8.0" },
     { name = "psutil" },
     { name = "pyangbind", specifier = "==0.8.7" },
+    { name = "pyroute2", specifier = "==0.5.14" },
     { name = "python-arptable" },
     { name = "python-dateutil", specifier = "==2.9.0.post0" },
     { name = "requests" },
@@ -632,6 +634,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyroute2"
+version = "0.5.14"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "win-inet-pton", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0b/71/2920f854ef3cbb8472aa70539cf63fcc214e5c1b40f21c7cdb4910a6f5e9/pyroute2-0.5.14.tar.gz", hash = "sha256:774c5ecf05fe40f0f601a7ab33c19ca0b24f00bf4a094e58deaa5333b7ca49b5", size = 873722, upload-time = "2020-09-09T12:42:39.723Z" }
+
+[[package]]
 name = "python-arptable"
 version = "0.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -888,4 +899,13 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/39/62/75f18a0f03b4219c456652c7780e4d749b929eb605c098ce3a5b6b6bc081/wheel-0.47.0.tar.gz", hash = "sha256:cc72bd1009ba0cf63922e28f94d9d83b920aa2bb28f798a31d0691b02fa3c9b3", size = 63854, upload-time = "2026-04-22T15:51:27.727Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/87/1b/9e33c09813d65e248f7f773119148a612516a4bea93e9c6f545f78455b7c/wheel-0.47.0-py3-none-any.whl", hash = "sha256:212281cab4dff978f6cedd499cd893e1f620791ca6ff7107cf270781e587eced", size = 32218, upload-time = "2026-04-22T15:51:26.296Z" },
+]
+
+[[package]]
+name = "win-inet-pton"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/da/0b1487b5835497dea00b00d87c2aca168bb9ca2e2096981690239e23760a/win_inet_pton-1.1.0.tar.gz", hash = "sha256:dd03d942c0d3e2b1cf8bab511844546dfa5f74cb61b241699fa379ad707dea4f", size = 2949, upload-time = "2019-02-19T17:46:23.925Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/be/31/ff772a44aa56319df8afbb0b34f1a856f66f05b9d5f1fed917849e47fdae/win_inet_pton-1.1.0-py2.py3-none-any.whl", hash = "sha256:eaf0193cbe7152ac313598a0da7313fb479f769343c0c16c5308f64887dc885b", size = 4848, upload-time = "2019-02-19T17:46:22.182Z" },
 ]

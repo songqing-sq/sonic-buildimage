@@ -19,6 +19,9 @@
 #
 # python-arptable==0.0.2 (pulled by asyncsnmp for docker-snmp) is sdist-only
 # with no prebuilt wheel; its setuptools build backend needs `wheel`.
+#
+# pyroute2==0.5.14 (pinned by docker-orchagent) is an sdist-only 2020 release
+# with no prebuilt wheel; its setuptools build backend also needs `wheel`.
 
 [[package]]
 name = "bitarray"
@@ -34,4 +37,8 @@ build-dependencies = [{ name = "wheel" }]
 
 [[package]]
 name = "python-arptable"
+build-dependencies = [{ name = "wheel" }]
+
+[[package]]
+name = "pyroute2"
 build-dependencies = [{ name = "wheel" }]

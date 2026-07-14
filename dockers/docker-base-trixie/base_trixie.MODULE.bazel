@@ -230,6 +230,36 @@ apt.install(
         "libpcre2-32-0",
         "libpcre2-posix3",
 
+        # -------- docker-orchagent runtime apt deps --------
+        # docker-orchagent/Dockerfile.j2 `apt install -y`: ifupdown arping
+        # iproute2 ndisc6 tcpdump bridge-utils conntrack ndppd python3-protobuf
+        # pciutils python3-netifaces. iproute2 is already in the debian base
+        # rootfs; libpci3/pciutils/python3-netifaces are registered in the pmon
+        # block above (shared @trixie pool). bridge-utils, conntrack,
+        # libnetfilter-conntrack3 and libnfnetlink0 are already registered in the
+        # docker-nat block above, so they are NOT repeated here. The remaining
+        # explicit installs plus the transitive runtime deps `apt install` pulled
+        # (which flatten() does NOT resolve, so each must be listed) are added
+        # here. Transitives verified against the Make docker-orchagent image
+        # package delta vs swss-layer base:
+        #   libkmod2 (bridge-utils/ifupdown udev), libnet1 (ndisc6/ndppd),
+        #   libpcap0.8t64 (tcpdump), pci.ids (pciutils data).
+        # NOTE: the real "ifupdown" (Make ships 0.8.44+deb13u1) is dropped by the
+        # hermetic rules_distroless apt resolver, so we use "ifupdown-ng" — the
+        # drop-in replacement that provides the same ifup/ifdown/ifquery binaries
+        # (same substitution the sonic-bazel bookworm reference made). Flagged as
+        # a Make-vs-Bazel difference in the migration diff doc.
+        "ifupdown-ng",
+        "arping",
+        "ndisc6",
+        "tcpdump",
+        "ndppd",
+        "python3-protobuf",
+        "libkmod2",
+        "libnet1",
+        "libpcap0.8t64",
+        "pci.ids",
+
         # -------- Debug-only variant packages (rules/docker-base-trixie.mk _DBG_IMAGE_PACKAGES) --------
         # These are NOT baked into the base image (see BUILD.bazel `flat` list),
         # but registered here so the `debug-packages` flatten target can pull
@@ -252,7 +282,7 @@ apt.lock(
 )
 use_repo(apt, "trixie")
 
-# Hub name is "pip_pmon8". The aspect_rules_py uv extension marks itself
+# Hub name is "pip_pmon9". The aspect_rules_py uv extension marks itself
 # reproducible=True (still true in 1.11.7), so Bazel caches its generated hub
 # repo and does NOT re-evaluate it when only uv.lock's contents change. Each
 # time the pip closure grows, the hub name must be bumped to force a fresh
@@ -261,8 +291,10 @@ use_repo(apt, "trixie")
 # "pip_pmon4"/"pip_pmon5" (docker-platform-monitor deps). A cross-branch merge
 # left those names inconsistent (declared pip_pmon5 while pmon still referenced
 # pip_pmon4 and docker-database referenced pip_ce2). Adding docker-snmp's pip
-# deps (hiredis/python-arptable; smbus uses apt python3-smbus, not pip) bumps
-# to "pip_pmon8" and unifies ALL consumers onto @pip_pmon8//<pkg>.
+# deps (hiredis/python-arptable; smbus uses apt python3-smbus, not pip) bumped
+# to "pip_pmon8". docker-orchagent then adds pyroute2==0.5.14 (sdist, wheel
+# build-dep), growing the closure again, so the hub is bumped to "pip_pmon9"
+# and unifies ALL consumers onto @pip_pmon9//<pkg>.
 #
 # Migrated to the aspect_rules_py 1.11.7 uv API: uv.project(pyproject, lock)
 # replaces the old declare_venv + lockfile pair, and unstable_annotate_packages
@@ -270,9 +302,9 @@ use_repo(apt, "trixie")
 # site_packages/py_venv targets select equals this project's [project].name
 # ("docker-base-trixie").
 uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
-uv.declare_hub(hub_name = "pip_pmon8")
+uv.declare_hub(hub_name = "pip_pmon9")
 uv.project(
-    hub_name = "pip_pmon8",
+    hub_name = "pip_pmon9",
     pyproject = "//dockers/docker-base-trixie:pyproject.toml",
     lock = "//dockers/docker-base-trixie:uv.lock",
 )
@@ -285,4 +317,4 @@ uv.unstable_annotate_packages(
     lock = "//dockers/docker-base-trixie:uv.lock",
     src = "//dockers/docker-base-trixie:pip_annotations.toml",
 )
-use_repo(uv, "pip_pmon8")
+use_repo(uv, "pip_pmon9")

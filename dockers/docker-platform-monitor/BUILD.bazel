@@ -91,21 +91,21 @@ flatten(
 # Dockerfile.j2 lines 54-77: pip3 install grpcio==1.71.0, grpcio-tools==1.71.0,
 # thrift==0.13.0, requests, python-dateutil==2.9.0.post0, libpci, psutil,
 # blkinfo, smbus2. These are pinned in dockers/docker-base-trixie/pyproject.toml
-# and sourced from the shared @pip_pmon8 hub. netifaces is NOT here — trixie pmon
+# and sourced from the shared @pip_pmon9 hub. netifaces is NOT here — trixie pmon
 # uses the apt python3-netifaces package (see apt_layer above), unlike son624
 # which pip-installed netifaces.
 site_packages(
     name = "pip_layer",
     srcs = [
-        "@pip_pmon8//grpcio",
-        "@pip_pmon8//grpcio_tools",
-        "@pip_pmon8//thrift",
-        "@pip_pmon8//requests",
-        "@pip_pmon8//python_dateutil",
-        "@pip_pmon8//libpci",
-        "@pip_pmon8//psutil",
-        "@pip_pmon8//blkinfo",
-        "@pip_pmon8//smbus2",
+        "@pip_pmon9//grpcio",
+        "@pip_pmon9//grpcio_tools",
+        "@pip_pmon9//thrift",
+        "@pip_pmon9//requests",
+        "@pip_pmon9//python_dateutil",
+        "@pip_pmon9//libpci",
+        "@pip_pmon9//psutil",
+        "@pip_pmon9//blkinfo",
+        "@pip_pmon9//smbus2",
     ],
     venv = "docker-base-trixie",
 )

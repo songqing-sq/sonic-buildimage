@@ -62,7 +62,7 @@ flatten(
 
 # Dockerfile.j2 lines 39-42: `pip3 install --no-cache-dir hiredis pyyaml smbus`.
 # pyyaml is already resolved transitively by other packages in the shared
-# @pip_pmon8 hub; hiredis is newly pinned in
+# @pip_pmon9 hub; hiredis is newly pinned in
 # dockers/docker-base-trixie/pyproject.toml (versions-py3 shows the Make image
 # resolves to hiredis==3.4.0). smbus is NOT here — it ships via apt
 # python3-smbus (see apt_layer; the pip C-extension can't build under the
@@ -72,9 +72,9 @@ flatten(
 site_packages(
     name = "pip_layer",
     srcs = [
-        "@pip_pmon8//hiredis",
-        "@pip_pmon8//psutil",
-        "@pip_pmon8//python_arptable",
+        "@pip_pmon9//hiredis",
+        "@pip_pmon9//psutil",
+        "@pip_pmon9//python_arptable",
     ],
     venv = "docker-base-trixie",
 )

@@ -1,0 +1,186 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@sonic_build_infra//python:site_packages.bzl", "site_packages")
+load("@tar.bzl", "tar")
+
+# APT-sourced runtime debs added on top of the docker-swss-layer-trixie base.
+# Mirrors docker-orchagent/Dockerfile.j2 `apt install -y`: ifupdown arping
+# iproute2 ndisc6 tcpdump bridge-utils conntrack ndppd python3-protobuf pciutils
+# python3-netifaces. iproute2 is already in the debian base rootfs, so it is not
+# re-layered. flatten() does NOT resolve Depends, so every runtime dep that
+# `apt install` pulled in is listed explicitly. Verified against the Make image
+# package delta (docker-orchagent minus docker-swss-layer-trixie): 17 packages
+#   arping bridge-utils conntrack ifupdown libkmod2 libnet1
+#   libnetfilter-conntrack3 libnfnetlink0 libpcap0.8t64 libpci3 ndisc6 ndppd
+#   pci.ids pciutils python3-netifaces python3-protobuf tcpdump
+# All are declared in the shared @trixie pool
+# (dockers/docker-base-trixie/base_trixie.MODULE.bazel).
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        # ifupdown-ng: drop-in replacement for Make's "ifupdown" (the real
+        # ifupdown is dropped by the hermetic apt resolver). Provides the same
+        # ifup/ifdown/ifquery. Flagged as a Make-vs-Bazel diff in the diff doc.
+        "@trixie//ifupdown-ng:data",
+        "@trixie//arping:data",
+        "@trixie//ndisc6:data",
+        "@trixie//tcpdump:data",
+        "@trixie//bridge-utils:data",
+        "@trixie//conntrack:data",
+        "@trixie//ndppd:data",
+        "@trixie//python3-protobuf:data",
+        "@trixie//python3-netifaces:data",
+        "@trixie//pciutils:data",
+        # transitive runtime deps pulled by the above (flatten does not resolve).
+        "@trixie//libkmod2:data",
+        "@trixie//libnet1:data",
+        "@trixie//libnetfilter-conntrack3:data",
+        "@trixie//libnfnetlink0:data",
+        "@trixie//libpcap0.8t64:data",
+        "@trixie//libpci3:data",
+        "@trixie//pci.ids:data",
+    ],
+)
+
+# Python content layer.
+#   - scapy: rules/docker-orchagent.mk `_PYTHON_WHEELS += $(SCAPY)`. The SONiC
+#     scapy is a Bazel module (src/scapy-bazel); its `:sources` py_library ships
+#     the scapy/ package (site_packages lays it under the venv's dist-packages),
+#     and its `:install` tar ships the /usr/local/bin/scapy console script.
+#   - pyroute2: Dockerfile.j2 `pip3 install pyroute2==0.5.14` (dep of
+#     restore_neighbors.py). Resolved via the shared @pip_pmon9 hub.
+# requests / redis / sonic-py-swsssdk are NOT here: they are already present in
+# the docker-swss-layer-trixie / docker-config-engine-trixie base (confirmed via
+# the Make image package delta — they are not added by orchagent).
+site_packages(
+    name = "pip_layer",
+    srcs = [
+        "@scapy//:sources",
+        "@pip_pmon9//pyroute2",
+    ],
+    venv = "docker-base-trixie",
+)
+
+flatten(
+    name = "python_layer",
+    deduplicate = True,
+    tars = [
+        ":pip_layer",
+        # /usr/local/bin/scapy console script.
+        "@scapy//:install",
+    ],
+)
+
+# docker-init.sh is generated at image-build time in the Make Dockerfile via
+# `sonic-cfggen -a "{\"ENABLE_ASAN\":\"<val>\"}" -t docker-init.j2`. In the
+# default (non-ASAN) build the only jinja directive in docker-init.j2 is a single
+# `{% if ENABLE_ASAN == "y" %}...{% endif %}` block that evaluates false, so we
+# emulate sonic-cfggen by stripping that block via sed and leaving the rest of
+# the file byte-identical. Verified: the resulting file matches the Make image's
+# /usr/bin/docker-init.sh exactly (no jinja markers remain).
+genrule(
+    name = "docker_init_sh",
+    srcs = ["docker-init.j2"],
+    outs = ["docker-init.sh"],
+    cmd = "sed -e '/{% if ENABLE_ASAN == \"y\" %}/,/{% endif %}/d' $< > $@",
+)
+
+# COPY directives from Dockerfile.common.j2 + Dockerfile.j2, plus the build-time
+# generated docker-init.sh. The Make Dockerfile's `COPY ["*.j2", ...]` globs the
+# entire build context, so Dockerfile.j2 and Dockerfile.common.j2 themselves also
+# land in /usr/share/sonic/templates/ (a Make build wart preserved here for image
+# parity). docker-init.j2 is consumed by the genrule and then `rm`-ed in the Make
+# Dockerfile, so it is intentionally NOT shipped. swssloglevel / cfgmgr
+# (_BASE_IMAGE_FILES) and supervisor-proc-exit-listener are shipped by the base
+# image (via the swss deb / the -rs variant already present), so not re-copied.
+tar(
+    name = "files",
+    srcs = [
+        # //files sources (rules/docker-orchagent.mk _FILES).
+        "//files/scripts:arp_update",
+        "//files/build_templates:arp_update_vars.j2",
+        # local /usr/bin scripts.
+        "orchagent.sh",
+        "swssconfig.sh",
+        "buffermgrd.sh",
+        "enable_counters.py",
+        "tunnel_packet_handler.py",
+        # generated /usr/bin/docker-init.sh.
+        ":docker_init_sh",
+        # local /usr/share/sonic/templates static files.
+        "arp_update.conf",
+        "ndppd.conf",
+        "tunnel_packet_handler.conf",
+        # local /usr/share/sonic/templates jinja templates + shipped Dockerfiles.
+        "critical_processes.j2",
+        "Dockerfile.common.j2",
+        "Dockerfile.j2",
+        "ipinip.json.j2",
+        "ndppd.conf.j2",
+        "orch_zmq_tables.conf.j2",
+        "ports.json.j2",
+        "supervisord.conf.common.j2",
+        "supervisord.conf.j2",
+        "switch.json.j2",
+        "vlan_vars.j2",
+        "vxlan.json.j2",
+        "wait_for_link.sh.j2",
+        "watchdog_processes.j2",
+    ],
+    mtree = [
+        # /usr/bin scripts (executable, 0755).
+        "./usr/bin/arp_update uid=0 gid=0 mode=0755 type=file content=$(location //files/scripts:arp_update)",
+        "./usr/bin/orchagent.sh uid=0 gid=0 mode=0755 type=file content=$(location :orchagent.sh)",
+        "./usr/bin/swssconfig.sh uid=0 gid=0 mode=0755 type=file content=$(location :swssconfig.sh)",
+        "./usr/bin/buffermgrd.sh uid=0 gid=0 mode=0755 type=file content=$(location :buffermgrd.sh)",
+        "./usr/bin/enable_counters.py uid=0 gid=0 mode=0755 type=file content=$(location :enable_counters.py)",
+        "./usr/bin/tunnel_packet_handler.py uid=0 gid=0 mode=0755 type=file content=$(location :tunnel_packet_handler.py)",
+        "./usr/bin/docker-init.sh uid=0 gid=0 mode=0755 type=file content=$(location :docker_init_sh)",
+        # /usr/share/sonic/templates static files (data, 0644).
+        "./usr/share/sonic/templates/arp_update.conf uid=0 gid=0 mode=0644 type=file content=$(location :arp_update.conf)",
+        "./usr/share/sonic/templates/arp_update_vars.j2 uid=0 gid=0 mode=0644 type=file content=$(location //files/build_templates:arp_update_vars.j2)",
+        "./usr/share/sonic/templates/ndppd.conf uid=0 gid=0 mode=0644 type=file content=$(location :ndppd.conf)",
+        "./usr/share/sonic/templates/tunnel_packet_handler.conf uid=0 gid=0 mode=0644 type=file content=$(location :tunnel_packet_handler.conf)",
+        # /usr/share/sonic/templates jinja templates (0644).
+        "./usr/share/sonic/templates/critical_processes.j2 uid=0 gid=0 mode=0644 type=file content=$(location :critical_processes.j2)",
+        "./usr/share/sonic/templates/Dockerfile.common.j2 uid=0 gid=0 mode=0644 type=file content=$(location :Dockerfile.common.j2)",
+        "./usr/share/sonic/templates/ipinip.json.j2 uid=0 gid=0 mode=0644 type=file content=$(location :ipinip.json.j2)",
+        "./usr/share/sonic/templates/ndppd.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :ndppd.conf.j2)",
+        "./usr/share/sonic/templates/orch_zmq_tables.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :orch_zmq_tables.conf.j2)",
+        "./usr/share/sonic/templates/ports.json.j2 uid=0 gid=0 mode=0644 type=file content=$(location :ports.json.j2)",
+        "./usr/share/sonic/templates/supervisord.conf.common.j2 uid=0 gid=0 mode=0644 type=file content=$(location :supervisord.conf.common.j2)",
+        "./usr/share/sonic/templates/supervisord.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :supervisord.conf.j2)",
+        "./usr/share/sonic/templates/switch.json.j2 uid=0 gid=0 mode=0644 type=file content=$(location :switch.json.j2)",
+        "./usr/share/sonic/templates/vlan_vars.j2 uid=0 gid=0 mode=0644 type=file content=$(location :vlan_vars.j2)",
+        "./usr/share/sonic/templates/vxlan.json.j2 uid=0 gid=0 mode=0644 type=file content=$(location :vxlan.json.j2)",
+        "./usr/share/sonic/templates/wait_for_link.sh.j2 uid=0 gid=0 mode=0644 type=file content=$(location :wait_for_link.sh.j2)",
+        "./usr/share/sonic/templates/watchdog_processes.j2 uid=0 gid=0 mode=0644 type=file content=$(location :watchdog_processes.j2)",
+        # Dockerfile.j2 keeps its executable bit from the source tree (0755).
+        "./usr/share/sonic/templates/Dockerfile.j2 uid=0 gid=0 mode=0755 type=file content=$(location :Dockerfile.j2)",
+    ],
+)
+
+# Make docker-orchagent final image config (docker inspect):
+# Entrypoint=["/usr/bin/docker-init.sh"], Cmd=null, WorkingDir=/,
+# Env adds DEBIAN_FRONTEND=noninteractive (PATH inherited from base).
+oci_image(
+    name = "docker-orchagent",
+    base = "//dockers/docker-swss-layer-trixie:docker-swss-layer-trixie",
+    entrypoint = ["/usr/bin/docker-init.sh"],
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+    },
+    tars = [
+        ":apt_layer",
+        ":python_layer",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-orchagent",
+    repo_tags = ["docker-orchagent:latest"],
+)

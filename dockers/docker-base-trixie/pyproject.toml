@@ -74,6 +74,12 @@ dependencies = [
     # `smbus` module from apt python3-smbus instead.
     "hiredis",
     "python-arptable",
+
+    # ---- docker-orchagent deps ----
+    # docker-orchagent/Dockerfile.j2 explicit `pip3 install pyroute2==0.5.14`
+    # (dependency of restore_neighbors.py). Pure-Python; its only transitive
+    # (win-inet-pton) carries a win32-only marker and is not installed on linux.
+    "pyroute2==0.5.14",
 ]
 
 # pyangbind unconditionally depends on enum34, which on Python 3 shadows the
