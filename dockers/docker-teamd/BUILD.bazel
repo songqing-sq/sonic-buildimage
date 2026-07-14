@@ -1,0 +1,81 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# SONiC-built debs. rules/docker-teamd.mk:
+#   $(DOCKER_TEAMD)_DEPENDS += $(LIBTEAMDCTL) $(LIBTEAM_UTILS)
+# The Make image installs these via `apt install teamd*.deb` on top of the
+# docker-swss-layer-trixie base. Package delta (Make docker-teamd minus Make
+# docker-swss-layer-trixie) is EXACTLY one package: libteam-utils. Its own
+# Depends (libc6, libdaemon0, libdbus-1-3, libjansson4, libteam5, libteamdctl0,
+# libzmq5) are all already present in the base, so no apt_layer is needed here.
+#   - libteam5 / libteamdctl0: already in docker-swss-layer-trixie sonic_pkgs.
+#   - the rest: already in the docker-config-engine-trixie / base rootfs.
+# libteam-utils provides the real /usr/bin/{teamd,teamdctl,teamnl,bond2team}
+# binaries and /etc/dbus-1/system.d/teamd.conf.
+# `_data` (contents) + `_statusd` (dpkg status.d stub) so `dpkg -l` lists it.
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        "@libteam//:libteam-utils_1.31-1.deb_data",
+        "@libteam//:libteam-utils_1.31-1.deb_statusd",
+    ],
+)
+
+# COPY'd SONiC files (dzf Dockerfile.j2 lines 24-28):
+#   COPY docker-teamd-init.sh       -> /usr/bin/
+#   COPY start.sh                   -> /usr/bin/
+#   COPY supervisord.conf.j2        -> /usr/share/sonic/templates/
+#   COPY supervisord.conf.common.j2 -> /usr/share/sonic/templates/
+#   COPY critical_processes         -> /etc/supervisor
+# NOTE: docker-teamd-init.sh renders supervisord.conf from the .j2 templates at
+# container start via sonic-cfggen, so no pre-rendered supervisord.conf ships
+# (matches Make: /etc/supervisor/conf.d/supervisord.conf is absent in the image).
+# NOTE: base_image_files/teamdctl is a HOST-side BASE_IMAGE_FILES shim
+# (rules/docker-teamd.mk: _BASE_IMAGE_FILES += teamdctl:/usr/bin/teamdctl); it is
+# installed onto the SONiC host, NOT into this container. The container's
+# /usr/bin/teamdctl is the real 33KB binary from libteam-utils above — verified
+# against the Make image — so it is intentionally NOT included in this tar.
+tar(
+    name = "files",
+    srcs = [
+        "docker-teamd-init.sh",
+        "start.sh",
+        "supervisord.conf.j2",
+        "supervisord.conf.common.j2",
+        "critical_processes",
+    ],
+    mtree = [
+        "./usr/bin/docker-teamd-init.sh uid=0 gid=0 mode=0755 type=file content=$(location docker-teamd-init.sh)",
+        "./usr/bin/start.sh uid=0 gid=0 mode=0755 type=file content=$(location start.sh)",
+        "./usr/share/sonic/templates/supervisord.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location supervisord.conf.j2)",
+        "./usr/share/sonic/templates/supervisord.conf.common.j2 uid=0 gid=0 mode=0644 type=file content=$(location supervisord.conf.common.j2)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location critical_processes)",
+    ],
+)
+
+# Make docker-teamd final stage (verified via `docker inspect` on the Make
+# image): Entrypoint=["/usr/bin/docker-teamd-init.sh"], WorkingDir="/",
+# Env adds DEBIAN_FRONTEND=noninteractive on top of the base PATH.
+# (com.azure.sonic.* image Labels are added by the Make SONiC image-build
+# machinery, not by this module — see diff doc "accepted differences".)
+oci_image(
+    name = "docker-teamd",
+    base = "//dockers/docker-swss-layer-trixie:docker-swss-layer-trixie",
+    entrypoint = ["/usr/bin/docker-teamd-init.sh"],
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+    },
+    tars = [
+        ":sonic_pkgs",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-teamd",
+    repo_tags = ["docker-teamd:latest"],
+)
