@@ -59,6 +59,10 @@ dependencies = [
     "psutil",
     "blkinfo",
     "smbus2",
+    # Make's trixie pmon pip-installs jsonschema (transitive dep, resolved to
+    # 2.6.0 in /usr/local; NOT apt python3-jsonschema as son624/bookworm used).
+    # No SONiC source imports it directly. Pinned to 2.6.0 to match Make.
+    "jsonschema==2.6.0",
 
     # ---- docker-database deps ----
     # docker-database/Dockerfile.j2 explicit `pip3 install click` (SONiC CLI

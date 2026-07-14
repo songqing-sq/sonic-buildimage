@@ -45,6 +45,42 @@ passwd(
             "shell": "/bin/bash",
             "username": "root",
         },
+        # redis system user. In Debian this is created by the redis-tools
+        # postinst (a Depends of redis-server), which runs:
+        #   adduser --system --home /var/lib/redis --group redis
+        # (home /var/lib/redis, shell /usr/sbin/nologin — the adduser --system
+        # defaults). Bazel installs the deb's data tar WITHOUT running postinst,
+        # so no redis user gets created and docker-database-init.sh's
+        # `chown -R redis:redis ...` fails at startup — hence we create it here.
+        # NOTE on uid/gid: `adduser --system` dynamically allocates a uid in
+        # 100-999; Debian does NOT fix it at 100/101. We pin 100/101 purely for
+        # self-consistency with the /etc/redis chown already hardcoded in
+        # docker-database's BUILD (uid=100/gid=101). The container resolves
+        # `redis:redis` by NAME (not number), so the exact value only needs to
+        # be internally consistent across this image, which it is.
+        {
+            "uid": 100,
+            "gid": 101,
+            "home": "/var/lib/redis",
+            "shell": "/usr/sbin/nologin",
+            "username": "redis",
+        },
+        # _apt system user. Debian's apt postinst creates it via
+        #   adduser --force-badname --system --home /nonexistent --no-create-home _apt
+        # (no --group, so it lands in nogroup / gid 65534). apt uses _apt to drop
+        # privileges when fetching over the network. The apt package is shipped
+        # here to provide libapt-private.so.0.0 (needed by apt-ftparchive /
+        # apt-sortpkgs from apt-utils); Bazel installs deb data without running
+        # postinst, so we replicate the _apt user creation for completeness.
+        # uid is pinned (declarative passwd can't allocate dynamically); 105 is
+        # unused and avoids the redis(100) conflict. gid 65534 = nogroup.
+        {
+            "uid": 105,
+            "gid": 65534,
+            "home": "/nonexistent",
+            "shell": "/usr/sbin/nologin",
+            "username": "_apt",
+        },
     ],
 )
 
@@ -58,6 +94,16 @@ group(
         {
             "name": "adm",
             "gid": 4,
+        },
+        {
+            "name": "redis",
+            "gid": 101,
+        },
+        # nogroup: the default group for --system users created without --group
+        # (e.g. _apt above). Standard Debian gid 65534.
+        {
+            "name": "nogroup",
+            "gid": 65534,
         },
     ],
 )
@@ -87,6 +133,25 @@ tar(
         # /usr/bin/python3, so add a symlink so supervisord (and any other
         # /usr/local/bin scripts from pip installs) can find it.
         "./usr/local/bin/python3 type=link link=/usr/bin/python3",
+        # Debian provides /usr/bin/awk via the alternatives system (-> mawk),
+        # set up by mawk's postinst/update-alternatives. The minimal Bazel
+        # rootfs doesn't run that, so create the symlink directly; without it
+        # scripts calling `awk` (e.g. docker-database-init.sh) fail with
+        # "awk: command not found". mawk is present in the base rootfs.
+        "./usr/bin/awk type=link link=/usr/bin/mawk",
+        # More update-alternatives symlinks that Debian postinst scripts create
+        # (debianutils / mawk / vim-tiny) but the minimal Bazel rootfs doesn't.
+        # All target programs are already present in the base rootfs. `which` is
+        # used by 13 SONiC startup scripts; nawk mirrors awk; vi/view/ex/editor/
+        # rview/pager are the standard editor/pager alternatives.
+        "./usr/bin/which type=link link=/usr/bin/which.debianutils",
+        "./usr/bin/nawk type=link link=/usr/bin/mawk",
+        "./usr/bin/vi type=link link=/usr/bin/vim.tiny",
+        "./usr/bin/view type=link link=/usr/bin/vim.tiny",
+        "./usr/bin/ex type=link link=/usr/bin/vim.tiny",
+        "./usr/bin/editor type=link link=/usr/bin/vim.tiny",
+        "./usr/bin/rview type=link link=/usr/bin/vim.tiny",
+        "./usr/bin/pager type=link link=/usr/bin/less",
     ],
 )
 
@@ -150,6 +215,7 @@ flatten(
         "@trixie//ncurses-bin",
         "@trixie//sed",
         "@trixie//util-linux",
+        "@trixie//bsdutils",
         "@trixie//login",
         "@trixie//sysvinit-utils",
 
@@ -183,6 +249,17 @@ flatten(
         "@trixie//libatomic1",
         "@trixie//libbpf1",
         "@trixie//libmnl0",
+        # ss / tc runtime deps (libtirpc.so.3 / libxtables.so.12).
+        "@trixie//libtirpc3t64",
+        "@trixie//libxtables12",
+        # libseccomp.so.2 + apt main program & libs (libapt-pkg.so.7.0 /
+        # libapt-private.so.0.0) — Make ships these in the base image.
+        "@trixie//libseccomp2",
+        "@trixie//libapt-pkg7.0",
+        "@trixie//apt",
+        # capsh / getcap / getpcaps / setcap — inherited by Make's base from
+        # the debian:trixie base rootfs.
+        "@trixie//libcap2-bin",
 
         # Explicit transitive registration to guarantee inclusion. All arch-
         # specific here — safe to use the bare label.

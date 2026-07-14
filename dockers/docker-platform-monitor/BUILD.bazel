@@ -106,6 +106,9 @@ site_packages(
         "@pip_pmon9//psutil",
         "@pip_pmon9//blkinfo",
         "@pip_pmon9//smbus2",
+        # jsonschema — Make pip-installs it into pmon (transitive dep). Pinned
+        # to 2.6.0 in docker-base-trixie/pyproject.toml.
+        "@pip_pmon9//jsonschema",
     ],
     venv = "docker-base-trixie",
 )

@@ -372,9 +372,13 @@ sonic_deb(
     section = "libs",
     description = "libnl generic netlink library",
     content = {
-        # Debian's libnl-3-200.install moves the .so.* files from
-        # /usr/lib/<multiarch>/ to /lib/<multiarch>/. We mirror that.
-        "${LIBDIR_BASE}:*:0644": [":libnl_3_files"],
+        # Debian's libnl-3-200.install targets /lib/<multiarch>/, but on a
+        # usrmerge system dpkg redirects that to /usr/lib/<multiarch>/ (where
+        # the file actually ends up in Make's image). Bazel's tar layer writes
+        # literal paths and would create a real /lib dir shadowing the base
+        # image's /lib->usr/lib symlink, so we write to /usr/lib (${LIBDIR})
+        # directly — matching Make's final on-disk location and keeping usrmerge.
+        "${LIBDIR}:*:0644": [":libnl_3_files"],
         "/etc/libnl-3/*:*:0644": [":etc_files"],
     },
     #content_targets = [":libnl_3_shared"],
@@ -422,8 +426,9 @@ sonic_deb(
     section = "libs",
     description = "libnl generic netlink library",
     content = {
-        # debian/libnl-genl-3-200.install moves the .so.* to /lib/<multiarch>/.
-        "${LIBDIR_BASE}:*:0644": [":libnl_genl_3_files"],
+        # /lib target redirected to /usr/lib on usrmerge; write to ${LIBDIR}
+        # directly to match Make's final location and keep the /lib symlink.
+        "${LIBDIR}:*:0644": [":libnl_genl_3_files"],
     },
     content_targets = [":libnl_genl_3_shared"],
     depends = [
