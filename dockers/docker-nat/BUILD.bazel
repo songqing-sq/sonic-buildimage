@@ -1,0 +1,136 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# APT-sourced runtime debs added on top of the docker-swss-layer-trixie base.
+# Mirrors docker-nat/Dockerfile.j2 `apt install -f -y bridge-utils conntrack
+# iptables` (on trixie iptables comes from Debian repos, not local builds).
+# flatten() does NOT resolve Depends, so every runtime dep that `apt install`
+# pulled in is listed explicitly. Verified against the Make image package delta
+# (docker-nat minus docker-swss-layer-trixie) — these 8 packages plus libxtables12:
+#   bridge-utils conntrack iptables libip4tc2 libip6tc2
+#   libnetfilter-conntrack3 libnfnetlink0 libnftnl11 libxtables12
+#   - iptables pulls libip4tc2, libip6tc2, libnftnl11, libxtables12.
+#   - conntrack pulls libnetfilter-conntrack3, libnfnetlink0.
+# libxtables12 (libxtables.so.12) is present in the Make image via the base
+# iproute2, but the Bazel swss-layer base dropped it, so it is shipped here to
+# keep iptables functional and match the Make final image content.
+# All are declared in the shared @trixie pool
+# (dockers/docker-base-trixie/base_trixie.MODULE.bazel). The @trixie `:data`
+# target ships both the filesystem contents and the /var/lib/dpkg/status.d
+# entry, so `dpkg -l` inside the container lists each package.
+#
+# NOTE: docker-nat.mk `_DEPENDS += $(SWSS)` re-installs the swss deb, but swss is
+# already shipped by the docker-swss-layer-trixie base (its sonic_pkgs layer),
+# so the Make reinstall is a no-op delta — no SONiC deb is re-listed here.
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//bridge-utils:data",
+        "@trixie//conntrack:data",
+        "@trixie//iptables:data",
+        "@trixie//libip4tc2:data",
+        "@trixie//libip6tc2:data",
+        "@trixie//libnetfilter-conntrack3:data",
+        "@trixie//libnfnetlink0:data",
+        "@trixie//libnftnl11:data",
+        "@trixie//libxtables12:data",
+    ],
+)
+
+# COPY'd SONiC files (docker-nat/Dockerfile.j2 lines 28-31):
+#   COPY ["start.sh", "/usr/bin/"]
+#   COPY ["supervisord.conf", "/etc/supervisor/conf.d/"]
+#   COPY ["restore_nat_entries.py", "/usr/bin/"]
+#   COPY ["critical_processes", "/etc/supervisor"]
+# Unlike docker-teamd, docker-nat ships a PRE-RENDERED supervisord.conf directly
+# to /etc/supervisor/conf.d/ (no runtime sonic-cfggen render).
+# NOTE: base_image_files/natctl is a HOST-side BASE_IMAGE_FILES shim
+# (rules/docker-nat.mk: _BASE_IMAGE_FILES += natctl:/usr/bin/natctl); it is
+# installed onto the SONiC host, NOT into this container, so it is intentionally
+# not included here. supervisor-proc-exit-listener(-rs) is shipped by the base
+# image, so it is not re-copied.
+tar(
+    name = "files",
+    srcs = [
+        "start.sh",
+        "supervisord.conf",
+        "restore_nat_entries.py",
+        "critical_processes",
+    ],
+    mtree = [
+        "./usr/bin/start.sh uid=0 gid=0 mode=0755 type=file content=$(location start.sh)",
+        "./usr/bin/restore_nat_entries.py uid=0 gid=0 mode=0755 type=file content=$(location restore_nat_entries.py)",
+        "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location supervisord.conf)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location critical_processes)",
+    ],
+)
+
+# update-alternatives master symlinks created by the iptables package postinst.
+# The hermetic rules_distroless apt resolver ships only the .deb payload and does
+# NOT run maintainer scripts, so the generic iptables/ip6tables/arptables/ebtables
+# (+ -restore/-save) entry points are missing even though the underlying
+# xtables-nft-multi (and its arptables-nft/ebtables-nft aliases) ARE shipped by
+# the iptables :data layer. Without these masters `iptables` does not resolve
+# inside the container, which natmgrd/natsyncd rely on. These 24 symlinks
+# reproduce EXACTLY what the Make docker-nat image ships (Debian default = the
+# nft variant); verified against the Make image file tree. Same technique
+# docker-database uses for its postinst-made init/systemd symlinks. (base-image
+# alternatives like awk/editor/pager are a separate accepted base-level
+# distroless difference, not introduced by nat.)
+tar(
+    name = "alternatives",
+    mtree = [
+        "./etc/alternatives/iptables type=link link=/usr/sbin/iptables-nft",
+        "./etc/alternatives/iptables-restore type=link link=/usr/sbin/iptables-nft-restore",
+        "./etc/alternatives/iptables-save type=link link=/usr/sbin/iptables-nft-save",
+        "./etc/alternatives/ip6tables type=link link=/usr/sbin/ip6tables-nft",
+        "./etc/alternatives/ip6tables-restore type=link link=/usr/sbin/ip6tables-nft-restore",
+        "./etc/alternatives/ip6tables-save type=link link=/usr/sbin/ip6tables-nft-save",
+        "./etc/alternatives/arptables type=link link=/usr/sbin/arptables-nft",
+        "./etc/alternatives/arptables-restore type=link link=/usr/sbin/arptables-nft-restore",
+        "./etc/alternatives/arptables-save type=link link=/usr/sbin/arptables-nft-save",
+        "./etc/alternatives/ebtables type=link link=/usr/sbin/ebtables-nft",
+        "./etc/alternatives/ebtables-restore type=link link=/usr/sbin/ebtables-nft-restore",
+        "./etc/alternatives/ebtables-save type=link link=/usr/sbin/ebtables-nft-save",
+        "./usr/sbin/iptables type=link link=/etc/alternatives/iptables",
+        "./usr/sbin/iptables-restore type=link link=/etc/alternatives/iptables-restore",
+        "./usr/sbin/iptables-save type=link link=/etc/alternatives/iptables-save",
+        "./usr/sbin/ip6tables type=link link=/etc/alternatives/ip6tables",
+        "./usr/sbin/ip6tables-restore type=link link=/etc/alternatives/ip6tables-restore",
+        "./usr/sbin/ip6tables-save type=link link=/etc/alternatives/ip6tables-save",
+        "./usr/sbin/arptables type=link link=/etc/alternatives/arptables",
+        "./usr/sbin/arptables-restore type=link link=/etc/alternatives/arptables-restore",
+        "./usr/sbin/arptables-save type=link link=/etc/alternatives/arptables-save",
+        "./usr/sbin/ebtables type=link link=/etc/alternatives/ebtables",
+        "./usr/sbin/ebtables-restore type=link link=/etc/alternatives/ebtables-restore",
+        "./usr/sbin/ebtables-save type=link link=/etc/alternatives/ebtables-save",
+    ],
+)
+
+# Make docker-nat final stage (docker-nat/Dockerfile.j2 lines 33-38):
+# FROM $BASE; rsync_from_builder_stage(); ENV DEBIAN_FRONTEND=noninteractive;
+# ENTRYPOINT ["/usr/local/bin/supervisord"]. The base docker-swss-layer-trixie
+# already sets the supervisord entrypoint; docker-nat additionally persists
+# DEBIAN_FRONTEND=noninteractive in the final image config.
+oci_image(
+    name = "docker-nat",
+    base = "//dockers/docker-swss-layer-trixie:docker-swss-layer-trixie",
+    entrypoint = ["/usr/local/bin/supervisord"],
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+    },
+    tars = [
+        ":apt_layer",
+        ":files",
+        ":alternatives",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-nat",
+    repo_tags = ["docker-nat:latest"],
+)

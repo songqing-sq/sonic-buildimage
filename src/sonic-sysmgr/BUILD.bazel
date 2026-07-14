@@ -108,7 +108,14 @@ cc_binary(
         ":rebootgnoi",
         "@protobuf//:json_util",
         "@sonic-swss-common//:swsscommon",
-        "@sysmgr_deps//libdbus-c++-dev:libdbus-c++",
+        # Link ONLY the core dbus-c++-1 variant (matches Make's `-ldbus-c++-1`).
+        # The meta `:libdbus-c++` target bundles the ecore + glib dispatcher
+        # variants too, which drag in the EFL closure (libecore/libeina/libeo/
+        # libefl/libunwind) and glib (libglib-2.0/libpcre2-16/libpcre2-32) as
+        # runtime NEEDED entries — libraries Make never links and which are not
+        # shipped in the runtime image. The reboot daemon only uses the default
+        # DBus::BusDispatcher, so the ecore/glib integrations are unneeded.
+        "@sysmgr_deps//libdbus-c++-dev:dbus-c++-1",
     ],
     dynamic_deps = [
         ":rebootgnoi_shared",
