@@ -114,7 +114,7 @@ tar(
         "./usr/lib/sysctl.d/90-sonic.conf uid=0 gid=0 mode=0644 type=file content=$(location //files/image_config/sysctl:90-sonic.conf)",
         # redis.conf (sed-modified) overriding the apt copy. The redis-server
         # postinst chowns /etc/redis and its config to the redis user/group
-        # (uid 100 / gid 101, created in the config-engine base).
+        # (uid 100 / gid 101, created in the docker-base-trixie passwd/group).
         "./etc/redis uid=100 gid=101 mode=2770 type=dir",
         "./etc/redis/redis.conf uid=100 gid=101 mode=0640 type=file content=$(location :redis.conf)",
         # redis postinst: SysV rc symlinks (update-rc.d defaults).

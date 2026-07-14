@@ -164,6 +164,24 @@ flatten(
 # lays /usr/local/bin/supervisor-proc-exit-listener), so it is not re-copied
 # here.
 #
+# Dockerfile.j2 line 116 generates the entrypoint script at BUILD time:
+#   sonic-cfggen -a '{"CONFIGURED_PLATFORM":"..."}' -t docker_init.j2 > /usr/bin/docker_init.sh
+# docker_init.j2's only template variable is CONFIGURED_PLATFORM (three
+# platform-specific {% if %} branches: aspeed / mellanox / nvidia-bluefield).
+# For the generic trixie image CONFIGURED_PLATFORM is empty, so none of those
+# branches activate — the safe default. We render it at build time here (via
+# the shared jinja2 render tool) and ship the result as /usr/bin/docker_init.sh,
+# fixing the previous assumption that it would be "generated on first start"
+# (nothing generated it, so the entrypoint /usr/bin/docker_init.sh was missing
+# and the container could not start).
+genrule(
+    name = "docker_init_sh",
+    srcs = ["docker_init.j2"],
+    outs = ["docker_init.sh"],
+    cmd = "$(execpath @sonic_build_infra//jinja2:render) $(location docker_init.j2) $@ CONFIGURED_PLATFORM=",
+    tools = ["@sonic_build_infra//jinja2:render"],
+)
+
 # delay.py is referenced by docker-pmon.supervisord.conf.j2 (program:delay)
 # at /usr/bin/delay.py — copied here to match the legacy build, which relied on
 # the file landing in /usr/bin via the build_templates COPY pass.
@@ -172,7 +190,7 @@ tar(
     srcs = [
         "lm-sensors.sh",
         "docker-pmon.supervisord.conf.j2",
-        "docker_init.j2",
+        ":docker_init_sh",
         "ssd_tools/SmartCmd",
         "ssd_tools/iSmart",
         "critical_processes",
@@ -182,7 +200,8 @@ tar(
     mtree = [
         "./usr/bin/lm-sensors.sh uid=0 gid=0 mode=0755 type=file content=$(location :lm-sensors.sh)",
         "./usr/share/sonic/templates/docker-pmon.supervisord.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :docker-pmon.supervisord.conf.j2)",
-        "./usr/share/sonic/templates/docker_init.j2 uid=0 gid=0 mode=0644 type=file content=$(location :docker_init.j2)",
+        # Rendered entrypoint (Dockerfile.j2:116 equivalent), executable.
+        "./usr/bin/docker_init.sh uid=0 gid=0 mode=0755 type=file content=$(location :docker_init_sh)",
         "./usr/bin/SmartCmd uid=0 gid=0 mode=0755 type=file content=$(location :ssd_tools/SmartCmd)",
         "./usr/bin/iSmart uid=0 gid=0 mode=0755 type=file content=$(location :ssd_tools/iSmart)",
         "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location :critical_processes)",
@@ -198,10 +217,9 @@ oci_image(
     # Dockerfile.j2 line 2: FROM docker-config-engine-trixie.
     base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
     # Dockerfile.j2 line 130: ENTRYPOINT ["/usr/bin/docker_init.sh"].
-    # docker_init.sh is generated at runtime by the legacy build via
-    # `sonic-cfggen -t docker_init.j2 > /usr/bin/docker_init.sh`; we ship the
-    # j2 source under /usr/share/sonic/templates/ and let the runtime cfggen
-    # pass produce /usr/bin/docker_init.sh on first start.
+    # docker_init.sh is rendered at build time by the :docker_init_sh genrule
+    # (from docker_init.j2, CONFIGURED_PLATFORM empty) and shipped at
+    # /usr/bin/docker_init.sh via the :files tar — mirroring Dockerfile.j2:116.
     entrypoint = ["/usr/bin/docker_init.sh"],
     env = {"DEBIAN_FRONTEND": "noninteractive"},
     tars = [

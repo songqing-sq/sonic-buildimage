@@ -4,18 +4,22 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 # APT-sourced runtime debs. Mirrors what `apt install` lays down in
 # docker-swss-layer-trixie/Dockerfile.j2 that is NOT already present in the
 # docker-config-engine-trixie base:
-#   - iputils-ping:       Dockerfile.j2 `apt install -y iputils-ping`.
-#   - libprotobuf32t64:   pulled transitively by `apt install swss.deb`
-#                         (swss Depends libprotobuf32t64); config-engine-trixie
-#                         does not ship it.
-# Both are declared in the shared @trixie pool
-# (dockers/docker-base-trixie/base_trixie.MODULE.bazel).
+#   - iputils-ping:   Dockerfile.j2 `apt install -y iputils-ping`.
+#   - libyaml-cpp0.8: orchagent links libyaml-cpp.so.0.8 (swss BUILD deps on
+#                     @swss_apt_deps//libyaml-cpp-dev). Not in config-engine base.
+# NOTE on protobuf: the swss deb's control declares `Depends: libprotobuf32t64`,
+# but that is stale/incorrect for trixie — orchagent AND libdashapi actually
+# link libprotobuf.so.29 (SONiC builds protobuf 29.0 via bazel_dep, and
+# sonic_rules//protobuf produces the sonic-built libprotobuf29). Shipping the
+# apt libprotobuf32t64 (libprotobuf.so.32) would NOT satisfy that NEEDED entry.
+# So we drop it here and ship the sonic-built libprotobuf29 in sonic_pkgs below.
+# Both apt packages are declared in the shared @trixie pool.
 flatten(
     name = "apt_layer",
     deduplicate = True,
     tars = [
         "@trixie//iputils-ping:data",
-        "@trixie//libprotobuf32t64:data",
+        "@trixie//libyaml-cpp0.8:data",
     ],
 )
 
@@ -53,6 +57,20 @@ flatten(
         "@libteam//:libteam5_1.31-1.deb_statusd",
         "@libteam//:libteamdctl0_1.31-1.deb_data",
         "@libteam//:libteamdctl0_1.31-1.deb_statusd",
+        # libprotobuf29 (sonic-built, from sonic_rules//protobuf). orchagent and
+        # libdashapi link libprotobuf.so.29 (SONiC's protobuf 29.0), NOT the apt
+        # libprotobuf.so.32 — see the apt_layer note above. This is the correct
+        # runtime protobuf for the whole SONiC C++ stack.
+        "@sonic_build_infra//protobuf:libprotobuf29_29.0.0.deb_data",
+        "@sonic_build_infra//protobuf:libprotobuf29_29.0.0.deb_statusd",
+        # libnl-genl-3-200 / libnl-cli-3-200 (from libnl3): runtime deps of
+        # libteam5 / teamsyncd / nbrmgrd (libteam links libnl-genl-3.so.200 and
+        # libnl-cli-3.so.200). swss's own Depends lists only libnl-3/nf/route,
+        # so these come in via libteam and must be shipped explicitly.
+        "@libnl3//:libnl-genl-3-200_3.7.0-0.2+b1sonic1.deb_data",
+        "@libnl3//:libnl-genl-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
+        "@libnl3//:libnl-cli-3-200_3.7.0-0.2+b1sonic1.deb_data",
+        "@libnl3//:libnl-cli-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
     ],
 )
 

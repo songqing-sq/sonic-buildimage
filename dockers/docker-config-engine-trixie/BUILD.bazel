@@ -8,19 +8,39 @@ load("@tar.bzl", "tar")
 # `apt purge` (build-essential + python3-dev are build-only and purged, so not
 # shipped). These packages are declared in the shared @trixie apt pool
 # (dockers/docker-base-trixie/base_trixie.MODULE.bazel).
-#   - apt-utils:     Dockerfile explicit install
+#   - apt-utils:     Dockerfile explicit install. Ships apt-ftparchive /
+#     apt-sortpkgs, which link libapt-pkg.so.7.0 (libapt-pkg7.0) and
+#     libapt-private.so.0.0 (apt) — added below to complete the closure.
 #   - python3-cffi:  trixie uses apt python3-cffi (bookworm had none; the libyang
 #                    python bindings and pyangbind need cffi at runtime)
+#   - python3-cffi-backend: the _cffi_backend C extension (python3-cffi Depends);
+#                    without it libyang python bindings fail to import.
 #   - python3-redis: trixie uses apt python3-redis (bookworm used pip redis==5.0.1)
 #   - python3-yaml:  Dockerfile explicit install
+#   - libswsscommon runtime Depends (apt portion): libboost-serialization1.83.0,
+#     libhiredis1.1.0, libpcre2-16-0/32-0/posix3. Not auto-resolved by Bazel
+#     image assembly, so listed explicitly; without them sonic-cfggen fails to
+#     import swsscommon at startup. The libnl-3-200/nf/route part of that
+#     closure is sonic-built and added in sonic_pkgs below.
+#   - liblua5.1-0: runtime dep of sonic-eventd (eventd/eventdb/events_tool link
+#     liblua5.1.so.0); also not auto-resolved from deb Depends.
 flatten(
     name = "apt_layer",
     deduplicate = True,
     tars = [
         "@trixie//apt-utils:data",
+        "@trixie//libapt-pkg7.0:data",
+        "@trixie//apt:data",
         "@trixie//python3-cffi:data",
+        "@trixie//python3-cffi-backend:data",
         "@trixie//python3-redis:data",
         "@trixie//python3-yaml:data",
+        "@trixie//libboost-serialization1.83.0:data",
+        "@trixie//libhiredis1.1.0:data",
+        "@trixie//libpcre2-16-0:data",
+        "@trixie//libpcre2-32-0:data",
+        "@trixie//libpcre2-posix3:data",
+        "@trixie//liblua5.1-0:data",
     ],
 )
 
@@ -39,6 +59,18 @@ flatten(
         "@sonic-swss-common//:python3-swsscommon_1.0.0.deb_statusd",
         "@sonic-swss-common//:sonic-db-cli_1.0.0.deb_data",
         "@sonic-swss-common//:sonic-db-cli_1.0.0.deb_statusd",
+        # libswsscommon runtime Depends (sonic-built portion): the SONiC-patched
+        # libnl3 runtime libs (libnl-3.so.200 / libnl-route-3.so.200 /
+        # libnl-nf-3.so.200). Bazel image assembly does not auto-resolve deb
+        # Depends, so they are listed explicitly here (the apt portion —
+        # boost/hiredis/pcre2 — is in apt_layer above). Without them
+        # sonic-cfggen fails to import swsscommon at container startup.
+        "@libnl3//:libnl-3-200_3.7.0-0.2+b1sonic1.deb_data",
+        "@libnl3//:libnl-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
+        "@libnl3//:libnl-route-3-200_3.7.0-0.2+b1sonic1.deb_data",
+        "@libnl3//:libnl-route-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
+        "@libnl3//:libnl-nf-3-200_3.7.0-0.2+b1sonic1.deb_data",
+        "@libnl3//:libnl-nf-3-200_3.7.0-0.2+b1sonic1.deb_statusd",
         # LIBYANG3
         "@libyang3//:libyang3_3.12.2-1.deb_data",
         "@libyang3//:libyang3_3.12.2-1.deb_statusd",

@@ -88,6 +88,13 @@ apt.install(
         "libatomic1",
         "libbpf1",
         "libmnl0",
+        # Runtime deps of iproute2's ss / tc tools (present in the base rootfs):
+        # ss links libtirpc3t64 (libtirpc.so.3), tc links libxtables12
+        # (libxtables.so.12). Bazel doesn't auto-resolve deb Depends, so without
+        # these `ss` / `tc` fail to load. Grouped with libbpf1/libmnl0 (also
+        # iproute2 transitives).
+        "libtirpc3t64",
+        "libxtables12",
 
         # -------- known transitives to explicitly register --------
         "libpython3-stdlib",
@@ -106,17 +113,54 @@ apt.install(
         # build-only and not shipped. The @trixie apt pool is shared across all
         # trixie dockers, so these live here rather than in a per-docker pool.
         "apt-utils",
+        # apt-utils ships apt-ftparchive / apt-sortpkgs, which link
+        # libapt-pkg.so.7.0 (from libapt-pkg7.0) and libapt-private.so.0.0 (from
+        # the apt package). Bazel doesn't auto-resolve apt-utils' Depends, so add
+        # them explicitly to complete the library closure.
+        "libapt-pkg7.0",
+        "apt",
         "python3-cffi",
+        # python3-cffi is pure-Python and Depends on python3-cffi-backend for the
+        # _cffi_backend C extension. Bazel does not auto-resolve deb Depends, so
+        # it must be listed explicitly; without it the libyang python bindings
+        # (and any cffi user) fail with "ModuleNotFoundError: No module named
+        # '_cffi_backend'".
+        "python3-cffi-backend",
         "python3-redis",
         "python3-yaml",
+        # Runtime dependencies of libswsscommon (sonic-swss-common/BUILD:245-256
+        # `Depends:`). Under Make/apt these are auto-pulled by libswsscommon's
+        # Depends, but Bazel image assembly does not resolve deb Depends, so the
+        # whole closure must be listed explicitly. Without them `sonic-cfggen`
+        # (imports swsscommon) fails at runtime with
+        # "lib<x>.so: cannot open shared object file", which breaks the
+        # entrypoint of every config-engine-based container (they all run
+        # sonic-cfggen at startup). These are the Debian apt libs in that
+        # closure; the libnl-3-200/nf/route deps are sonic-built and added in
+        # config-engine's sonic_pkgs (from @libnl3). libpcre2-8-0 is already
+        # provided by the base rootfs above; pcre2's 16/32/posix variants are
+        # separate packages that swsscommon also links.
+        "libboost-serialization1.83.0",
+        "libhiredis1.1.0",
+        "libpcre2-16-0",
+        "libpcre2-32-0",
+        "libpcre2-posix3",
+        # Runtime dependency of sonic-eventd (sonic-eventd/BUILD:198
+        # `Depends: liblua5.1-0`), installed by config-engine. eventd / eventdb /
+        # events_tool link liblua5.1.so.0. Bazel doesn't auto-resolve deb
+        # Depends, so list it explicitly; without it those binaries fail to load.
+        "liblua5.1-0",
 
         # -------- docker-swss-layer-trixie runtime apt deps --------
         # iputils-ping: docker-swss-layer-trixie/Dockerfile.j2 `apt install -y
-        # iputils-ping`. libprotobuf32t64: pulled in by `apt install swss.deb`
-        # (swss Depends libprotobuf32t64); it is not shipped by
-        # docker-config-engine-trixie, so the swss layer is the first image to
-        # carry it. Both live in the shared @trixie pool per project convention.
+        # iputils-ping`. libyaml-cpp0.8: orchagent links libyaml-cpp.so.0.8.
+        # libprotobuf32t64 is kept declared in the pool (harmless; a pool entry
+        # only ships when referenced) but swss-layer NO LONGER ships it: the
+        # SONiC C++ stack (orchagent/libdashapi) links the sonic-built
+        # libprotobuf.so.29, not apt's libprotobuf.so.32 — see
+        # docker-swss-layer-trixie/BUILD.bazel. All live in the shared @trixie pool.
         "iputils-ping",
+        "libyaml-cpp0.8",
         "libprotobuf32t64",
 
         # -------- docker-platform-monitor runtime apt deps --------
