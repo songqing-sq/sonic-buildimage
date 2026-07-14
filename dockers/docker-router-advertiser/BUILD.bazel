@@ -1,0 +1,74 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# Dockerfile.j2 line 19: `apt-get -y install radvd`. Unlike son624 bookworm
+# (which commented out the apt install and shipped a locally-built radvd .deb),
+# son629's Make actively apt-installs radvd, so we source it from the shared
+# @trixie apt pool. The bare `@trixie//radvd` target pulls the arch package
+# (control + status.d, so `dpkg -l` lists it) plus its :data contents and the
+# full runtime dependency closure — equivalent to `apt install radvd`. radvd is
+# not present in the docker-config-engine-trixie base, so this image is the
+# first to carry it. (rules_distroless deduplicates deps already in the base.)
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//radvd",
+    ],
+)
+
+# Dockerfile.j2 lines 29-32: COPY directives.
+#   start.sh, docker-init.sh                     -> /usr/bin/
+#   radvd.conf.j2, wait_for_link.sh.j2,
+#   docker-router-advertiser.supervisord.conf.j2 -> /usr/share/sonic/templates/
+#   critical_processes                           -> /etc/supervisor
+# The supervisor proc-exit listener referenced by the supervisord conf
+# (supervisor-proc-exit-listener-rs) is already shipped by the
+# docker-config-engine-trixie base (@sonic-supervisord-utilities-rs//:...),
+# and rules/docker-router-advertiser.mk defines no `_FILES`, so nothing extra
+# is packaged here — consistent with son629's Make.
+tar(
+    name = "files",
+    srcs = [
+        "start.sh",
+        "docker-init.sh",
+        "radvd.conf.j2",
+        "wait_for_link.sh.j2",
+        "docker-router-advertiser.supervisord.conf.j2",
+        "critical_processes",
+    ],
+    mtree = [
+        "./usr/bin/start.sh uid=0 gid=0 mode=0755 type=file content=$(location :start.sh)",
+        "./usr/bin/docker-init.sh uid=0 gid=0 mode=0755 type=file content=$(location :docker-init.sh)",
+        "./usr/share/sonic/templates/radvd.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :radvd.conf.j2)",
+        "./usr/share/sonic/templates/wait_for_link.sh.j2 uid=0 gid=0 mode=0644 type=file content=$(location :wait_for_link.sh.j2)",
+        "./usr/share/sonic/templates/docker-router-advertiser.supervisord.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :docker-router-advertiser.supervisord.conf.j2)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location :critical_processes)",
+    ],
+)
+
+# Dockerfile.j2 lines 34-44: second (final) stage. ENTRYPOINT docker-init.sh,
+# ENV DEBIAN_FRONTEND=noninteractive. IMAGE_VERSION is a build ARG baked at
+# `docker build` time in the Make flow; it is not a runtime behaviour input, so
+# it is not reproduced here (same treatment as the other migrated trixie
+# dockers). The rsync-from-builder two-stage split (line 38) only exists to
+# strip apt caches from the intermediate layer; the Bazel image is assembled
+# from clean tars, so no builder stage is needed.
+oci_image(
+    name = "docker-router-advertiser",
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    entrypoint = ["/usr/bin/docker-init.sh"],
+    env = {"DEBIAN_FRONTEND": "noninteractive"},
+    tars = [
+        ":apt_layer",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-router-advertiser",
+    repo_tags = ["docker-router-advertiser:latest"],
+)
