@@ -153,6 +153,20 @@ apt.install(
         # runtime dep of libdashapi's protobuf) is already registered above.
         "redis-server",
 
+        # -------- docker-snmp runtime apt deps --------
+        # docker-snmp/Dockerfile.j2 `apt install -y ... snmp snmpd`. On trixie
+        # snmp/snmpd come straight from Debian apt — rules/snmpd.mk only builds
+        # them from source on bookworm (the whole SNMP/SNMPD/LIBSNMP block is
+        # inside `ifeq ($(BLDENV),bookworm)`), so on trixie those Make vars are
+        # empty and the packages are apt-sourced. libsnmp40t64 + libsnmp-base
+        # are the runtime lib deps pulled in by snmp/snmpd. ipmitool is already
+        # registered above (shared with docker-platform-monitor). python3-dev,
+        # gcc, make are build-only (apt-purged in the Dockerfile) — not shipped.
+        "snmp",
+        "snmpd",
+        "libsnmp40t64",
+        "libsnmp-base",
+
         # -------- Debug-only variant packages (rules/docker-base-trixie.mk _DBG_IMAGE_PACKAGES) --------
         # These are NOT baked into the base image (see BUILD.bazel `flat` list),
         # but registered here so the `debug-packages` flatten target can pull
@@ -175,35 +189,37 @@ apt.lock(
 )
 use_repo(apt, "trixie")
 
-# Hub name is "pip_pmon5". The aspect_rules_py uv extension marks itself
-# reproducible=True, so Bazel caches its generated hub repo and does NOT
-# re-evaluate it when only uv.lock's contents change. Each time the pip closure
-# grows, the hub name must be bumped to force a fresh evaluation that reads the
-# current uv.lock package closure.
-# History: "pip" -> "pip_ce" (config-engine deps) then, in parallel branches,
-# "pip_pmon4" (docker-platform-monitor deps: grpcio/thrift/psutil/...) and
-# "pip_ce2" (docker-database's click). Merging both branches unions the closure,
-# so the hub is bumped again to "pip_pmon5". All consumers reference
-# @pip_pmon5//<pkg>.
+# Hub name is "pip_pmon8". The aspect_rules_py uv extension marks itself
+# reproducible=True (still true in 1.11.7), so Bazel caches its generated hub
+# repo and does NOT re-evaluate it when only uv.lock's contents change. Each
+# time the pip closure grows, the hub name must be bumped to force a fresh
+# evaluation that reads the current uv.lock package closure.
+# History: "pip" -> "pip_ce"/"pip_ce2" (config-engine + docker-database) ->
+# "pip_pmon4"/"pip_pmon5" (docker-platform-monitor deps). A cross-branch merge
+# left those names inconsistent (declared pip_pmon5 while pmon still referenced
+# pip_pmon4 and docker-database referenced pip_ce2). Adding docker-snmp's pip
+# deps (hiredis/python-arptable; smbus uses apt python3-smbus, not pip) bumps
+# to "pip_pmon8" and unifies ALL consumers onto @pip_pmon8//<pkg>.
+#
+# Migrated to the aspect_rules_py 1.11.7 uv API: uv.project(pyproject, lock)
+# replaces the old declare_venv + lockfile pair, and unstable_annotate_packages
+# (keyed on lock) replaces unstable_annotate_requirements. The venv name that
+# site_packages/py_venv targets select equals this project's [project].name
+# ("docker-base-trixie").
 uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
-uv.declare_hub(hub_name = "pip_pmon5")
-uv.declare_venv(
-    hub_name = "pip_pmon5",
-    venv_name = "default",
-)
-uv.lockfile(
-    src = "//dockers/docker-base-trixie:uv.lock",
-    hub_name = "pip_pmon5",
-    venv_name = "default",
+uv.declare_hub(hub_name = "pip_pmon8")
+uv.project(
+    hub_name = "pip_pmon8",
+    pyproject = "//dockers/docker-base-trixie:pyproject.toml",
+    lock = "//dockers/docker-base-trixie:uv.lock",
 )
 
 # Attach `wheel` as a build-dependency for sdist-only packages (bitarray on
 # Python 3.13). The extension's default sdist build venv only has
 # {setuptools, build}; this annotation adds `wheel` so bitarray's setuptools
 # backend can build. See pip_annotations.toml for details.
-uv.unstable_annotate_requirements(
-    hub_name = "pip_pmon5",
-    venv_name = "default",
+uv.unstable_annotate_packages(
+    lock = "//dockers/docker-base-trixie:uv.lock",
     src = "//dockers/docker-base-trixie:pip_annotations.toml",
 )
-use_repo(uv, "pip_pmon5")
+use_repo(uv, "pip_pmon8")

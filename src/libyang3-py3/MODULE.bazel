@@ -5,7 +5,7 @@ module(
 
 bazel_dep(name = "rules_cc", version = "0.2.16")
 bazel_dep(name = "rules_python", version = "1.7.0")
-bazel_dep(name = "aspect_rules_py", version = "1.8.4")
+bazel_dep(name = "aspect_rules_py", version = "1.11.7")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "libyang3", version = "3.12.2")
@@ -34,14 +34,10 @@ use_repo(apt, "libyang3_py3_deps")
 # cdefs.h + source.c into _libyang.c (pure-Python step, no native toolchain).
 uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
 uv.declare_hub(hub_name = "libyang3_py3_pip")
-uv.declare_venv(
+uv.project(
     hub_name = "libyang3_py3_pip",
-    venv_name = "default",
-)
-uv.lockfile(
-    src = "//:uv.lock",
-    hub_name = "libyang3_py3_pip",
-    venv_name = "default",
+    pyproject = "//:pyproject.toml",
+    lock = "//:uv.lock",
 )
 use_repo(uv, "libyang3_py3_pip")
 

@@ -5,7 +5,7 @@ module(
 
 bazel_dep(name = "rules_cc", version = "0.2.16")
 bazel_dep(name = "rules_python", version = "1.7.0")
-bazel_dep(name = "aspect_rules_py", version = "1.8.4")
+bazel_dep(name = "aspect_rules_py", version = "1.11.7")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
@@ -35,13 +35,10 @@ use_repo(apt, "sonic_fib_deps")
 # declare our own uv hub with jinja2.
 uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
 uv.declare_hub(hub_name = "sonic_fib_pip")
-uv.declare_venv(
+uv.project(
     hub_name = "sonic_fib_pip",
-    venv_name = "default",
-)
-uv.lockfile(
-    src = "//:uv.lock",
-    hub_name = "sonic_fib_pip",
-    venv_name = "default",
+    pyproject = "//:pyproject.toml",
+    lock = "//:uv.lock",
+    default_build_dependencies = [],
 )
 use_repo(uv, "sonic_fib_pip")

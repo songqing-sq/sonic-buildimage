@@ -29,6 +29,7 @@ exports_files([
 # from a custom rule — same trick son624's sdist_build_from_src uses.
 py_venv(
     name = "cffi_venv",
+    venv = "libyang3-py3-build",
     deps = ["@libyang3_py3_pip//cffi"],
 )
 

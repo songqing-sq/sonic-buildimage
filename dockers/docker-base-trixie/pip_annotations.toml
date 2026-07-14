@@ -16,7 +16,9 @@
 #
 # blkinfo==0.2.0 (pinned by docker-platform-monitor) is likewise sdist-only
 # with no prebuilt wheel; its setuptools build backend needs `wheel`.
-version = "0.0.0"
+#
+# python-arptable==0.0.2 (pulled by asyncsnmp for docker-snmp) is sdist-only
+# with no prebuilt wheel; its setuptools build backend needs `wheel`.
 
 [[package]]
 name = "bitarray"
@@ -28,4 +30,8 @@ build-dependencies = [{ name = "wheel" }]
 
 [[package]]
 name = "blkinfo"
+build-dependencies = [{ name = "wheel" }]
+
+[[package]]
+name = "python-arptable"
 build-dependencies = [{ name = "wheel" }]

@@ -1,0 +1,171 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@sonic_build_infra//python:site_packages.bzl", "site_packages")
+load("@tar.bzl", "tar")
+
+# =============================================================================
+# docker-snmp: SONiC SNMP agent container (Net-SNMP snmpd + async SONiC MIB
+# implementation). Mirrors dockers/docker-snmp/Dockerfile.j2 +
+# rules/docker-snmp.mk. son624 (bookworm) has NO Bazel reference for this
+# image — this is a fresh migration built from son624's Dockerfile.j2 semantics
+# and the trixie Dockerfile.j2 recipe.
+#
+# Key trixie-specific decisions:
+# 1. snmp/snmpd come from Debian apt (@trixie), NOT SONiC-built debs. On
+#    bookworm rules/snmpd.mk builds them from source (LIBSNMP_BASE + SNMP +
+#    SNMPD deb targets); on trixie the entire SNMP block is inside
+#    `ifeq ($(BLDENV),bookworm)` so those Make vars are empty and the
+#    Dockerfile does `apt install snmp snmpd` instead.
+# 2. `python3 -m sonic_ax_impl install` at build time copies
+#    <asyncsnmp>/sonic_ax_impl/bin/sysDescr_pass.py to /usr/share/snmp/ with
+#    +x. Bazel doesn't run wheel post-install code, so we replicate this
+#    with a small tar layer (see :sysdescr_pass_layer below).
+# 3. `python3-dev`, `gcc`, `make` are build-only in the Dockerfile
+#    (apt-purged at the end); not shipped in this image.
+# =============================================================================
+
+# Dockerfile.j2 lines 22-28: runtime apt install `snmp snmpd ipmitool` plus
+# build-only python3-dev/gcc/make (not shipped). ipmitool is already declared
+# in @trixie for docker-platform-monitor (shared). libsnmp40t64 + libsnmp-base
+# are transitive runtime deps of snmp/snmpd; the bare-label form of snmp/snmpd
+# pulls them in via rules_distroless's apt closure, but list them explicitly
+# to make the shipped set unambiguous.
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//snmp",
+        "@trixie//snmpd",
+        "@trixie//ipmitool",
+        "@trixie//libsnmp40t64",
+        "@trixie//libsnmp-base:data",
+        # python3-smbus provides the prebuilt smbus C extension (smbus.so). The
+        # Make image `pip3 install smbus` builds smbus==1.1.post2 from sdist,
+        # but its C extension can't build via aspect_rules_py 1.11.7's
+        # pep517_native_whl either: that path sets CC to the project's hermetic
+        # GCC but doesn't pass the -B/-isystem/-idirafter flags the rules_cc
+        # toolchain needs, and the compiler_executable path doesn't resolve in
+        # the sandbox. The apt python3-smbus package ships the same
+        # `import smbus` module prebuilt — functionally equivalent, same choice
+        # as pmon using apt python3-netifaces. arch:all -> :data.
+        "@trixie//python3-smbus:data",
+    ],
+)
+
+# NOTE: no `sonic_pkgs` layer. rules/docker-snmp.mk _DEPENDS is `$(SNMP)
+# $(SNMPD)`, but on trixie those Make vars are empty (the SNMP/SNMPD deb
+# targets only exist inside the bookworm branch of rules/snmpd.mk) — snmp/snmpd
+# are apt packages in apt_layer above. All SONiC-built debs this image needs
+# (libswsscommon, python3-swsscommon, libyang3, sonic-eventd, ...) already come
+# from the parent docker-config-engine-trixie image, so there is no SONiC-deb
+# layer here (unlike pmon/database).
+
+# Dockerfile.j2 lines 39-42: `pip3 install --no-cache-dir hiredis pyyaml smbus`.
+# pyyaml is already resolved transitively by other packages in the shared
+# @pip_pmon8 hub; hiredis is newly pinned in
+# dockers/docker-base-trixie/pyproject.toml (versions-py3 shows the Make image
+# resolves to hiredis==3.4.0). smbus is NOT here — it ships via apt
+# python3-smbus (see apt_layer; the pip C-extension can't build under the
+# project's hermetic GCC toolchain, even with 1.11.7's pep517_native_whl).
+# asyncsnmp's install_requires also needs psutil (already in the pmon pip
+# block) and python-arptable (pure-Python sdist, newly pinned).
+site_packages(
+    name = "pip_layer",
+    srcs = [
+        "@pip_pmon8//hiredis",
+        "@pip_pmon8//psutil",
+        "@pip_pmon8//python_arptable",
+    ],
+    venv = "docker-base-trixie",
+)
+
+# rules/docker-snmp.mk _PYTHON_WHEELS: SONIC_PY_COMMON_PY3 +
+# SONIC_PLATFORM_COMMON_PY3 + ASYNCSNMP_PY3. sonic-py-common /
+# sonic-platform-common are already installed by docker-config-engine-trixie's
+# python_layer; re-listing here matches the legacy build's redundant
+# `pip3 install <wheel>` and is a no-op after flatten(deduplicate=True).
+flatten(
+    name = "python_layer",
+    deduplicate = True,
+    tars = [
+        ":pip_layer",
+        "@sonic-py-common//:install",
+        "@sonic-platform-common//:install",
+        "@asyncsnmp//:install",
+    ],
+)
+
+# Dockerfile.j2 line 52: `RUN python3 -m sonic_ax_impl install`. That command
+# ONLY copies asyncsnmp's src/sonic_ax_impl/bin/sysDescr_pass.py to
+# /usr/share/snmp/ with mode 0755 (see
+# src/sonic-snmpagent/src/sonic_ax_impl/__main__.py:44 install_fragments()).
+# Bazel doesn't run wheel post-install code, so we replicate the effect with
+# an explicit tar layer.
+tar(
+    name = "sysdescr_pass_layer",
+    srcs = ["@asyncsnmp//:src/sonic_ax_impl/bin/sysDescr_pass.py"],
+    mtree = [
+        "./usr/share/snmp/sysDescr_pass.py uid=0 gid=0 mode=0755 type=file " +
+        "content=$(location @asyncsnmp//:src/sonic_ax_impl/bin/sysDescr_pass.py)",
+    ],
+)
+
+# Dockerfile.j2 lines 60-64: COPY directives.
+#   - docker-snmp-init.sh          -> /usr/bin/docker-snmp-init.sh (mode 0755)
+#   - start.sh                     -> /usr/bin/start.sh
+#   - snmp_yml_to_configdb.py      -> /usr/bin/snmp_yml_to_configdb.py
+#   - *.j2                         -> /usr/share/sonic/templates/
+#       (matches snmpd.conf.j2, supervisord.conf.j2, sysDescription.j2 —
+#        Dockerfile.j2 itself is the Dockerfile input, not a runtime template)
+#   - critical_processes           -> /etc/supervisor/critical_processes
+#
+# The Dockerfile does not COPY monit_snmp; rules/docker-snmp.mk's
+# _BASE_IMAGE_FILES = monit_snmp:/etc/monit/conf.d places it at the host layer
+# (outside the container), so it's intentionally NOT in this image.
+tar(
+    name = "files",
+    srcs = [
+        "docker-snmp-init.sh",
+        "start.sh",
+        "snmp_yml_to_configdb.py",
+        "snmpd.conf.j2",
+        "supervisord.conf.j2",
+        "sysDescription.j2",
+        "critical_processes",
+    ],
+    mtree = [
+        "./usr/bin/docker-snmp-init.sh uid=0 gid=0 mode=0755 type=file content=$(location :docker-snmp-init.sh)",
+        "./usr/bin/start.sh uid=0 gid=0 mode=0755 type=file content=$(location :start.sh)",
+        "./usr/bin/snmp_yml_to_configdb.py uid=0 gid=0 mode=0755 type=file content=$(location :snmp_yml_to_configdb.py)",
+        "./usr/share/sonic/templates/snmpd.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :snmpd.conf.j2)",
+        "./usr/share/sonic/templates/supervisord.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :supervisord.conf.j2)",
+        "./usr/share/sonic/templates/sysDescription.j2 uid=0 gid=0 mode=0644 type=file content=$(location :sysDescription.j2)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location :critical_processes)",
+    ],
+)
+
+oci_image(
+    name = "docker-snmp",
+    # Dockerfile.j2 line 2: FROM docker-config-engine-trixie.
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    # Dockerfile.j2 line 86: ENTRYPOINT ["/usr/bin/docker-snmp-init.sh"].
+    entrypoint = ["/usr/bin/docker-snmp-init.sh"],
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+        # Dockerfile.j2 line 20: ENV PYTHONOPTIMIZE=1.
+        "PYTHONOPTIMIZE": "1",
+    },
+    tars = [
+        ":apt_layer",
+        ":python_layer",
+        ":sysdescr_pass_layer",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-snmp",
+    repo_tags = ["docker-snmp:latest"],
+)

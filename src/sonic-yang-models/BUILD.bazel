@@ -192,7 +192,7 @@ py_venv_binary(
     name = "render_yang_template",
     srcs = ["tools/render_yang_template.py"],
     main = "tools/render_yang_template.py",
-    venv = "default",
+    venv = "sonic-yang-models",
     deps = ["@sonic_yang_models_pip//jinja2"],
 )
 

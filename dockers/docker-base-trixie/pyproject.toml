@@ -64,6 +64,16 @@ dependencies = [
     # docker-database/Dockerfile.j2 explicit `pip3 install click` (SONiC CLI
     # utilities inside the container import click). Make resolved click 8.4.2.
     "click==8.4.2",
+
+    # ---- docker-snmp deps ----
+    # docker-snmp/Dockerfile.j2 explicit `pip3 install hiredis pyyaml smbus`
+    # (pyyaml already resolved above). Plus asyncsnmp wheel install_requires:
+    # psutil (already in pmon block) + python-arptable. smbus is NOT here — its
+    # sdist-only C extension can't build under the project's hermetic GCC
+    # toolchain (even via 1.11.7's pep517_native_whl), so docker-snmp gets the
+    # `smbus` module from apt python3-smbus instead.
+    "hiredis",
+    "python-arptable",
 ]
 
 # pyangbind unconditionally depends on enum34, which on Python 3 shadows the
