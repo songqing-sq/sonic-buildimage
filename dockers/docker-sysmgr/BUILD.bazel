@@ -109,6 +109,7 @@ tar(
         ":gen_config_status",
     ],
     mtree = [
+        "./etc/supervisor/conf.d uid=0 gid=0 mode=0755 type=dir",
         "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location :supervisord.conf)",
         "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location :critical_processes)",
         "./var/sonic/config_status uid=0 gid=0 mode=0644 type=file content=$(location :gen_config_status)",
@@ -126,6 +127,21 @@ oci_image(
     entrypoint = ["/usr/local/bin/supervisord"],
     env = {
         "DEBIAN_FRONTEND": "noninteractive",
+    },
+    # OCI config labels matching the Make image (added by SONiC build hooks).
+    # com.azure.sonic.manifest is read by sonic-host-services to manage the
+    # sysmgr container (service name, host-service, syslog rate-limit, etc.).
+    # It is emitted here as COMPACT single-line JSON because rules_oci writes
+    # one `key=value` line per label (oci/defs.bzl), so a value with embedded
+    # newlines (Make ships pretty-printed JSON) would corrupt the label file;
+    # the compact form is semantically identical. The version labels mirror the
+    # SONiC debs the config-engine-trixie base contributes, and Tag is the image
+    # version stamp.
+    labels = {
+        "Tag": "1.0.0",
+        "com.azure.sonic.manifest": "{\"version\": \"1.0.0\", \"package\": {\"version\": \"1.0.0\", \"depends\": [], \"name\": \"sysmgr\"}, \"service\": {\"name\": \"sysmgr\", \"requires\": [], \"after\": [], \"before\": [], \"dependent-of\": [], \"asic-service\": false, \"host-service\": true, \"warm-shutdown\": {\"after\": [], \"before\": []}, \"fast-shutdown\": {\"after\": [], \"before\": []}, \"syslog\": {\"support-rate-limit\": true}}, \"container\": {\"privileged\": false, \"volumes\": [], \"tmpfs\": []}, \"cli\": {\"config\": \"\", \"show\": \"\", \"clear\": \"\"}}",
+        "com.azure.sonic.versions.libswsscommon": "1.0.0",
+        "com.azure.sonic.versions.sonic-supervisord-utilities-rs": "1.0.0",
     },
     tars = [
         ":sonic_pkgs",
