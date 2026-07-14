@@ -58,11 +58,21 @@ tar(
         "bmpcfgd/__init__.py",
         "bmpcfgd/bmpcfgd.py",
         ":bmpcfgd_console_script",
+        "tests/__init__.py",
+        "tests/bmpcfgd_test.py",
+        "tests/mock_connector.py",
     ],
     mtree = [
         "./usr/lib/python3/dist-packages/bmpcfgd/__init__.py uid=0 gid=0 mode=0644 type=file content=$(location bmpcfgd/__init__.py)",
         "./usr/lib/python3/dist-packages/bmpcfgd/bmpcfgd.py uid=0 gid=0 mode=0644 type=file content=$(location bmpcfgd/bmpcfgd.py)",
         "./usr/local/bin/bmpcfgd uid=0 gid=0 mode=0755 type=file content=$(location :bmpcfgd_console_script)",
+        # Make ships the bmpcfgd test package inside the docker image
+        # (pip-installs the wheel's `tests` package). Mirror it here so the
+        # Bazel docker image matches Make. Uses the same bazel debian python
+        # path as the bmpcfgd package above (/usr/lib/python3/dist-packages).
+        "./usr/lib/python3/dist-packages/tests/__init__.py uid=0 gid=0 mode=0644 type=file content=$(location tests/__init__.py)",
+        "./usr/lib/python3/dist-packages/tests/bmpcfgd_test.py uid=0 gid=0 mode=0644 type=file content=$(location tests/bmpcfgd_test.py)",
+        "./usr/lib/python3/dist-packages/tests/mock_connector.py uid=0 gid=0 mode=0644 type=file content=$(location tests/mock_connector.py)",
     ],
     visibility = ["//visibility:public"],
 )

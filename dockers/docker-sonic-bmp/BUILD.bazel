@@ -1,0 +1,88 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# rules/docker-bmp.mk:
+#   $(DOCKER_BMP)_INSTALL_DEBS = $(LIBSWSSCOMMON) $(SONIC_BMPD)
+#                                $(PYTHON3_SWSSCOMMON) $(LIBYANG3_PY3)
+# libswsscommon / python3-swsscommon / libyang3 / python3-libyang are ALL already
+# present in the docker-config-engine-trixie base (see that BUILD.bazel sonic_pkgs
+# lines 58-90). The only package delta of docker-sonic-bmp vs its base is the
+# SONIC_BMPD deb (sonic-bmp), which lays /usr/bin/openbmpd and the conffile
+# /etc/bmp/openbmpd.conf. Verified against the Make image top layer.
+# `_data` (contents) + `_statusd` (dpkg status.d stub) so `dpkg -l` lists it.
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        "@sonic-bmp//:sonic-bmp_0.1.deb_data",
+        "@sonic-bmp//:sonic-bmp_0.1.deb_statusd",
+    ],
+)
+
+# rules/docker-bmp.mk `$(DOCKER_BMP)_PYTHON_WHEELS = $(SONIC_BMPCFGD)` +
+# Dockerfile.j2 install_python_wheels. Lays the bmpcfgd python package plus the
+# /usr/local/bin/bmpcfgd console script. install_requires (jinja2, netaddr,
+# pyyaml, ipaddress) are already provided by the base pip layer.
+flatten(
+    name = "python_layer",
+    deduplicate = True,
+    tars = [
+        "@sonic-bmpcfgd-services//:install",
+    ],
+)
+
+# COPY'd SONiC files (dockers/docker-sonic-bmp/Dockerfile.j2 lines 35-37):
+#   COPY bmp.sh             -> /usr/bin/        (chmod +x -> 0755)
+#   COPY supervisord.conf   -> /etc/supervisor/conf.d/
+#   COPY critical_processes -> /etc/supervisor/
+# Dockerfile `mkdir -p /etc/bmp` is satisfied implicitly by the sonic-bmp deb,
+# which lays /etc/bmp/openbmpd.conf.
+#
+# INTENTIONALLY EXCLUDED (verified against the Make docker-sonic-bmp image):
+#  * monit_bmp: rules/docker-bmp.mk `_BASE_IMAGE_FILES += monit_bmp:/etc/monit/conf.d`
+#    is a SONiC HOST base-image file, installed onto the host filesystem, NOT into
+#    this container. The Make image has NO /etc/monit/conf.d/monit_bmp. (The
+#    sonic-bazel reference incorrectly ships it inside the container.)
+#  * supervisor-proc-exit-listener: shipped by the docker-config-engine-trixie
+#    base, not re-copied here (absent from the Make delta layer).
+tar(
+    name = "files",
+    srcs = [
+        "bmp.sh",
+        "supervisord.conf",
+        "critical_processes",
+    ],
+    mtree = [
+        "./usr/bin/bmp.sh uid=0 gid=0 mode=0755 type=file content=$(location bmp.sh)",
+        "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location supervisord.conf)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location critical_processes)",
+    ],
+)
+
+# Make docker-sonic-bmp final image (verified via image config):
+#   Entrypoint=["/usr/local/bin/supervisord"], WorkingDir="/",
+#   Env adds DEBIAN_FRONTEND=noninteractive on top of the base PATH.
+# (IMAGE_VERSION env and com.azure.sonic.* Labels are injected by the Make SONiC
+# image-build machinery, not by this module — see diff doc "accepted differences".)
+oci_image(
+    name = "docker-sonic-bmp",
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    entrypoint = ["/usr/local/bin/supervisord"],
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+    },
+    workdir = "/",
+    tars = [
+        ":sonic_pkgs",
+        ":python_layer",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-sonic-bmp",
+    repo_tags = ["docker-sonic-bmp:latest"],
+)
