@@ -204,6 +204,32 @@ apt.install(
         "libnftnl11",
         "libxtables12",
 
+        # -------- docker-sysmgr runtime apt deps --------
+        # docker-sysmgr/Dockerfile.j2 `apt install -f -y libdbus-1-3
+        # libdbus-c++-1-0v5`, then installs the sysmgr deb. The Bazel-built
+        # rebootbackend + librebootgnoi pull a runtime closure that the
+        # distroless config-engine-trixie base does not carry (flatten does not
+        # resolve Depends). Packages added here provide the .so files the
+        # binaries link:
+        #   libdbus-c++-1-0v5      -> libdbus-c++-1.so.0 (Dockerfile apt install)
+        #   libhiredis1.1.0        -> libhiredis.so.1.1.0 + libhiredis_ssl.so.1.1.0
+        #                             (swsscommon dep; Make pulls it via apt too)
+        #   libboost-serialization1.83.0 -> libboost_serialization.so.1.83.0
+        #                             (swsscommon dep; Make pulls it via apt too)
+        #   libpcre2-16-0/-32-0/-posix3 -> Bazel libyang3 links the full pcre2
+        #                             suite; Make's libyang only pulls
+        #                             libpcre2-8-0 (already in the base rootfs).
+        # libdbus-1-3 is already in the base rootfs block. libnl-3/genl-3/nf-3/
+        # route-3 and libprotobuf.so.29 are SONiC-built debs shipped from
+        # @libnl3 and @sonic_build_infra//protobuf (see docker-sysmgr BUILD.bazel),
+        # so they are NOT apt packages and are not listed here.
+        "libdbus-c++-1-0v5",
+        "libhiredis1.1.0",
+        "libboost-serialization1.83.0",
+        "libpcre2-16-0",
+        "libpcre2-32-0",
+        "libpcre2-posix3",
+
         # -------- Debug-only variant packages (rules/docker-base-trixie.mk _DBG_IMAGE_PACKAGES) --------
         # These are NOT baked into the base image (see BUILD.bazel `flat` list),
         # but registered here so the `debug-packages` flatten target can pull
