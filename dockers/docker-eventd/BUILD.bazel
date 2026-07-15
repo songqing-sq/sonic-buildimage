@@ -144,6 +144,13 @@ tar(
         ":render_syncd_events_conf",
     ],
     mtree = [
+        # Explicit dir entries mirroring the Make eventd delta layer (drwxr-xr-x).
+        # The Dockerfile `mkdir -p /etc/rsyslog.d/rsyslog_plugin_conf` + the COPY
+        # into /etc/supervisor/conf.d create these at 0755. Without them the image
+        # inherits the base's /etc/supervisor/conf.d at mode 0000 (docker-base-trixie
+        # declares it type=dir with no mode) — a 0000-vs-0755 diff vs Make.
+        "./etc/rsyslog.d/rsyslog_plugin_conf uid=0 gid=0 mode=0755 type=dir",
+        "./etc/supervisor/conf.d uid=0 gid=0 mode=0755 type=dir",
         "./usr/bin/start.sh uid=0 gid=0 mode=0755 type=file content=$(location start.sh)",
         "./usr/bin/eventdb_wrapper.sh uid=0 gid=0 mode=0755 type=file content=$(location eventdb_wrapper.sh)",
         "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location supervisord.conf)",
