@@ -351,6 +351,26 @@ apt.install(
         "libpcap0.8t64",
         "pci.ids",
 
+        # -------- docker-lldp runtime apt deps --------
+        # rules/docker-lldp.mk installs the lldpd .deb via `apt install`, which
+        # pulls lldpd's runtime Depends. flatten() does not resolve Depends, so
+        # docker-lldp/BUILD.bazel lists each runtime .so package explicitly.
+        # libsnmp40t64, libsnmp-base, libpci3, pci.ids and libevent-2.1-7t64 are
+        # already registered above (docker-snmp / docker-orchagent / docker-nat
+        # / docker-dhcp-relay blocks). The three below are the remaining lldpd
+        # runtime deps not yet registered, verified against the Make docker-lldp
+        # image package delta vs docker-config-engine-trixie:
+        #   libsensors5       -> libsensors.so.5   (transitive dep of libsnmp40t64)
+        #   libsensors-config -> /etc/sensors3.conf (arch:all data of libsensors5)
+        #   libxml2           -> libxml2.so.2      (lldpd SNMP/XML support)
+        # Registering names here only makes the @trixie//<pkg> targets
+        # addressable; it does NOT add them to any image (the base BUILD.bazel
+        # flat list is unchanged), so docker-config-engine-trixie and every other
+        # image are byte-for-byte unaffected.
+        "libsensors5",
+        "libsensors-config",
+        "libxml2",
+
         # -------- Debug-only variant packages (rules/docker-base-trixie.mk _DBG_IMAGE_PACKAGES) --------
         # These are NOT baked into the base image (see BUILD.bazel `flat` list),
         # but registered here so the `debug-packages` flatten target can pull
