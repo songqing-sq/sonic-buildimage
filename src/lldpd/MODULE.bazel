@@ -1,0 +1,111 @@
+module(
+    name = "lldpd",
+    version = "1.0.16-1+deb12u1",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+LLDPD_VERSION = "1.0.16"
+
+LLDPD_VERSION_FULL = "1.0.16-1+deb12u1"
+
+# =============================================================================
+# Upstream lldpd 1.0.16 orig tarball (Approach B: cc-rebuild from source).
+#
+# Patch order (mirrors the Make flow in src/lldpd/Makefile, which runs
+# dpkg-buildpackage: dpkg-source applies debian/patches/series FIRST during
+# extraction, then `stg import -s ../patch/series` applies the SONiC StGIT
+# patches on top):
+#   1. Debian quilt 0002 (CVE-2023-41910 CDP read-overflow, src/daemon/
+#      protocols/cdp.c) -- functional, applied.
+#      Debian quilt 0001 (ZSH completion dir, src/client/Makefile.am) is
+#      packaging-only for the autotools install path; we place the ZSH
+#      completion into vendor-completions ourselves in the sonic_deb content
+#      map, so this Makefile.am hunk is irrelevant to the cc build and is
+#      SKIPPED.
+#   2. SONiC 0001 (return error when port does not exist, src/client/
+#      conf-lldp.c).
+#   3. SONiC 0002 (dual netlink socket for changes vs queries, src/daemon/
+#      netlink.c).
+# All four touch disjoint files, so relative ordering is not load-bearing.
+#
+# patch_tool="patch" is used because SONiC 0001 applies with a line offset
+# (+25/+31), which Bazel's native patch implementation rejects.
+# =============================================================================
+sonic_http_archive = use_repo_rule("@sonic_build_infra//sonic_http_archive:sonic_http_archive.bzl", "sonic_http_archive")
+
+sonic_http_archive(
+    name = "lldpd_src",
+    build_file_template = "//:lldpd.BUILD",
+    sha256 = "e3b391650c7ba67cea2fe84d67fdb4d7fc8aa1ec5cf86eb8bb984711df8465a9",
+    strip_prefix = "lldpd-{}".format(LLDPD_VERSION),
+    urls = ["https://snapshot.debian.org/archive/debian/20260409T202916Z/pool/main/l/lldpd/lldpd_{}.orig.tar.gz".format(LLDPD_VERSION)],
+    patch_tool = "patch",
+    patch_strip = 1,
+    patches = [
+        "//:debian_patches/0002-daemon-fix-read-overflow-when-parsing-CDP-addresses.patch",
+        "//:patch/0001-return-error-when-port-does-not-exist.patch",
+        "//:patch/0002-use-a-different-socket-for-changes-and-queries.patch",
+    ],
+)
+
+# =============================================================================
+# Debian packaging tarball (lldpd_1.0.16-1+deb12u1.debian.tar.xz). Source of
+# the packaging data files: debian/lldpd.default, debian/lldpd.init.d,
+# debian/copyright, debian/changelog, debian/README.Debian,
+# debian/lldpd.lintian-overrides, and the quilt patch above. Extracted verbatim
+# via genrules in the BUILD file. sha256 computed via curl + sha256sum against
+# the public snapshot.debian.org mirror.
+# =============================================================================
+sonic_http_archive(
+    name = "lldpd_debian",
+    build_file_template = "//:lldpd_debian.BUILD",
+    sha256 = "8386992f3755e3aef666ef9a9a5e33df95add994e595cffc535645511bcafec9",
+    type = "tar.xz",
+    urls = ["https://snapshot.debian.org/archive/debian/20260409T202916Z/pool/main/l/lldpd/lldpd_{}.debian.tar.xz".format(LLDPD_VERSION_FULL)],
+)
+
+# =============================================================================
+# Build-only system dependencies (apt). trixie + PUBLIC snapshot.debian.org,
+# dual-arch to keep the amd64/arm64 sysroots isolated (peer convention:
+# src/dhcpmon/MODULE.bazel).
+# =============================================================================
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = [
+        "trixie",
+        "trixie-updates",
+    ],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+apt.install(
+    dependency_set = "lldpd_deps",
+    packages = [
+        "libsnmp-dev:amd64",
+        "libsnmp-dev:arm64",
+        "libxml2-dev:amd64",
+        "libxml2-dev:arm64",
+        "libreadline-dev:amd64",
+        "libreadline-dev:arm64",
+        "libcap-dev:amd64",
+        "libcap-dev:arm64",
+        "libbsd-dev:amd64",
+        "libbsd-dev:arm64",
+        "libevent-dev:amd64",
+        "libevent-dev:arm64",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(apt, "lldpd_deps")

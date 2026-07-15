@@ -1,0 +1,351 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@sonic_build_infra//shared_library:shared_library.bzl", "symlink_to_path")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.0.16-1+deb12u1"
+
+LLDPD_DESCRIPTION = "implementation of IEEE 802.1ab (LLDP)\n LLDP is an industry standard protocol designed to supplant\n proprietary Link-Layer protocols such as Extreme's EDP (Extreme\n Discovery Protocol) and CDP (Cisco Discovery Protocol). The goal of\n LLDP is to provide an inter-vendor compatible mechanism to deliver\n Link-Layer notifications to adjacent network devices.\n .\n This implementation provides LLDP sending and reception, supports\n VLAN and includes an SNMP subagent that can interface to an SNMP\n agent through AgentX protocol.\n .\n This daemon is also able to deal with CDP, SONMP, FDP and EDP\n protocol. It also handles LLDP-MED extension."
+
+LIBLLDPCTL_DEV_DESCRIPTION = "implementation of IEEE 802.1ab (LLDP) - development files\n LLDP is an industry standard protocol designed to supplant\n proprietary Link-Layer protocols such as Extreme's EDP (Extreme\n Discovery Protocol) and CDP (Cisco Discovery Protocol). The goal of\n LLDP is to provide an inter-vendor compatible mechanism to deliver\n Link-Layer notifications to adjacent network devices.\n .\n This implementation provides LLDP sending and reception, supports\n VLAN and includes an SNMP subagent that can interface to an SNMP\n agent through AgentX protocol.\n .\n This daemon is also able to deal with CDP, SONMP, FDP and EDP\n protocol. It also handles LLDP-MED extension.\n .\n This package contains development files to develop clients for lldpd."
+
+# =============================================================================
+# Rename genrules: debhelper installs these Debian packaging files under a
+# different basename than their source name in the debian/ tree.
+# =============================================================================
+genrule(
+    name = "etc_default_lldpd",
+    srcs = ["@lldpd_debian//:debian/lldpd.default"],
+    outs = ["gen/default/lldpd"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "etc_initd_lldpd",
+    srcs = ["@lldpd_debian//:debian/lldpd.init.d"],
+    outs = ["gen/initd/lldpd"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "lintian_override_lldpd",
+    srcs = ["@lldpd_debian//:debian/lldpd.lintian-overrides"],
+    outs = ["gen/lintian/lldpd"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "changelog_debian_gz",
+    srcs = ["@lldpd_debian//:debian/changelog"],
+    outs = ["changelog.Debian.gz"],
+    cmd = "gzip -9nc $< > $@",
+)
+
+# =============================================================================
+# Symlinks placed into the data tar.
+# =============================================================================
+symlink_to_path(
+    name = "lldpctl_sbin_link",
+    output = "lldpctl",
+    target_path = "lldpcli",
+)
+
+symlink_to_path(
+    name = "lldpctl_man_link",
+    output = "lldpctl.8.gz",
+    target_path = "lldpcli.8.gz",
+)
+
+# =============================================================================
+# Maintainer scripts / conffiles / triggers.
+#
+# Generated hermetically (write_file) so the Bazel build never depends on the
+# Make output. The package-specific bodies of postinst/postrm come verbatim
+# from the Debian source tarball (debian/lldpd.postinst, debian/lldpd.postrm);
+# the "Automatically added by dh_*" fragments and preinst/prerm/conffiles/
+# triggers are standard debhelper-13 boilerplate, reconstructed here (they are
+# not present as literal files in the debian source tarball -- debhelper emits
+# them at dpkg-buildpackage time).
+# =============================================================================
+write_file(
+    name = "preinst",
+    out = "gen/preinst",
+    content = [
+        "#!/bin/sh",
+        "set -e",
+        "# Automatically added by dh_installinit/13.24.2",
+        "if [ \"$1\" = \"install\" ] && [ -n \"$2\" ] && [ -e \"/etc/init.d/lldpd\" ] ; then",
+        "\tchmod +x \"/etc/init.d/lldpd\" >/dev/null || true",
+        "fi",
+        "# End automatically added section",
+        "",
+    ],
+    is_executable = True,
+)
+
+write_file(
+    name = "prerm",
+    out = "gen/prerm",
+    content = [
+        "#!/bin/sh",
+        "set -e",
+        "# Automatically added by dh_installsystemd/13.24.2",
+        "if [ -z \"$DPKG_ROOT\" ] && [ \"$1\" = remove ] && [ -d /run/systemd/system ] ; then",
+        "\tdeb-systemd-invoke stop 'lldpd.service' >/dev/null || true",
+        "fi",
+        "# End automatically added section",
+        "# Automatically added by dh_installinit/13.24.2",
+        "if [ -z \"$DPKG_ROOT\" ] && [ \"$1\" = remove ] && [ -x \"/etc/init.d/lldpd\" ] ; then",
+        "\tinvoke-rc.d --skip-systemd-native lldpd stop || exit 1",
+        "fi",
+        "# End automatically added section",
+        "",
+    ],
+    is_executable = True,
+)
+
+write_file(
+    name = "postinst",
+    out = "gen/postinst",
+    content = [
+        "#!/bin/sh",
+        "",
+        "set -e",
+        "",
+        "case \"$1\" in",
+        "    configure|reconfigure)",
+        "        adduser --system --disabled-password --disabled-login --home /run/lldpd \\",
+        "       \t    --no-create-home --quiet --force-badname --group _lldpd",
+        "",
+        "        for i in /usr/sbin/lldpcli; do",
+        "            if ! dpkg-statoverride --list $i > /dev/null 2>&1; then",
+        "                dpkg-statoverride --update --add _lldpd adm 4750 $i",
+        "            fi",
+        "        done",
+        "        ;;",
+        "esac",
+        "",
+        "# Automatically added by dh_installinit/13.24.2",
+        "if [ \"$1\" = \"configure\" ] || [ \"$1\" = \"abort-upgrade\" ] || [ \"$1\" = \"abort-deconfigure\" ] || [ \"$1\" = \"abort-remove\" ] ; then",
+        "\tif [ -z \"$DPKG_ROOT\" ] && [ -x \"/etc/init.d/lldpd\" ]; then",
+        "\t\tupdate-rc.d lldpd defaults >/dev/null",
+        "\t\tif [ -n \"$2\" ]; then",
+        "\t\t\t_dh_action=restart",
+        "\t\telse",
+        "\t\t\t_dh_action=start",
+        "\t\tfi",
+        "\t\tinvoke-rc.d --skip-systemd-native lldpd $_dh_action || exit 1",
+        "\tfi",
+        "fi",
+        "# End automatically added section",
+        "# Automatically added by dh_installsystemd/13.24.2",
+        "if [ \"$1\" = \"configure\" ] || [ \"$1\" = \"abort-upgrade\" ] || [ \"$1\" = \"abort-deconfigure\" ] || [ \"$1\" = \"abort-remove\" ] ; then",
+        "\t# The following line should be removed in trixie or trixie+1",
+        "\tdeb-systemd-helper unmask 'lldpd.service' >/dev/null || true",
+        "",
+        "\t# was-enabled defaults to true, so new installations run enable.",
+        "\tif deb-systemd-helper --quiet was-enabled 'lldpd.service'; then",
+        "\t\t# Enables the unit on first installation, creates new",
+        "\t\t# symlinks on upgrades if the unit file has changed.",
+        "\t\tdeb-systemd-helper enable 'lldpd.service' >/dev/null || true",
+        "\telse",
+        "\t\t# Update the statefile to add new symlinks (if any), which need to be",
+        "\t\t# cleaned up on purge. Also remove old symlinks.",
+        "\t\tdeb-systemd-helper update-state 'lldpd.service' >/dev/null || true",
+        "\tfi",
+        "fi",
+        "# End automatically added section",
+        "# Automatically added by dh_installsystemd/13.24.2",
+        "if [ \"$1\" = \"configure\" ] || [ \"$1\" = \"abort-upgrade\" ] || [ \"$1\" = \"abort-deconfigure\" ] || [ \"$1\" = \"abort-remove\" ] ; then",
+        "\tif [ -d /run/systemd/system ]; then",
+        "\t\tsystemctl --system daemon-reload >/dev/null || true",
+        "\t\tif [ -n \"$2\" ]; then",
+        "\t\t\t_dh_action=restart",
+        "\t\telse",
+        "\t\t\t_dh_action=start",
+        "\t\tfi",
+        "\t\tdeb-systemd-invoke $_dh_action 'lldpd.service' >/dev/null || true",
+        "\tfi",
+        "fi",
+        "# End automatically added section",
+        "",
+        "",
+        "exit 0",
+        "",
+    ],
+    is_executable = True,
+)
+
+write_file(
+    name = "postrm",
+    out = "gen/postrm",
+    content = [
+        "#!/bin/sh",
+        "",
+        "set -e",
+        "",
+        "# Automatically added by dh_installinit/13.24.2",
+        "if [ \"$1\" = \"remove\" ] && [ -x \"/etc/init.d/lldpd\" ] ; then",
+        "\tchmod -x \"/etc/init.d/lldpd\" >/dev/null || true",
+        "fi",
+        "if [ -z \"$DPKG_ROOT\" ] && [ \"$1\" = \"purge\" ] ; then",
+        "\tupdate-rc.d lldpd remove >/dev/null",
+        "fi",
+        "# End automatically added section",
+        "# Automatically added by dh_installsystemd/13.24.2",
+        "if [ \"$1\" = remove ] && [ -d /run/systemd/system ] ; then",
+        "\tsystemctl --system daemon-reload >/dev/null || true",
+        "fi",
+        "# End automatically added section",
+        "# Automatically added by dh_installsystemd/13.24.2",
+        "if [ \"$1\" = \"purge\" ]; then",
+        "\tif [ -x \"/usr/bin/deb-systemd-helper\" ]; then",
+        "\t\tdeb-systemd-helper purge 'lldpd.service' >/dev/null || true",
+        "\tfi",
+        "fi",
+        "# End automatically added section",
+        "",
+        "",
+        "case \"$1\" in",
+        "    purge)",
+        "\tdpkg-statoverride --remove /usr/sbin/lldpcli",
+        "\tdpkg-statoverride --quiet --remove /usr/sbin/lldpctl || true",
+        "        deluser --system _lldpd || true",
+        "        delgroup --system _lldpd || true",
+        "",
+        "        rm -rf /run/lldpd",
+        "    ;;",
+        "    *)",
+        "    ;;",
+        "esac",
+        "",
+        "exit 0",
+        "",
+    ],
+    is_executable = True,
+)
+
+write_file(
+    name = "conffiles",
+    out = "gen/conffiles",
+    content = [
+        "/etc/default/lldpd",
+        "/etc/init.d/lldpd",
+        "/etc/lldpd.d/README.conf",
+        "",
+    ],
+)
+
+write_file(
+    name = "triggers",
+    out = "gen/triggers",
+    content = [
+        "# Triggers added by dh_makeshlibs/13.24.2",
+        "activate-noawait ldconfig",
+        "",
+    ],
+)
+
+# shlibs: provided explicitly to match the Make deb. The sonic_deb auto-shlibs
+# path shells out to the hermetic CC toolchain's objdump to read the SONAME;
+# in this sandbox that lookup yields an empty result, so the runtime shlibs
+# dependency line is supplied directly instead. Mirrors what dh_makeshlibs
+# emits (`liblldpctl 4 lldpd (>= <upstream version>)`).
+write_file(
+    name = "shlibs",
+    out = "gen/shlibs",
+    content = [
+        "liblldpctl 4 lldpd (>= 1.0.16)",
+        "",
+    ],
+)
+
+# =============================================================================
+# lldpd - main package (daemon, CLI, versioned liblldpctl runtime library,
+# init/systemd/config data, docs, man pages, completions). gen_dbg auto-emits
+# the lldpd-dbgsym package.
+# =============================================================================
+sonic_deb(
+    name = "lldpd_{}.deb".format(VERSION),
+    package = "lldpd",
+    version = VERSION,
+    content = {
+        "/usr/sbin:*:0755": [
+            "@lldpd_src//:lldpd",
+            "@lldpd_src//:lldpcli",
+            ":lldpctl_sbin_link",
+        ],
+        "${LIBDIR}:*:0644": ["@lldpd_src//:lldpctl_files"],
+        "/etc/default:*:0644": [":etc_default_lldpd"],
+        "/etc/init.d:*:0755": [":etc_initd_lldpd"],
+        "/etc/lldpd.d:*:0644": ["@lldpd_src//:readme_conf"],
+        "/lib/systemd/system:*:0644": ["@lldpd_src//:lldpd_service"],
+        "/usr/share/bash-completion/completions:*:0644": ["@lldpd_src//:bash_completion"],
+        "/usr/share/zsh/vendor-completions:*:0644": ["@lldpd_src//:zsh_completion"],
+        "/usr/share/doc/lldpd:*:0644": [
+            "@lldpd_src//:contribute_md",
+            "@lldpd_src//:news_gz",
+            "@lldpd_debian//:debian/README.Debian",
+            "@lldpd_src//:readme_md_gz",
+            ":changelog_debian_gz",
+            "@lldpd_debian//:debian/copyright",
+        ],
+        "/usr/share/lintian/overrides:*:0644": [":lintian_override_lldpd"],
+        "/usr/share/man/man8:*:0644": [
+            "@lldpd_src//:lldpd_man",
+            "@lldpd_src//:lldpcli_man",
+            ":lldpctl_man_link",
+        ],
+    },
+    conffiles_file = ":conffiles",
+    description = LLDPD_DESCRIPTION,
+    depends = [
+        "libbsd0 (>= 0.6.0)",
+        "libc6 (>= 2.38)",
+        "libcap2 (>= 1:2.10)",
+        "libevent-2.1-7t64 (>= 2.1.8-stable)",
+        "libreadline8t64 (>= 6.0)",
+        "libsnmp40t64 (>= 5.9.4+dfsg)",
+        "libxml2 (>= 2.7.4)",
+        "adduser",
+        "lsb-base",
+    ],
+    gen_dbg = True,
+    homepage = "https://lldpd.github.io",
+    maintainer = "Vincent Bernat <bernat@debian.org>",
+    postinst = ":postinst",
+    postrm = ":postrm",
+    pre_depends = ["init-system-helpers (>= 1.54~)"],
+    preinst = ":preinst",
+    prerm = ":prerm",
+    section = "net",
+    shlibs = ":shlibs",
+    suggests = ["snmpd"],
+    triggers = ":triggers",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# liblldpctl-dev - development files (headers, pkgconfig, .so dev symlink).
+# =============================================================================
+sonic_deb(
+    name = "liblldpctl-dev_{}.deb".format(VERSION),
+    package = "liblldpctl-dev",
+    version = VERSION,
+    content = {
+        "/usr/include:*:0644": ["@lldpd_src//:public_headers"],
+        "${LIBDIR}/pkgconfig:*:0644": ["@lldpd_src//:lldpctl_pc"],
+        "${LIBDIR}:*:0644": ["@lldpd_src//:lldpctl_dev_link_direct"],
+        "/usr/share/doc/liblldpctl-dev:*:0644": [
+            ":changelog_debian_gz",
+            "@lldpd_debian//:debian/copyright",
+        ],
+    },
+    description = LIBLLDPCTL_DEV_DESCRIPTION,
+    depends = ["lldpd (= {})".format(VERSION)],
+    homepage = "https://lldpd.github.io",
+    maintainer = "Vincent Bernat <bernat@debian.org>",
+    section = "libdevel",
+    visibility = ["//visibility:public"],
+)

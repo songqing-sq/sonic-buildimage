@@ -5,4 +5,7 @@
 !patch/*
 !BUILD.bazel
 !lldpd.BUILD
+!lldpd_debian.BUILD
 !MODULE.bazel
+!debian_patches/
+!debian_patches/*
