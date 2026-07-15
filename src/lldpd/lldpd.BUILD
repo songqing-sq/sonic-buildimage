@@ -350,6 +350,7 @@ cc_binary(
     linkopts = [
         "-pie",
         "-lrt",
+        "-Wl,--export-dynamic",
     ],
     visibility = ["//visibility:public"],
     deps = [
