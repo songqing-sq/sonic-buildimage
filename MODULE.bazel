@@ -251,6 +251,12 @@ local_path_override(
     path = "src/socat",
 )
 
+bazel_dep(name = "lldpd", version = "1.0.16-1+deb12u1")
+local_path_override(
+    module_name = "lldpd",
+    path = "src/lldpd",
+)
+
 bazel_dep(name = "iproute2", version = "6.15.0-1")
 local_path_override(
     module_name = "iproute2",
