@@ -1,0 +1,93 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# docker-mux = docker-config-engine-trixie base + sonic-linkmgrd .deb.
+# rules/docker-mux.mk: $(DOCKER_MUX)_DEPENDS = $(SONIC_LINKMGRD) $(LIBSWSSCOMMON),
+# $(DOCKER_MUX)_LOAD_DOCKERS = $(DOCKER_CONFIG_ENGINE_TRIXIE).
+# Dockerfile.j2 (trixie two-stage): install_debian_packages(sonic-linkmgrd.deb)
+# on the docker-config-engine-trixie base, then rsync_from_builder_stage() into
+# the final image.
+#
+# Measured package delta (Make docker-mux image dpkg list minus the Make
+# docker-config-engine-trixie base) is EXACTLY 5 packages:
+#   sonic-linkmgrd (SONiC-built, shipped below from @sonic-linkmgrd) +
+#   libboost-{filesystem,log,program-options,thread}1.83.0 (apt, apt_layer).
+# linkmgrd's other Depends (libc6, libgcc-s1, libstdc++6,
+# libboost-serialization1.83.0, libnl-3-200, libnl-route-3-200, libswsscommon,
+# libmnl0) are already present in the config-engine base. flatten() does NOT
+# resolve deb Depends, so each runtime lib is listed explicitly.
+
+# Boost runtime libs linked by linkmgrd, not already in the base. Declared in
+# the shared @trixie apt pool (dockers/docker-base-trixie/base_trixie.MODULE.bazel,
+# "docker-mux runtime apt deps" block).
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//libboost-filesystem1.83.0:data",
+        "@trixie//libboost-log1.83.0:data",
+        "@trixie//libboost-program-options1.83.0:data",
+        "@trixie//libboost-thread1.83.0:data",
+    ],
+)
+
+# SONiC-built deb. Both `_data` (file contents) and `_statusd` (dpkg status.d
+# stub) so `dpkg -l` inside the container lists sonic-linkmgrd.
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        "@sonic-linkmgrd//:sonic-linkmgrd_1.0.0-1.deb_data",
+        "@sonic-linkmgrd//:sonic-linkmgrd_1.0.0-1.deb_statusd",
+    ],
+)
+
+# COPY'd files (dzf Dockerfile.j2 lines 21-26):
+#   COPY docker-init.sh     -> /usr/bin/
+#   COPY supervisord.conf   -> /etc/supervisor/conf.d/
+#   COPY critical_processes -> /etc/supervisor/
+#   COPY *.j2               -> /usr/share/sonic/templates/  (only Dockerfile.j2)
+# NOTE: trixie's docker-mux does NOT ship supervisor-proc-exit-listener
+# (rules/docker-mux.mk has no SUPERVISOR_PROC_EXIT_LISTENER_SCRIPT, unlike the
+# bookworm reference), and mode/owner/path are set precisely via mtree.
+tar(
+    name = "files",
+    srcs = [
+        "docker-init.sh",
+        "supervisord.conf",
+        "critical_processes",
+        "Dockerfile.j2",
+    ],
+    mtree = [
+        "./usr/bin/docker-init.sh uid=0 gid=0 mode=0755 type=file content=$(location docker-init.sh)",
+        "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location supervisord.conf)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location critical_processes)",
+        "./usr/share/sonic/templates/Dockerfile.j2 uid=0 gid=0 mode=0644 type=file content=$(location Dockerfile.j2)",
+    ],
+)
+
+# Make docker-mux final stage (verified via `docker inspect`):
+# Entrypoint=["/usr/bin/docker-init.sh"], WorkingDir="/", Env adds
+# DEBIAN_FRONTEND=noninteractive on top of the base PATH.
+oci_image(
+    name = "docker-mux",
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    entrypoint = ["/usr/bin/docker-init.sh"],
+    workdir = "/",
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+    },
+    tars = [
+        ":apt_layer",
+        ":sonic_pkgs",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-mux",
+    repo_tags = ["docker-mux:latest"],
+)
