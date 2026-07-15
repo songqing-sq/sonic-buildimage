@@ -137,6 +137,12 @@ local_path_override(
     path = "src/sonic-eventd",
 )
 
+bazel_dep(name = "dhcpmon", version = "1.0.0-0")
+local_path_override(
+    module_name = "dhcpmon",
+    path = "src/dhcpmon",
+)
+
 bazel_dep(name = "sonic-supervisord-utilities-rs", version = "1.0.0")
 local_path_override(
     module_name = "sonic-supervisord-utilities-rs",

@@ -251,6 +251,17 @@ apt.install(
         # wget is new here.
         "wget",
 
+        # -------- docker-dhcp-relay runtime apt deps --------
+        # Runtime libs linked by the sonic-built dhcp debs (dhcp4relay /
+        # dhcp6relay / dhcpmon) + isc-dhcp-relay. The -dev variants the
+        # Dockerfile apt-installs are build-only (purged), so only these
+        # runtime .so packages ship. Not present in the config-engine base.
+        "libevent-2.1-7t64",
+        "libevent-pthreads-2.1-7t64",
+        "libexplain51t64",
+        "libjsoncpp26",
+        "libpcap0.8t64",
+
 
         # -------- Debug-only variant packages (rules/docker-base-trixie.mk _DBG_IMAGE_PACKAGES) --------
         # These are NOT baked into the base image (see BUILD.bazel `flat` list),

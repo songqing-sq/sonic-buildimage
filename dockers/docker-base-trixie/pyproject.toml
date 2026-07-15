@@ -78,6 +78,10 @@ dependencies = [
     # `smbus` module from apt python3-smbus instead.
     "hiredis",
     "python-arptable",
+
+    # ---- docker-dhcp-relay deps ----
+    # sonic-dhcp-utilities install_requires: psutil (already above) + freezegun.
+    "freezegun",
 ]
 
 # pyangbind unconditionally depends on enum34, which on Python 3 shadows the
