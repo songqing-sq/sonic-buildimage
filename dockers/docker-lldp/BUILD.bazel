@@ -1,0 +1,162 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# =============================================================================
+# docker-lldp: SONiC LLDP agent container (lldpd daemon + lldpmgrd + lldp_syncd).
+# Mirrors dockers/docker-lldp/Dockerfile.j2 (+ Dockerfile.common.j2) and
+# rules/docker-lldp.mk, built FROM docker-config-engine-trixie.
+#
+# Ground truth for every layer below is the Make image target/docker-lldp.gz:
+# the file/package delta of Make docker-lldp minus Make docker-config-engine-trixie
+# is exactly one SONiC deb (lldpd), eight apt runtime debs, and one Python wheel
+# layer (sonic-dbsyncd), plus the COPY'd scripts/templates. See
+# mig_docs/diff/docker-lldp_diff.md for the full evidence.
+# =============================================================================
+
+# apt runtime deps. rules/docker-lldp.mk installs the lldpd .deb via
+# `apt install`, which pulls lldpd's runtime Depends. flatten() does NOT resolve
+# Depends, so every runtime .so package that is NOT already in the
+# docker-config-engine-trixie base is listed explicitly here. The set was
+# derived from the Make package delta (Make docker-lldp minus Make
+# docker-config-engine-trixie), which is exactly these 8 packages:
+#   libsnmp40t64    -> libnetsnmp*.so.40 / libsnmp.so.40 (lldpd SNMP subagent)
+#   libsnmp-base    -> /etc/snmp/snmp.conf + MIB data (arch:all -> :data)
+#   libsensors5     -> libsensors.so.5 (transitive dep of libsnmp40t64)
+#   libsensors-config -> /etc/sensors3.conf (arch:all -> :data)
+#   libpci3         -> libpci.so.3 (transitive dep of libsnmp40t64)
+#   pci.ids         -> /usr/share/misc/pci.ids (arch:all -> :data)
+#   libevent-2.1-7t64 -> libevent-2.1.so.7 (lldpd event loop)
+#   libxml2         -> libxml2.so.2 (lldpd -x / SNMP XML support)
+# All 8 are registered in dockers/docker-base-trixie/base_trixie.MODULE.bazel
+# (the shared @trixie apt pool); libsensors5/libsensors-config/libxml2 were added
+# there for this image (see that file's docker-lldp block).
+#
+# IMPORTANT: every package uses the `:data` target, NOT the bare `@trixie//<pkg>`
+# label. The bare label expands to the package's FULL apt dependency closure
+# (perl, libc6 for both arches, libssl3, libcrypto, libdb5.3, ... — ~125 MB,
+# 4407 members), which would balloon this layer far beyond the Make image.
+# Make's `apt install lldpd.deb` only ADDS the packages not already present in
+# the base rootfs, and the Make package delta (Make docker-lldp minus Make
+# docker-config-engine-trixie) is exactly these 8 packages — every closure dep
+# (perl/libc/libssl/...) is already in the docker-config-engine-trixie base.
+# `:data` yields just that one package's data.tar (no closure), so the shipped
+# set matches the Make delta byte-for-byte.
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//libsnmp40t64:data",
+        "@trixie//libsnmp-base:data",
+        "@trixie//libsensors5:data",
+        "@trixie//libsensors-config:data",
+        "@trixie//libpci3:data",
+        "@trixie//pci.ids:data",
+        "@trixie//libevent-2.1-7t64:data",
+        "@trixie//libxml2:data",
+    ],
+)
+
+# SONiC-built debs. rules/docker-lldp.mk:
+#   $(DOCKER_LLDP)_DEPENDS += $(LLDPD) $(LIBSWSSCOMMON) $(PYTHON3_SWSSCOMMON)
+# LIBSWSSCOMMON / PYTHON3_SWSSCOMMON are already installed by the parent
+# docker-config-engine-trixie image, so only the lldpd deb is new here (verified
+# against the Make package delta). `_data` (contents) + `_statusd` (dpkg
+# status.d stub) so `dpkg -l` inside the container lists it.
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        "@lldpd//:lldpd_1.0.16-1+deb12u1.deb_data",
+        "@lldpd//:lldpd_1.0.16-1+deb12u1.deb_statusd",
+    ],
+)
+
+# Python content layer. rules/docker-lldp.mk: _PYTHON_WHEELS += $(DBSYNCD_PY3).
+# sonic-dbsyncd's :install lays out lldp_syncd + sonic_syncd at
+# /usr/lib/python3/dist-packages (the bazel wheel-layout path; the Make image
+# uses pip's /usr/local/lib/python3.13/dist-packages — an accepted path-only
+# difference shared by every wheel :install in this project). swsssdk is NOT
+# shipped: the Make docker-lldp image contains no swsssdk (verified: zero
+# swsssdk files in both the Make lldp image and the config-engine base), so we
+# match Make and do not add @sonic-py-swsssdk (unlike the bookworm reference,
+# which shipped it — flagged in the diff doc).
+flatten(
+    name = "python_layer",
+    deduplicate = True,
+    tars = [
+        "@sonic-dbsyncd//:install",
+    ],
+)
+
+# COPY'd SONiC files. dzf Dockerfile.j2 + Dockerfile.common.j2:
+#   COPY docker-lldp-init.sh        -> /usr/bin/            (0755)
+#   COPY start.sh                   -> /usr/bin/            (0755)
+#   COPY supervisord.conf.j2        -> /usr/share/sonic/templates/ (0644)
+#   COPY supervisord.conf.common.j2 -> /usr/share/sonic/templates/ (0644)
+#   COPY critical_processes         -> /etc/supervisor/     (0644)
+#   (Dockerfile.common.j2)
+#   COPY waitfor_lldp_ready.sh      -> /usr/bin/            (0755, chmod +x)
+#   COPY lldpd.conf.j2              -> /usr/share/sonic/templates/ (0644)
+#   COPY lldpdSysDescr.conf.j2      -> /usr/share/sonic/templates/ (0644)
+#   COPY lldpd                      -> /etc/default/        (0644)
+#   COPY lldpmgrd                   -> /usr/bin/            (0755, chmod +x)
+# Modes verified against the Make image (stat). This layer is applied AFTER
+# sonic_pkgs so the COPY'd /etc/default/lldpd overwrites the lldpd deb's copy
+# (matches the Make Docker COPY ordering).
+# NOTE: base_image_files/{lldpcli,lldpctl} are HOST-side BASE_IMAGE_FILES shims
+# (rules/docker-lldp.mk: _BASE_IMAGE_FILES += lldpctl:/usr/bin/lldpctl); they are
+# installed onto the SONiC host, NOT into this container, so they are excluded.
+# NOTE: supervisor-proc-exit-listener is NOT copied here (the dzf Dockerfile does
+# not COPY it) — it is already present in the docker-config-engine-trixie base.
+tar(
+    name = "files",
+    srcs = [
+        "docker-lldp-init.sh",
+        "start.sh",
+        "waitfor_lldp_ready.sh",
+        "lldpmgrd",
+        "supervisord.conf.j2",
+        "supervisord.conf.common.j2",
+        "lldpd.conf.j2",
+        "lldpdSysDescr.conf.j2",
+        "lldpd",
+        "critical_processes",
+    ],
+    mtree = [
+        "./usr/bin/docker-lldp-init.sh uid=0 gid=0 mode=0755 type=file content=$(location docker-lldp-init.sh)",
+        "./usr/bin/start.sh uid=0 gid=0 mode=0755 type=file content=$(location start.sh)",
+        "./usr/bin/waitfor_lldp_ready.sh uid=0 gid=0 mode=0755 type=file content=$(location waitfor_lldp_ready.sh)",
+        "./usr/bin/lldpmgrd uid=0 gid=0 mode=0755 type=file content=$(location lldpmgrd)",
+        "./usr/share/sonic/templates/supervisord.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location supervisord.conf.j2)",
+        "./usr/share/sonic/templates/supervisord.conf.common.j2 uid=0 gid=0 mode=0644 type=file content=$(location supervisord.conf.common.j2)",
+        "./usr/share/sonic/templates/lldpd.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location lldpd.conf.j2)",
+        "./usr/share/sonic/templates/lldpdSysDescr.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location lldpdSysDescr.conf.j2)",
+        "./etc/default/lldpd uid=0 gid=0 mode=0644 type=file content=$(location lldpd)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location critical_processes)",
+    ],
+)
+
+oci_image(
+    name = "docker-lldp",
+    # Dockerfile.j2: FROM docker-config-engine-trixie.
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    # Dockerfile.j2: ENTRYPOINT ["/usr/bin/docker-lldp-init.sh"].
+    entrypoint = ["/usr/bin/docker-lldp-init.sh"],
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+    },
+    tars = [
+        ":apt_layer",
+        ":sonic_pkgs",
+        ":python_layer",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-lldp",
+    repo_tags = ["docker-lldp:latest"],
+)

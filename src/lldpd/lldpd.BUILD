@@ -337,8 +337,10 @@ cc_library(
         ":libcommon_daemon_lib",
         ":libcommon_daemon_client",
         ":libcompat",
-        "@lldpd_deps//libsnmp-dev:libsnmp",
-        "@lldpd_deps//libevent-dev:libevent",
+        "@lldpd_deps//libsnmp-dev:netsnmp",
+        "@lldpd_deps//libsnmp-dev:netsnmpagent",
+        "@lldpd_deps//libsnmp-dev:netsnmpmibs",
+        "@lldpd_deps//libevent-dev:event",
         "@lldpd_deps//libcap-dev:libcap",
     ],
 )
@@ -355,8 +357,10 @@ cc_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":liblldpd",
-        "@lldpd_deps//libsnmp-dev:libsnmp",
-        "@lldpd_deps//libevent-dev:libevent",
+        "@lldpd_deps//libsnmp-dev:netsnmp",
+        "@lldpd_deps//libsnmp-dev:netsnmpagent",
+        "@lldpd_deps//libsnmp-dev:netsnmpmibs",
+        "@lldpd_deps//libevent-dev:event",
         "@lldpd_deps//libcap-dev:libcap",
     ],
 )
