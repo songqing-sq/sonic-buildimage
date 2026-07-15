@@ -1,0 +1,184 @@
+load("@aspect_rules_py//py:defs.bzl", "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# =============================================================================
+# docker-eventd: SONiC event daemon container (eventd + eventdb + rsyslog
+# plugin telemetry config). Mirrors dockers/docker-eventd/Dockerfile.j2 and
+# rules/docker-eventd.mk, built FROM docker-config-engine-trixie.
+#
+# Ground truth is the Make image target/docker-eventd.gz. Its rootfs delta over
+# target/docker-config-engine-trixie.gz (build-hook noise aside) is exactly:
+#   - 5 rendered rsyslog *_events.conf (host/bgp/dhcp_relay/swss/syncd)
+#   - manifest.json (generate_manifest output, swept into the rsyslog dir by the
+#     Dockerfile `COPY *.json` wildcard)
+#   - supervisord.conf, critical_processes, eventdb_wrapper.sh, start.sh
+#
+# There is NO sonic_pkgs / apt / python layer: sonic-eventd itself is not a new
+# package here. docker-config-engine-trixie already ships @sonic-eventd
+# deb_data+statusd (see dockers/docker-config-engine-trixie/BUILD.bazel L92-93),
+# so the eventd binaries + dpkg status are inherited from the base. The Make
+# image only re-registers sonic-eventd in dpkg (build-hook noise). See
+# mig_docs/diff/docker-eventd_diff.md for the full package/file evidence.
+# =============================================================================
+
+# Renders *_events.conf at build time from *_events_info.json +
+# files/build_templates/rsyslog_plugin.conf.j2, replacing the five
+# `RUN j2 -f json ... > *_events.conf` lines in Dockerfile.j2 plus the
+# subsequent `rm -f` cleanup. The .j2 + *_events_info.json sources never enter
+# the image. render_rsyslog_conf.py implements only the Jinja2 subset the
+# template uses ({% for %} + {{ var }}/{{ obj.attr }}) so no jinja2 dep is
+# needed at build time.
+py_binary(
+    name = "render_rsyslog_conf",
+    srcs = ["render_rsyslog_conf.py"],
+    main = "render_rsyslog_conf.py",
+)
+
+# One genrule per event stream — mirrors the five Dockerfile.j2 RUN j2 lines.
+[
+    genrule(
+        name = "render_{}_events_conf".format(stream),
+        srcs = [
+            "{}_events_info.json".format(stream),
+            "//files/build_templates:rsyslog_plugin.conf.j2",
+        ],
+        outs = ["{}_events.conf".format(stream)],
+        cmd = " ".join([
+            "$(execpath :render_rsyslog_conf)",
+            "--template $(execpath //files/build_templates:rsyslog_plugin.conf.j2)",
+            "--data $(execpath {}_events_info.json)".format(stream),
+            "--output $@",
+        ]),
+        tools = [":render_rsyslog_conf"],
+    )
+    for stream in [
+        "host",
+        "bgp",
+        "dhcp_relay",
+        "swss",
+        "syncd",
+    ]
+]
+
+# manifest.json is the Make `generate_manifest` output — a render of
+# files/build_templates/manifest.json.j2 with rules/docker-eventd.mk metadata
+# (_PACKAGE_NAME = eventd, _VERSION = 1.0.0, host-service). Every field is
+# build-invariant for eventd (no version_suffix, no depends/requires), so the
+# render is fully static and reproduced verbatim below (byte-for-byte identical
+# to the Make artifact, incl. the leading blank line the j2 emits). In the Make
+# image it ends up in /etc/rsyslog.d/rsyslog_plugin_conf/ because Dockerfile.j2
+# does `COPY ["*.json", "/etc/rsyslog.d/rsyslog_plugin_conf/"]` and only the
+# *_events_info.json (not manifest.json) are rm'd afterwards.
+genrule(
+    name = "manifest_json",
+    outs = ["manifest.json"],
+    cmd = """cat > $@ <<'SONIC_MANIFEST_EOF'
+
+{
+    "version": "1.0.0",
+    "package": {
+        "version": "1.0.0",
+        "depends": [],
+        "name": "eventd"
+    },
+    "service": {
+        "name": "eventd",
+        "requires": [],
+        "after": [],
+        "before": [],
+        "dependent-of": [],
+        "asic-service": false,
+        "host-service": true,
+        "warm-shutdown": {
+            "after": [],
+            "before": []
+        },
+        "fast-shutdown": {
+            "after": [],
+            "before": []
+        },
+        "syslog": {
+            "support-rate-limit": true
+        }
+    },
+    "container": {
+        "privileged": false,
+        "volumes": [],
+        "tmpfs": []
+    },
+    "cli": {
+        "config": "",
+        "show": "",
+        "clear": ""
+    }
+}
+SONIC_MANIFEST_EOF
+""",
+)
+
+# COPY'd files. Dockerfile.j2:
+#   COPY start.sh          -> /usr/bin/            (0755)
+#   COPY supervisord.conf  -> /etc/supervisor/conf.d/ (0644)
+#   COPY critical_processes-> /etc/supervisor/      (0644)
+#   COPY *.json            -> /etc/rsyslog.d/rsyslog_plugin_conf/ (0644)
+#   COPY files/rsyslog_plugin.conf.j2 -> (rendered at build time, not shipped)
+#   COPY eventdb_wrapper.sh-> /usr/bin/            (0755)
+# Modes verified against the Make image (tar listing of the delta layer).
+# NOTE: supervisor-proc-exit-listener is NOT copied here (the dzf Dockerfile
+# does not COPY it) — it is already present in the docker-config-engine-trixie
+# base. (The bookworm reference dockers/docker-eventd shipped it; that is a
+# reference-vs-Make difference, see the diff doc.)
+tar(
+    name = "files",
+    srcs = [
+        "start.sh",
+        "eventdb_wrapper.sh",
+        "supervisord.conf",
+        "critical_processes",
+        ":manifest_json",
+        ":render_host_events_conf",
+        ":render_bgp_events_conf",
+        ":render_dhcp_relay_events_conf",
+        ":render_swss_events_conf",
+        ":render_syncd_events_conf",
+    ],
+    mtree = [
+        "./usr/bin/start.sh uid=0 gid=0 mode=0755 type=file content=$(location start.sh)",
+        "./usr/bin/eventdb_wrapper.sh uid=0 gid=0 mode=0755 type=file content=$(location eventdb_wrapper.sh)",
+        "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location supervisord.conf)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location critical_processes)",
+        "./etc/rsyslog.d/rsyslog_plugin_conf/manifest.json uid=0 gid=0 mode=0644 type=file content=$(location :manifest_json)",
+        "./etc/rsyslog.d/rsyslog_plugin_conf/host_events.conf uid=0 gid=0 mode=0644 type=file content=$(location :render_host_events_conf)",
+        "./etc/rsyslog.d/rsyslog_plugin_conf/bgp_events.conf uid=0 gid=0 mode=0644 type=file content=$(location :render_bgp_events_conf)",
+        "./etc/rsyslog.d/rsyslog_plugin_conf/dhcp_relay_events.conf uid=0 gid=0 mode=0644 type=file content=$(location :render_dhcp_relay_events_conf)",
+        "./etc/rsyslog.d/rsyslog_plugin_conf/swss_events.conf uid=0 gid=0 mode=0644 type=file content=$(location :render_swss_events_conf)",
+        "./etc/rsyslog.d/rsyslog_plugin_conf/syncd_events.conf uid=0 gid=0 mode=0644 type=file content=$(location :render_syncd_events_conf)",
+    ],
+)
+
+oci_image(
+    name = "docker-eventd",
+    # Dockerfile.j2: ARG BASE=docker-config-engine-trixie.
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    # Dockerfile.j2: ENTRYPOINT ["/usr/local/bin/supervisord"].
+    entrypoint = ["/usr/local/bin/supervisord"],
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+    },
+    # com.azure.sonic.manifest is read (json-parsed) by sonic-host-services to
+    # manage the container. Make sets it via `--label ...="$(cat manifest.json)"`
+    # (pretty). Emitted here compact — semantically identical, whitespace-only
+    # metadata diff (same convention as docker-sysmgr).
+    labels = {
+        "com.azure.sonic.manifest": "{\"version\": \"1.0.0\", \"package\": {\"version\": \"1.0.0\", \"depends\": [], \"name\": \"eventd\"}, \"service\": {\"name\": \"eventd\", \"requires\": [], \"after\": [], \"before\": [], \"dependent-of\": [], \"asic-service\": false, \"host-service\": true, \"warm-shutdown\": {\"after\": [], \"before\": []}, \"fast-shutdown\": {\"after\": [], \"before\": []}, \"syslog\": {\"support-rate-limit\": true}}, \"container\": {\"privileged\": false, \"volumes\": [], \"tmpfs\": []}, \"cli\": {\"config\": \"\", \"show\": \"\", \"clear\": \"\"}}",
+    },
+    tars = [":files"],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-eventd",
+    repo_tags = ["docker-eventd:latest"],
+)
