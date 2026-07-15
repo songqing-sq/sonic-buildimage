@@ -1,0 +1,67 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# docker-sonic-gnmi: gNMI/telemetry agent (sonic-gnmi).
+#
+# Mirrors dockers/docker-sonic-gnmi/Dockerfile.j2 + rules/docker-gnmi.mk.
+#
+# The Dockerfile.j2 installs only the sonic-built debs (no extra apt/pip); the
+# runtime libs the gnmi binaries link (libswsscommon / libhiredis / libyang /
+# libpython3) are pulled in by the deb Depends and already present in the parent
+# config-engine-trixie base (LIBSWSSCOMMON / PYTHON3_SWSSCOMMON).
+
+# _DEPENDS sonic-built debs: SONIC_MGMT_COMMON (YANG models + CVL schema, needed
+# by translib at runtime) and SONIC_TELEMETRY (sonic-gnmi_0.1: the 9 gNMI/gNOI
+# binaries). Each deb ships _data (contents) + _statusd (dpkg status.d stub).
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        "@sonic_mgmt_common//:sonic-mgmt-common_1.0.0.deb_data",
+        "@sonic_mgmt_common//:sonic-mgmt-common_1.0.0.deb_statusd",
+        "@sonic_gnmi//:sonic-gnmi_0.1.deb_data",
+        "@sonic_gnmi//:sonic-gnmi_0.1.deb_statusd",
+    ],
+)
+
+# Dockerfile.j2 COPY directives.
+tar(
+    name = "files",
+    srcs = [
+        "start.sh",
+        "gnmi-native.sh",
+        "dialout.sh",
+        "telemetry_vars.j2",
+        "supervisord.conf",
+        "critical_processes",
+    ],
+    mtree = [
+        "./usr/bin/start.sh uid=0 gid=0 mode=0755 type=file content=$(location start.sh)",
+        "./usr/bin/gnmi-native.sh uid=0 gid=0 mode=0755 type=file content=$(location gnmi-native.sh)",
+        "./usr/bin/dialout.sh uid=0 gid=0 mode=0755 type=file content=$(location dialout.sh)",
+        "./usr/share/sonic/templates/telemetry_vars.j2 uid=0 gid=0 mode=0644 type=file content=$(location telemetry_vars.j2)",
+        "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location supervisord.conf)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location critical_processes)",
+    ],
+)
+
+# Dockerfile.j2 final stage: FROM config-engine-trixie, ENTRYPOINT supervisord,
+# ENV DEBIAN_FRONTEND. IMAGE_VERSION is a `docker build` ARG, not reproduced.
+oci_image(
+    name = "docker-sonic-gnmi",
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    entrypoint = ["/usr/local/bin/supervisord"],
+    env = {"DEBIAN_FRONTEND": "noninteractive"},
+    tars = [
+        ":sonic_pkgs",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-sonic-gnmi",
+    repo_tags = ["docker-sonic-gnmi:latest"],
+)

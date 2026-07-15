@@ -1,0 +1,93 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@sonic_build_infra//python:site_packages.bzl", "site_packages")
+load("@tar.bzl", "tar")
+
+# docker-sonic-mgmt-framework: REST server + klish CLI (mgmt-framework).
+#
+# Mirrors dockers/docker-sonic-mgmt-framework/Dockerfile.j2 +
+# rules/docker-sonic-mgmt-framework.mk.
+#
+# Dockerfile.j2 build-stage `apt install g++ python3-dev` are build-only
+# (removed at the `apt-get remove` line); the runtime .so packages the klish
+# plugin / rest_server link (libxml2 / libcurl4t64 / libcjson1) live in the
+# shared @trixie pool. LIBSWSSCOMMON / PYTHON3_SWSSCOMMON come from the parent
+# config-engine-trixie base.
+
+# Runtime libs linked by the sonic-built mgmt-framework binaries (klish plugin
+# rest_cl.cpp -> libcurl/libcjson; libclish/rest_server -> libxml2). Declared in
+# the shared @trixie pool; flatten dedups any already in the base.
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//libxml2",
+        "@trixie//libcurl4t64",
+        "@trixie//libcjson1",
+    ],
+)
+
+# _DEPENDS sonic-built debs: SONIC_MGMT_COMMON (YANG models + CVL schema) and
+# SONIC_MGMT_FRAMEWORK (rest_server/generate_cert/cli/ui). The mgmt-common
+# codegen deb is a build-time dep (generated Go source), not installed in the
+# image. Each deb ships _data (contents) + _statusd (dpkg status.d stub).
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        "@sonic_mgmt_common//:sonic-mgmt-common_1.0.0.deb_data",
+        "@sonic_mgmt_common//:sonic-mgmt-common_1.0.0.deb_statusd",
+        "@sonic_mgmt_framework//:sonic-mgmt-framework_1.0-01.deb_data",
+        "@sonic_mgmt_framework//:sonic-mgmt-framework_1.0-01.deb_statusd",
+    ],
+)
+
+# Dockerfile.j2 `pip3 install requests urllib3` (urllib3 comes transitively with
+# requests). requests is pinned in docker-base-trixie/pyproject.toml.
+site_packages(
+    name = "pip_layer",
+    srcs = ["@pip_pmon9//requests"],
+    venv = "docker-base-trixie",
+)
+
+# Dockerfile.j2 COPY directives + the sonic-cli BASE_IMAGE_FILE
+# (rules .mk: sonic-cli:/usr/bin/sonic-cli).
+tar(
+    name = "files",
+    srcs = [
+        "start.sh",
+        "rest-server.sh",
+        "mgmt_vars.j2",
+        "supervisord.conf",
+        "base_image_files/sonic-cli",
+    ],
+    mtree = [
+        "./usr/bin/start.sh uid=0 gid=0 mode=0755 type=file content=$(location start.sh)",
+        "./usr/bin/rest-server.sh uid=0 gid=0 mode=0755 type=file content=$(location rest-server.sh)",
+        "./usr/bin/sonic-cli uid=0 gid=0 mode=0755 type=file content=$(location base_image_files/sonic-cli)",
+        "./usr/share/sonic/templates/mgmt_vars.j2 uid=0 gid=0 mode=0644 type=file content=$(location mgmt_vars.j2)",
+        "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location supervisord.conf)",
+    ],
+)
+
+# Dockerfile.j2 final stage: FROM config-engine-trixie, ENTRYPOINT supervisord,
+# ENV DEBIAN_FRONTEND.
+oci_image(
+    name = "docker-sonic-mgmt-framework",
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    entrypoint = ["/usr/local/bin/supervisord"],
+    env = {"DEBIAN_FRONTEND": "noninteractive"},
+    tars = [
+        ":apt_layer",
+        ":sonic_pkgs",
+        ":pip_layer",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-sonic-mgmt-framework",
+    repo_tags = ["docker-sonic-mgmt-framework:latest"],
+)

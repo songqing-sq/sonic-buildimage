@@ -1,4 +1,5 @@
 apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+
 # =====================================================================
 # APT source URIs. Match sonic_rules/MODULE.bazel's snapshot pin.
 #
@@ -11,7 +12,10 @@ apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
 # mirrors that have since evicted the pinned versions.
 # =====================================================================
 apt.sources_list(
-    architectures = ["amd64", "arm64"],
+    architectures = [
+        "amd64",
+        "arm64",
+    ],
     components = ["main"],
     suites = [
         "trixie",
@@ -20,7 +24,10 @@ apt.sources_list(
     uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
 )
 apt.sources_list(
-    architectures = ["amd64", "arm64"],
+    architectures = [
+        "amd64",
+        "arm64",
+    ],
     components = ["main"],
     suites = ["trixie-security"],
     uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
@@ -371,6 +378,15 @@ apt.install(
         "libsensors-config",
         "libxml2",
 
+        # -------- docker-sonic-mgmt-framework runtime apt deps --------
+        # Runtime .so libs the klish plugin (rest_cl.cpp: libcurl + libcjson)
+        # link. Mirrors Dockerfile.j2 `apt install libxml2 libcurl4t64
+        # libcjson1`; libxml2 is already registered by the docker-lldp block
+        # above (deduped here). The g++/python3-dev it also installs are
+        # build-only (purged in the Make image).
+        "libcurl4t64",
+        "libcjson1",
+
         # -------- Debug-only variant packages (rules/docker-base-trixie.mk _DBG_IMAGE_PACKAGES) --------
         # These are NOT baked into the base image (see BUILD.bazel `flat` list),
         # but registered here so the `debug-packages` flatten target can pull
@@ -416,8 +432,8 @@ uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
 uv.declare_hub(hub_name = "pip_pmon9")
 uv.project(
     hub_name = "pip_pmon9",
-    pyproject = "//dockers/docker-base-trixie:pyproject.toml",
     lock = "//dockers/docker-base-trixie:uv.lock",
+    pyproject = "//dockers/docker-base-trixie:pyproject.toml",
 )
 
 # Attach `wheel` as a build-dependency for sdist-only packages (bitarray on
@@ -425,7 +441,7 @@ uv.project(
 # {setuptools, build}; this annotation adds `wheel` so bitarray's setuptools
 # backend can build. See pip_annotations.toml for details.
 uv.unstable_annotate_packages(
-    lock = "//dockers/docker-base-trixie:uv.lock",
     src = "//dockers/docker-base-trixie:pip_annotations.toml",
+    lock = "//dockers/docker-base-trixie:uv.lock",
 )
 use_repo(uv, "pip_pmon9")

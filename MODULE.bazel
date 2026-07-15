@@ -7,13 +7,23 @@ bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "rules_oci", version = "2.2.6")
 bazel_dep(name = "protobuf", version = "29.0")
 bazel_dep(name = "grpc", version = "1.71.0", repo_name = "com_github_grpc_grpc")
-bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_go", version = "0.60.0.sonic-patched", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "gazelle", version = "0.47.0")
 bazel_dep(name = "tar.bzl", version = "0.8.1")
 git_override(
     module_name = "tar.bzl",
     commit = "9b76e660363ab2465d89d3aadbbc1f7afa02e65c",
     remote = "https://github.com/bazel-contrib/tar.bzl",
+)
+
+# The BCR swig overlay ships Lib/go/** on disk but only exposes lib_python /
+# lib_java filegroups. sonic-gnmi's swsscommon SWIG-Go binding needs a lib_go
+# filegroup (Lib/go + std/typemaps) on SWIG_LIB; add it via a patch.
+single_version_override(
+    module_name = "swig",
+    patch_strip = 1,
+    patches = ["//sonic_rules/swig:add_lib_go.patch"],
+    version = "4.1.0",
 )
 
 # Register extension so that we can use bsdtar in genrules.
@@ -53,7 +63,7 @@ crate.from_cargo(
     cargo_lockfile = "//dockers/docker-bmp-watchdog/watchdog:Cargo.lock",
     manifests = ["//dockers/docker-bmp-watchdog/watchdog:Cargo.toml"],
 )
-use_repo(crate, "watchdog_crates", "bmp_watchdog_crates")
+use_repo(crate, "bmp_watchdog_crates", "watchdog_crates")
 
 bazel_dep(name = "bazel_lib", version = "3.1.1")
 bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
@@ -67,8 +77,8 @@ bazel_dep(name = "aspect_rules_py", version = "1.11.7")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
-    python_version = "3.13.4",
     is_default = True,
+    python_version = "3.13.4",
 )
 python.toolchain(python_version = "3.11.3")
 
@@ -304,6 +314,18 @@ local_path_override(
 #     path = "src/sonic-mgmt-common",
 # )
 
+bazel_dep(name = "sonic-mgmt-framework", version = "1.0.0", repo_name = "sonic_mgmt_framework")
+local_path_override(
+    module_name = "sonic-mgmt-framework",
+    path = "src/sonic-mgmt-framework",
+)
+
+bazel_dep(name = "sonic-gnmi", version = "0.1", repo_name = "sonic_gnmi")
+local_path_override(
+    module_name = "sonic-gnmi",
+    path = "src/sonic-gnmi",
+)
+
 bazel_dep(name = "dhcprelay", version = "1.0.0-0")
 local_path_override(
     module_name = "dhcprelay",
@@ -364,6 +386,130 @@ local_path_override(
     path = "src/sonic-sysmgr/gnoi-bazel",
 )
 
+# ---- Shared Go third-party hub for the sonic-mgmt-common / sonic-mgmt-framework
+# module group. bzlmod only honors module_override/gazelle_override from the ROOT
+# module, and a non-isolated go_deps instance is shared across the whole module
+# graph. Declaring it here (instead of an isolated instance per submodule) gives
+# both modules ONE set of third-party Go repos, so rest_server can link
+# sonic-mgmt-common's translib/cvl alongside its own deps without hitting
+# "multiple copies of package github.com/golang/glog". Version skews between the
+# two go.mods (go-cmp, go-redis/v7) resolve via MVS to the higher (mgmt-common's)
+# version, which is what mgmt-common already builds against.
+go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+
+# Root from_file carries the hub's replace pins (glog, gnmi -> the old versions
+# mgmt-common's patch/build target). Only the root module's replaces are honored
+# during shared-hub resolution; sonic-gnmi's go.mod requires newer glog/gnmi
+# that would otherwise win via MVS and break the mgmt-common glog patch.
+go_deps.from_file(go_mod = "//bazel/hub:go.mod")
+
+# ygot.patch uses standard `a/generator/generator.go` paths (patch_strip=1).
+# ytypes_build.patch is applied after gazelle generates BUILD files, adding the
+# @com_github_openconfig_gnmi//value dep gazelle inconsistently dropped from
+# ytypes/BUILD.bazel.
+go_deps.module_override(
+    path = "github.com/openconfig/ygot",
+    patches = [
+        "@sonic_mgmt_common//patches:ygot/ygot.patch",
+        "@sonic_mgmt_common//patches:ytypes_build.patch",
+    ],
+    patch_strip = 1,
+)
+go_deps.module_override(
+    path = "github.com/openconfig/goyang",
+    patches = ["@sonic_mgmt_common//patches:goyang/goyang.patch"],
+    patch_strip = 1,
+)
+go_deps.module_override(
+    path = "github.com/antchfx/jsonquery",
+    patches = ["@sonic_mgmt_common//patches:jsonquery.patch"],
+    patch_strip = 1,
+)
+go_deps.module_override(
+    path = "github.com/antchfx/xmlquery",
+    patches = ["@sonic_mgmt_common//patches:xmlquery.patch"],
+    patch_strip = 1,
+)
+go_deps.module_override(
+    path = "github.com/antchfx/xpath",
+    patches = ["@sonic_mgmt_common//patches:xpath.patch"],
+    patch_strip = 1,
+)
+go_deps.module_override(
+    path = "github.com/golang/glog",
+    patches = ["@sonic_mgmt_common//patches:glog.patch"],
+    patch_strip = 1,
+)
+
+# openconfig/gnmi ships pre-generated *.pb.go; disable proto rule generation so
+# gazelle emits only a go_library over the checked-in .pb.go.
+go_deps.gazelle_override(
+    path = "github.com/openconfig/gnmi",
+    directives = ["gazelle:proto disable_global"],
+)
+
+# openconfig/gnoi and gnsi (consumed by sonic-gnmi) also ship checked-in .pb.go;
+# disable proto rules so gazelle doesn't pull rules_proto_grpc.
+go_deps.gazelle_override(
+    path = "github.com/openconfig/gnoi",
+    build_file_generation = "clean",
+    directives = ["gazelle:proto disable_global"],
+)
+go_deps.gazelle_override(
+    path = "github.com/openconfig/gnsi",
+    build_file_generation = "clean",
+    directives = ["gazelle:proto disable_global"],
+)
+
+# grpc's authz -> internal/xds/rbac imports github.com/cncf/xds/go/{udpa/type/v1,
+# xds/type/v3}. That module resolves to the BCR xds repo (bound to
+# com_github_cncf_xds by grpc's C++ bazel_dep), which ships the .pb.go but no Go
+# BUILD targets. Force gazelle to generate Go BUILDs so the grpc references
+# resolve.
+go_deps.gazelle_override(
+    path = "github.com/cncf/xds/go",
+    build_file_generation = "clean",
+    directives = ["gazelle:proto disable_global"],
+)
+
+# msteinert/pam (gnmi_server PAM auth) has cgo but its gazelle BUILD only sets
+# clinkopts=["-lpam"] with no header path. Patch it (after gazelle) to add a
+# cdep on libpam0g-dev so <security/pam_appl.h> resolves and libpam links
+# hermetically.
+go_deps.module_override(
+    path = "github.com/msteinert/pam",
+    patches = ["@sonic_gnmi//patches/bazel:msteinert_pam_build.patch"],
+    patch_strip = 1,
+)
+
+# advancedtls: gnmi_server/clientCertAuth.go calls advancedtls.CheckChainRevocation
+# (exported by gnmi's Make patch 0002). Apply the same func-export rename here.
+go_deps.module_override(
+    path = "google.golang.org/grpc/security/advancedtls",
+    patches = ["@sonic_gnmi//patches/bazel:advancedtls_go119.patch"],
+    patch_strip = 1,
+)
+
+# fsnotify: telemetry.go uses fsnotify.CloseWrite / MovedTo, added by gnmi's Make
+# patch 0004 onto fsnotify v1.4.9 (pinned in the hub go.mod).
+go_deps.module_override(
+    path = "github.com/fsnotify/fsnotify",
+    patches = ["@sonic_gnmi//patches/bazel:fsnotify_closewrite.patch"],
+    patch_strip = 1,
+)
+
+# The root's hub go.mod (//bazel/hub:go.mod) declares glog/gnmi/grpc/fsnotify as
+# direct requires (to carry the replace pins); import them so gazelle's use_repo
+# tidy check passes. Submodules import the repos they actually reference via
+# their own use_repo against this shared instance.
+use_repo(
+    go_deps,
+    "com_github_fsnotify_fsnotify",
+    "com_github_golang_glog",
+    "com_github_openconfig_gnmi",
+    "org_golang_google_grpc",
+)
+
 # bitarray 2.8.1 (pinned by sonic-config-engine's install_requires) ships no
 # cp313 wheel on PyPI (only up to cp311), so on trixie's Python 3.13 its C
 # extensions must be compiled from source. We fetch the sdist here and build it
@@ -403,20 +549,21 @@ http_archive(
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 _OTEL_VERSION = "0.144.0"
+
 _OTEL_URL_PREFIX = "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v" + _OTEL_VERSION
 
 http_file(
     name = "otelcol_contrib_amd64",
-    urls = [_OTEL_URL_PREFIX + "/otelcol-contrib_" + _OTEL_VERSION + "_linux_amd64.deb"],
-    sha256 = "e83278a763b9c7779f9facf3ac2356b7add8975a5f14d4606a625605f50eee94",
     downloaded_file_path = "otelcol-contrib_0.144.0_linux_amd64.deb",
+    sha256 = "e83278a763b9c7779f9facf3ac2356b7add8975a5f14d4606a625605f50eee94",
+    urls = [_OTEL_URL_PREFIX + "/otelcol-contrib_" + _OTEL_VERSION + "_linux_amd64.deb"],
 )
 
 http_file(
     name = "otelcol_contrib_arm64",
-    urls = [_OTEL_URL_PREFIX + "/otelcol-contrib_" + _OTEL_VERSION + "_linux_arm64.deb"],
-    sha256 = "6e272d1c179d897e8d09877d5589979a01921887aed372447806dc7e1c54be18",
     downloaded_file_path = "otelcol-contrib_0.144.0_linux_arm64.deb",
+    sha256 = "6e272d1c179d897e8d09877d5589979a01921887aed372447806dc7e1c54be18",
+    urls = [_OTEL_URL_PREFIX + "/otelcol-contrib_" + _OTEL_VERSION + "_linux_arm64.deb"],
 )
 
 # NOTE: docker-base-trixie's apt sources_list must be the LAST-registered
