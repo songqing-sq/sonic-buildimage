@@ -30,8 +30,8 @@ flatten(
 # package delta (docker-swss-layer-trixie minus docker-config-engine-trixie):
 #   swss, libsairedis, libsaimetadata, libdashapi, libnexthopgroup,
 #   libteam5, libteamdctl0 (+ libprotobuf32t64 in apt_layer above).
-# NOTE: unlike docker-swss-layer-bookworm, trixie does NOT add libnftnl11 —
-# the trixie swss deb's dpkg-shlibdeps output does not require it.
+# NOTE: libnftnl11 is NOT added — the swss deb's dpkg-shlibdeps output does
+# not require it.
 # Each package ships both `_data` (contents) and `_statusd` (dpkg status.d
 # stub) so `dpkg -l` inside the container lists it.
 flatten(
@@ -71,10 +71,10 @@ flatten(
 )
 
 # Make swss-layer-trixie image config (docker inspect): Entrypoint=
-# ["/usr/local/bin/supervisord"], Env=PATH only, Cmd=null. The trixie
+# ["/usr/local/bin/supervisord"], Env=PATH only, Cmd=null. The
 # Dockerfile.j2's two-stage build sets DEBIAN_FRONTEND only in the builder
 # stage, so it is NOT persisted to the final image — we intentionally do NOT
-# set it here (this is a deliberate difference from docker-swss-layer-bookworm).
+# set it here.
 oci_image(
     name = "docker-swss-layer-trixie",
     base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",

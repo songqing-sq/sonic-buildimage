@@ -2,14 +2,13 @@ load("@rules_deb//distroless:defs.bzl", "flatten")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@tar.bzl", "tar")
 
-# Dockerfile.j2 line 19: `apt-get -y install radvd`. Unlike son624 bookworm
-# (which commented out the apt install and shipped a locally-built radvd .deb),
-# son629's Make actively apt-installs radvd, so we source it from the shared
-# @trixie apt pool. The bare `@trixie//radvd` target pulls the arch package
-# (control + status.d, so `dpkg -l` lists it) plus its :data contents and the
-# full runtime dependency closure — equivalent to `apt install radvd`. radvd is
-# not present in the docker-config-engine-trixie base, so this image is the
-# first to carry it. (rules_distroless deduplicates deps already in the base.)
+# Dockerfile.j2 line 19: `apt-get -y install radvd`. The Make build actively
+# apt-installs radvd, so we source it from the shared @trixie apt pool. The bare
+# `@trixie//radvd` target pulls the arch package (control + status.d, so
+# `dpkg -l` lists it) plus its :data contents and the full runtime dependency
+# closure — equivalent to `apt install radvd`. radvd is not present in the
+# docker-config-engine-trixie base, so this image is the first to carry it.
+# (rules_distroless deduplicates deps already in the base.)
 flatten(
     name = "apt_layer",
     deduplicate = True,
@@ -27,7 +26,7 @@ flatten(
 # (supervisor-proc-exit-listener-rs) is already shipped by the
 # docker-config-engine-trixie base (@sonic-supervisord-utilities-rs//:...),
 # and rules/docker-router-advertiser.mk defines no `_FILES`, so nothing extra
-# is packaged here — consistent with son629's Make.
+# is packaged here — consistent with the Make build.
 tar(
     name = "files",
     srcs = [

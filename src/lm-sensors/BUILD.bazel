@@ -172,7 +172,7 @@ cc_binary(
     # them, which pollutes the deb download graph.
     # Approach A: let ld skip the check; ld.so resolves at runtime inside
     # the docker image where dpkg -i libbrotli1 lays down all 3 .so files
-    # in /usr/lib/<multiarch>/. Same pattern as son624 lldpd.
+    # in /usr/lib/<multiarch>/.
     linkopts = [
         "-Wl,--allow-shlib-undefined",
     ],

@@ -195,11 +195,9 @@ apt.install(
         # From docker-platform-monitor/Dockerfile.j2's `apt install`. Runtime
         # survivors only — build-essential, python3-dev, librrd-dev are apt-purged
         # (or build-only) and not shipped. Shared @trixie pool, same as the
-        # config-engine block above. vs son624 bookworm: librrd8 -> librrd8t64
-        # (trixie t64 rename), add python3-bottle + smartmontools (trixie ships
-        # smartmontools in main, no longer needs bookworm-backports). jsonschema
-        # is provided via pip (see docker-base-trixie/pyproject.toml), matching
-        # Make. iputils-ping is already declared in the swss-layer block above.
+        # config-engine block above. jsonschema is provided via pip (see
+        # docker-base-trixie/pyproject.toml), matching Make. iputils-ping is
+        # already declared in the swss-layer block above.
         "ipmitool",
         "librrd8t64",
         "rrdtool",
@@ -226,14 +224,14 @@ apt.install(
         "redis-server",
 
         # -------- docker-snmp runtime apt deps --------
-        # docker-snmp/Dockerfile.j2 `apt install -y ... snmp snmpd`. On trixie
-        # snmp/snmpd come straight from Debian apt — rules/snmpd.mk only builds
-        # them from source on bookworm (the whole SNMP/SNMPD/LIBSNMP block is
-        # inside `ifeq ($(BLDENV),bookworm)`), so on trixie those Make vars are
-        # empty and the packages are apt-sourced. libsnmp40t64 + libsnmp-base
-        # are the runtime lib deps pulled in by snmp/snmpd. ipmitool is already
-        # registered above (shared with docker-platform-monitor). python3-dev,
-        # gcc, make are build-only (apt-purged in the Dockerfile) — not shipped.
+        # docker-snmp/Dockerfile.j2 `apt install -y ... snmp snmpd`. snmp/snmpd
+        # come straight from Debian apt — the rules/snmpd.mk SNMP/SNMPD/LIBSNMP
+        # deb targets are not built in this build environment, so those Make
+        # vars are empty and the packages are apt-sourced. libsnmp40t64 +
+        # libsnmp-base are the runtime lib deps pulled in by snmp/snmpd.
+        # ipmitool is already registered above (shared with
+        # docker-platform-monitor). python3-dev, gcc, make are build-only
+        # (apt-purged in the Dockerfile) — not shipped.
         "snmp",
         "snmpd",
         "libsnmp40t64",
@@ -241,18 +239,16 @@ apt.install(
 
         # -------- docker-router-advertiser runtime apt deps --------
         # docker-router-advertiser/Dockerfile.j2 line 19 `apt-get -y install radvd`.
-        # Kept consistent with son629's Make (which actively apt-installs radvd),
-        # unlike son624 bookworm which commented out the apt install and shipped a
-        # locally-built radvd .deb via `@radvd//`. radvd is the IPv6 Router
-        # Advertisement Daemon; it is not present in the docker-config-engine-trixie
-        # base, so docker-router-advertiser is the first image to carry it.
+        # radvd is the IPv6 Router Advertisement Daemon; it is not present in the
+        # docker-config-engine-trixie base, so docker-router-advertiser is the
+        # first image to carry it.
         "radvd",
 
 
         # -------- Debug-only variant packages (rules/docker-base-trixie.mk _DBG_IMAGE_PACKAGES) --------
         # These are NOT baked into the base image (see BUILD.bazel `flat` list),
         # but registered here so the `debug-packages` flatten target can pull
-        # them. Mirrors bookworm's split.
+        # them.
         "gdb",
         "gdbserver",
         "vim",

@@ -11,11 +11,11 @@ load("@tar.bzl", "tar")
 #   - apt-utils:     Dockerfile explicit install. Ships apt-ftparchive /
 #     apt-sortpkgs, which link libapt-pkg.so.7.0 (libapt-pkg7.0) and
 #     libapt-private.so.0.0 (apt) — added below to complete the closure.
-#   - python3-cffi:  trixie uses apt python3-cffi (bookworm had none; the libyang
+#   - python3-cffi:  apt python3-cffi (the libyang
 #                    python bindings and pyangbind need cffi at runtime)
 #   - python3-cffi-backend: the _cffi_backend C extension (python3-cffi Depends);
 #                    without it libyang python bindings fail to import.
-#   - python3-redis: trixie uses apt python3-redis (bookworm used pip redis==5.0.1)
+#   - python3-redis: apt python3-redis
 #   - python3-yaml:  Dockerfile explicit install
 #   - libswsscommon runtime Depends (apt portion): libboost-serialization1.83.0,
 #     libhiredis1.1.0, libpcre2-16-0/32-0/posix3. Not auto-resolved by Bazel
@@ -171,9 +171,8 @@ tar(
 
 # The Make config-engine Dockerfile.j2 declares no ENTRYPOINT and no extra ENV,
 # so the image inherits both from docker-base-trixie (Make image: Entrypoint=
-# null, Env=PATH only). We intentionally do NOT re-set entrypoint/env here
-# (son624 redundantly re-set entrypoint=supervisord); config-engine just layers
-# its content tars on top of the base.
+# null, Env=PATH only). We intentionally do NOT re-set entrypoint/env here;
+# config-engine just layers its content tars on top of the base.
 oci_image(
     name = "docker-config-engine-trixie",
     base = "//dockers/docker-base-trixie:docker-base-trixie",

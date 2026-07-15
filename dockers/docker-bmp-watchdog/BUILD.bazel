@@ -1,0 +1,52 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# docker-bmp-watchdog: BMP (BGP Monitoring Protocol) watchdog container.
+#
+# Mirrors dockers/docker-bmp-watchdog/Dockerfile.j2 + rules/docker-bmp-watchdog.mk.
+#
+# Dockerfile.j2's builder stage (`apt-get install build-essential` +
+# rustup + `cargo build --release`) is replaced by rules_rust, which produces
+# the bmp_watchdog binary hermetically at build time (see watchdog/BUILD.bazel
+# + the @bmp_watchdog_crates crate hub in the root MODULE.bazel). So no apt or
+# builder-stage layers are needed in the final image.
+#
+
+# COPY directives from Dockerfile.j2:
+#   - supervisord.conf                              -> /etc/supervisor/conf.d/
+#   - builder /watchdog/target/release/bmp_watchdog -> /usr/bin/bmp_watchdog (0755)
+tar(
+    name = "files",
+    srcs = [
+        "supervisord.conf",
+        "//dockers/docker-bmp-watchdog/watchdog:bmp_watchdog",
+    ],
+    mtree = [
+        "./usr/bin/bmp_watchdog uid=0 gid=0 mode=0755 type=file content=$(location //dockers/docker-bmp-watchdog/watchdog:bmp_watchdog)",
+        "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location :supervisord.conf)",
+    ],
+)
+
+# Dockerfile.j2 final stage: FROM docker-config-engine-trixie,
+# ENTRYPOINT ["/usr/local/bin/supervisord"], ENV DEBIAN_FRONTEND=noninteractive.
+# IMAGE_VERSION is a `docker build` ARG in the Make flow, not a runtime input,
+# so it is not reproduced here (same treatment as the other migrated trixie
+# dockers). The rsync-from-builder two-stage split only strips apt caches from
+# the intermediate layer; the Bazel image is assembled from clean tars, so no
+# builder stage is needed.
+oci_image(
+    name = "docker-bmp-watchdog",
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    entrypoint = ["/usr/local/bin/supervisord"],
+    env = {"DEBIAN_FRONTEND": "noninteractive"},
+    tars = [
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-bmp-watchdog",
+    repo_tags = ["docker-bmp-watchdog:latest"],
+)

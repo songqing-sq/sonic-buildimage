@@ -48,8 +48,7 @@ cc_binary(
 )
 
 # ------ eventdb binary (Make: EVENTDB_OBJS) ------
-# New in son629 (not present in son624's Bazel port). Backing store for the
-# event history table read/consumed by CLI + eventctl.
+# Backing store for the event history table read/consumed by CLI + eventctl.
 cc_binary(
     name = "eventdb",
     srcs = [
