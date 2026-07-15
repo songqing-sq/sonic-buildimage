@@ -61,6 +61,9 @@ tar(
     ],
     mtree = [
         "./usr/bin/docker-init.sh uid=0 gid=0 mode=0755 type=file content=$(location docker-init.sh)",
+        # Declare the conf.d dir explicitly; otherwise tar auto-creates it with
+        # mode 0000, mismatching the Make image (0755).
+        "./etc/supervisor/conf.d uid=0 gid=0 mode=0755 type=dir",
         "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location supervisord.conf)",
         "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location critical_processes)",
         "./usr/share/sonic/templates/Dockerfile.j2 uid=0 gid=0 mode=0644 type=file content=$(location Dockerfile.j2)",
