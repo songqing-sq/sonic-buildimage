@@ -384,6 +384,29 @@ http_archive(
     urls = ["https://files.pythonhosted.org/packages/97/1e/3284d19d7be99305eda145b8aa46b0c33244e4a496ec66440dac19f8274d/thrift-0.13.0.tar.gz"],
 )
 
+# OpenTelemetry Collector Contrib prebuilt .deb, fetched from the public GitHub
+# releases. Mirrors docker-sonic-otel/Dockerfile.j2's `wget` of
+# otelcol-contrib v0.144.0 (arch-specific). docker-sonic-otel cracks the .deb
+# and lays its data into the image (see dockers/docker-sonic-otel/BUILD.bazel).
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+_OTEL_VERSION = "0.144.0"
+_OTEL_URL_PREFIX = "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v" + _OTEL_VERSION
+
+http_file(
+    name = "otelcol_contrib_amd64",
+    urls = [_OTEL_URL_PREFIX + "/otelcol-contrib_" + _OTEL_VERSION + "_linux_amd64.deb"],
+    sha256 = "e83278a763b9c7779f9facf3ac2356b7add8975a5f14d4606a625605f50eee94",
+    downloaded_file_path = "otelcol-contrib_0.144.0_linux_amd64.deb",
+)
+
+http_file(
+    name = "otelcol_contrib_arm64",
+    urls = [_OTEL_URL_PREFIX + "/otelcol-contrib_" + _OTEL_VERSION + "_linux_arm64.deb"],
+    sha256 = "6e272d1c179d897e8d09877d5589979a01921887aed372447806dc7e1c54be18",
+    downloaded_file_path = "otelcol-contrib_0.144.0_linux_arm64.deb",
+)
+
 # NOTE: docker-base-trixie's apt sources_list must be the LAST-registered
 # so rules_distroless's `sources[suite] = ...` overwrite keeps our
 # snapshot.debian.org URIs (which retain older versions) instead of being

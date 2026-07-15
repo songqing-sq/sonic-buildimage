@@ -244,6 +244,13 @@ apt.install(
         # first image to carry it.
         "radvd",
 
+        # -------- docker-sonic-otel runtime apt deps --------
+        # docker-sonic-otel/Dockerfile.j2 apt-installs ca-certificates/curl/wget
+        # in its build stage; the two-stage rsync carries them into the final
+        # image. ca-certificates and curl are already in the base above, so only
+        # wget is new here.
+        "wget",
+
 
         # -------- Debug-only variant packages (rules/docker-base-trixie.mk _DBG_IMAGE_PACKAGES) --------
         # These are NOT baked into the base image (see BUILD.bazel `flat` list),

@@ -1,0 +1,92 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# docker-restapi-sidecar: k8s-managed REST API sidecar (systemd stub + pod control).
+#
+# Mirrors dockers/docker-restapi-sidecar/Dockerfile.j2 + rules/docker-restapi-sidecar.mk.
+#
+# INSTALL_PYTHON_WHEELS (sonic-py-common) is already shipped by the parent
+# docker-config-engine-trixie base, so nothing extra is layered here.
+# docker_restapi_sidecar_debs / _whls are empty (no locally-built artifacts).
+#
+# _FILES (rules/docker-restapi-sidecar.mk):
+#   CONTAINER_CHECKER / RESTAPI_SYSTEMD are staged into systemd_scripts/ (the
+#     versioned container_checker_* / restapi.service_* / v1/ files already live
+#     in this docker's systemd_scripts/ tree — no external COPY needed).
+#   K8S_POD_CONTROL -> files/scripts/k8s_pod_control.sh
+
+# COPY directives from Dockerfile.j2:
+#   systemd_stub.py            -> /usr/bin/ (0755)
+#   systemd_scripts/           -> /usr/share/sonic/systemd_scripts/ (whole tree)
+#   files/k8s_pod_control.sh   -> /usr/share/sonic/scripts/k8s_pod_control.sh
+#   supervisord.conf           -> /etc/supervisor/conf.d/
+#   critical_processes         -> /etc/supervisor/
+#   etc/rsyslog.conf           -> /etc/rsyslog.conf
+#   etc/rsyslog.d/*            -> /etc/rsyslog.d/
+tar(
+    name = "files",
+    srcs = [
+        "systemd_stub.py",
+        "supervisord.conf",
+        "critical_processes",
+        "etc/rsyslog.conf",
+        "etc/rsyslog.d/supervisor.conf",
+        "//files/scripts:k8s_pod_control.sh",
+    ] + glob([
+        "systemd_scripts/container_checker_*",
+        "systemd_scripts/restapi.service_*",
+        "systemd_scripts/restapi.sh",
+        "systemd_scripts/v1/restapi.sh_*",
+    ]),
+    mtree = [
+        "./usr/bin/systemd_stub.py uid=0 gid=0 mode=0755 type=file content=$(location :systemd_stub.py)",
+        "./usr/share/sonic/scripts/k8s_pod_control.sh uid=0 gid=0 mode=0755 type=file content=$(location //files/scripts:k8s_pod_control.sh)",
+        "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location :supervisord.conf)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location :critical_processes)",
+        "./etc/rsyslog.conf uid=0 gid=0 mode=0644 type=file content=$(location :etc/rsyslog.conf)",
+        "./etc/rsyslog.d/supervisor.conf uid=0 gid=0 mode=0644 type=file content=$(location :etc/rsyslog.d/supervisor.conf)",
+        # systemd_scripts/ tree: container_checker_* are executable (0755),
+        # restapi.service_* are plain data (0644), restapi.sh is a small data
+        # wrapper (0644), v1/restapi.sh_* are executable (0755).
+        "./usr/share/sonic/systemd_scripts/container_checker_202311 uid=0 gid=0 mode=0755 type=file content=$(location :systemd_scripts/container_checker_202311)",
+        "./usr/share/sonic/systemd_scripts/container_checker_202405 uid=0 gid=0 mode=0755 type=file content=$(location :systemd_scripts/container_checker_202405)",
+        "./usr/share/sonic/systemd_scripts/container_checker_202411 uid=0 gid=0 mode=0755 type=file content=$(location :systemd_scripts/container_checker_202411)",
+        "./usr/share/sonic/systemd_scripts/container_checker_202505 uid=0 gid=0 mode=0755 type=file content=$(location :systemd_scripts/container_checker_202505)",
+        "./usr/share/sonic/systemd_scripts/container_checker_202511 uid=0 gid=0 mode=0755 type=file content=$(location :systemd_scripts/container_checker_202511)",
+        "./usr/share/sonic/systemd_scripts/restapi.service_202311 uid=0 gid=0 mode=0644 type=file content=$(location :systemd_scripts/restapi.service_202311)",
+        "./usr/share/sonic/systemd_scripts/restapi.service_202405 uid=0 gid=0 mode=0644 type=file content=$(location :systemd_scripts/restapi.service_202405)",
+        "./usr/share/sonic/systemd_scripts/restapi.service_202411 uid=0 gid=0 mode=0644 type=file content=$(location :systemd_scripts/restapi.service_202411)",
+        "./usr/share/sonic/systemd_scripts/restapi.service_202505 uid=0 gid=0 mode=0644 type=file content=$(location :systemd_scripts/restapi.service_202505)",
+        "./usr/share/sonic/systemd_scripts/restapi.service_202511 uid=0 gid=0 mode=0644 type=file content=$(location :systemd_scripts/restapi.service_202511)",
+        "./usr/share/sonic/systemd_scripts/restapi.sh uid=0 gid=0 mode=0644 type=file content=$(location :systemd_scripts/restapi.sh)",
+        "./usr/share/sonic/systemd_scripts/v1/restapi.sh_202311 uid=0 gid=0 mode=0755 type=file content=$(location :systemd_scripts/v1/restapi.sh_202311)",
+        "./usr/share/sonic/systemd_scripts/v1/restapi.sh_202405 uid=0 gid=0 mode=0755 type=file content=$(location :systemd_scripts/v1/restapi.sh_202405)",
+        "./usr/share/sonic/systemd_scripts/v1/restapi.sh_202411 uid=0 gid=0 mode=0755 type=file content=$(location :systemd_scripts/v1/restapi.sh_202411)",
+        "./usr/share/sonic/systemd_scripts/v1/restapi.sh_202505 uid=0 gid=0 mode=0755 type=file content=$(location :systemd_scripts/v1/restapi.sh_202505)",
+        "./usr/share/sonic/systemd_scripts/v1/restapi.sh_202511 uid=0 gid=0 mode=0755 type=file content=$(location :systemd_scripts/v1/restapi.sh_202511)",
+    ],
+)
+
+# Dockerfile.j2 final stage: FROM docker-config-engine-trixie,
+# ENTRYPOINT ["/usr/local/bin/supervisord"], ENV DEBIAN_FRONTEND / IS_V1_ENABLED.
+# IMAGE_VERSION is a `docker build` ARG, not a runtime input, so it is not
+# reproduced. IS_V1_ENABLED is a genuine runtime env supervisord reads, kept.
+oci_image(
+    name = "docker-restapi-sidecar",
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    entrypoint = ["/usr/local/bin/supervisord"],
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+        "IS_V1_ENABLED": "false",
+    },
+    tars = [
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-restapi-sidecar",
+    repo_tags = ["docker-restapi-sidecar:latest"],
+)

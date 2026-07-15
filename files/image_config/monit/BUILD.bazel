@@ -1,0 +1,6 @@
+exports_files(
+    [
+        "container_checker",
+    ],
+    visibility = ["//visibility:public"],
+)
