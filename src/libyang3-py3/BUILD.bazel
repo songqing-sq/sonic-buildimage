@@ -26,7 +26,7 @@ exports_files([
 # cffi is venv-gated by the @libyang3_py3_pip hub, so we can't reach it from
 # under an exec transition (py_venv_binary or tools=[...]). We instead build
 # a non-transitioned py_venv with cffi inside and invoke its python directly
-# from a custom rule — same trick son624's sdist_build_from_src uses.
+# from a custom rule.
 py_venv(
     name = "cffi_venv",
     venv = "libyang3-py3-build",

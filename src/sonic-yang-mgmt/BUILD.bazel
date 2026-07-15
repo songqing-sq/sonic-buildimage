@@ -39,8 +39,8 @@ genrule(
 
 # Wheel artifact (mirrors rules/sonic-yang-mgmt-py3.mk).
 # install_requires from setup.py: ijson, jsonpointer, jsondiff, tabulate.
-# Note: son629's setup.py uses libyang3 (`import libyang`) and does NOT
-# require xmltodict (unlike son624 which carried that legacy dep).
+# Note: setup.py uses libyang3 (`import libyang`) and does NOT require
+# xmltodict.
 py_wheel(
     name = "wheel",
     distribution = "sonic_yang_mgmt",

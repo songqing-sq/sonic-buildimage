@@ -1,0 +1,134 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@sonic_build_infra//python:site_packages.bzl", "site_packages")
+load("@tar.bzl", "tar")
+
+# docker-dhcp-relay: DHCPv4/v6 relay agents + relay monitor.
+#
+# Mirrors dockers/docker-dhcp-relay/Dockerfile.j2 + rules/docker-dhcp-relay.mk.
+#
+# Dockerfile.j2 build-stage `apt install libjsoncpp-dev python3-dev
+# build-essential libpcap-dev` are build-only (removed at line 39-40); the
+# runtime .so packages (libevent / libexplain / libjsoncpp / libpcap) live in
+# the shared @trixie pool. LIBSWSSCOMMON / PYTHON3_SWSSCOMMON are already in the
+# parent config-engine-trixie base. SONIC_UTILITIES_PY3 is a build-time wheel
+# for the CLI plugin install and is not retained in the image (only the three
+# cli/*/plugins/*.py copied below are).
+
+# Runtime libs the sonic-built dhcp debs + isc-dhcp-relay link. Declared in the
+# shared @trixie pool (docker-base-trixie/base_trixie.MODULE.bazel); flatten
+# dedups any already in the base.
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//libevent-2.1-7t64",
+        "@trixie//libevent-pthreads-2.1-7t64",
+        "@trixie//libexplain51t64",
+        "@trixie//libjsoncpp26",
+        "@trixie//libpcap0.8t64",
+    ],
+)
+
+# _DEPENDS sonic-built debs: ISC_DHCP_RELAY, SONIC_DHCP4RELAY (dhcp4relay),
+# SONIC_DHCPRELAY (dhcp6relay), SONIC_DHCPMON. LIBSWSSCOMMON / PYTHON3_SWSSCOMMON
+# are inherited from the config-engine base (re-listing would dedup). Each deb
+# ships _data (contents) + _statusd (dpkg status.d stub for `dpkg -l`).
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        "@dhcprelay//:sonic-dhcp4relay_1.0.0-0.deb_data",
+        "@dhcprelay//:sonic-dhcp4relay_1.0.0-0.deb_statusd",
+        "@dhcprelay//:sonic-dhcp6relay_1.0.0-0.deb_data",
+        "@dhcprelay//:sonic-dhcp6relay_1.0.0-0.deb_statusd",
+        "@dhcpmon//:sonic-dhcpmon_1.0.0-0.deb_data",
+        "@dhcpmon//:sonic-dhcpmon_1.0.0-0.deb_statusd",
+        "@isc_dhcp//:isc-dhcp-relay_4.4.3-P1-2.deb_data",
+        "@isc_dhcp//:isc-dhcp-relay_4.4.3-P1-2.deb_statusd",
+    ],
+)
+
+# Dockerfile.j2 line 20 `pip3 install psutil` + sonic-dhcp-utilities
+# install_requires (psutil, freezegun). Pinned in docker-base-trixie/
+# pyproject.toml, sourced from the shared @pip_pmon9 hub.
+site_packages(
+    name = "pip_layer",
+    srcs = [
+        "@pip_pmon9//psutil",
+        "@pip_pmon9//freezegun",
+    ],
+    venv = "docker-base-trixie",
+)
+
+# pip layer + sonic-dhcp-utilities :install (lays dhcp_utilities/ under
+# dist-packages + the dhcprelayd/dhcpservd console scripts).
+flatten(
+    name = "python_layer",
+    deduplicate = True,
+    tars = [
+        ":pip_layer",
+        "@sonic-dhcp-utilities//:install",
+    ],
+)
+
+# Dockerfile.j2 lines 42-46: COPY directives. The supervisor proc-exit listener
+# referenced by the supervisord conf is already shipped by the config-engine
+# base (@sonic-supervisord-utilities), so it is not re-copied here.
+tar(
+    name = "files",
+    srcs = [
+        "docker_init.sh",
+        "start.sh",
+        "docker-dhcp-relay.supervisord.conf.j2",
+        "port-name-alias-map.txt.j2",
+        "wait_for_intf.sh.j2",
+        "dhcp-relay.programs.j2",
+        "dhcpv4-relay.agents.j2",
+        "dhcpv4-sonic-relay.agents.j2",
+        "dhcpv6-relay.agents.j2",
+        "dhcp-relay.monitors.j2",
+        "critical_processes",
+        "cli/config/plugins/dhcp_relay.py",
+        "cli/show/plugins/show_dhcp_relay.py",
+        "cli/clear/plugins/clear_dhcp_relay.py",
+    ],
+    mtree = [
+        "./usr/bin/docker_init.sh uid=0 gid=0 mode=0755 type=file content=$(location docker_init.sh)",
+        "./usr/bin/start.sh uid=0 gid=0 mode=0755 type=file content=$(location start.sh)",
+        "./usr/share/sonic/templates/docker-dhcp-relay.supervisord.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location docker-dhcp-relay.supervisord.conf.j2)",
+        "./usr/share/sonic/templates/port-name-alias-map.txt.j2 uid=0 gid=0 mode=0644 type=file content=$(location port-name-alias-map.txt.j2)",
+        "./usr/share/sonic/templates/wait_for_intf.sh.j2 uid=0 gid=0 mode=0644 type=file content=$(location wait_for_intf.sh.j2)",
+        "./usr/share/sonic/templates/dhcp-relay.programs.j2 uid=0 gid=0 mode=0644 type=file content=$(location dhcp-relay.programs.j2)",
+        "./usr/share/sonic/templates/dhcpv4-relay.agents.j2 uid=0 gid=0 mode=0644 type=file content=$(location dhcpv4-relay.agents.j2)",
+        "./usr/share/sonic/templates/dhcpv4-sonic-relay.agents.j2 uid=0 gid=0 mode=0644 type=file content=$(location dhcpv4-sonic-relay.agents.j2)",
+        "./usr/share/sonic/templates/dhcpv6-relay.agents.j2 uid=0 gid=0 mode=0644 type=file content=$(location dhcpv6-relay.agents.j2)",
+        "./usr/share/sonic/templates/dhcp-relay.monitors.j2 uid=0 gid=0 mode=0644 type=file content=$(location dhcp-relay.monitors.j2)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location critical_processes)",
+        "./cli/config/plugins/dhcp_relay.py uid=0 gid=0 mode=0644 type=file content=$(location cli/config/plugins/dhcp_relay.py)",
+        "./cli/show/plugins/show_dhcp_relay.py uid=0 gid=0 mode=0644 type=file content=$(location cli/show/plugins/show_dhcp_relay.py)",
+        "./cli/clear/plugins/clear_dhcp_relay.py uid=0 gid=0 mode=0644 type=file content=$(location cli/clear/plugins/clear_dhcp_relay.py)",
+    ],
+)
+
+# Dockerfile.j2 final stage: FROM config-engine-trixie, ENTRYPOINT docker_init.sh,
+# ENV DEBIAN_FRONTEND. IMAGE_VERSION is a `docker build` ARG, not reproduced.
+oci_image(
+    name = "docker-dhcp-relay",
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    entrypoint = ["/usr/bin/docker_init.sh"],
+    env = {"DEBIAN_FRONTEND": "noninteractive"},
+    tars = [
+        ":apt_layer",
+        ":sonic_pkgs",
+        ":python_layer",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-dhcp-relay",
+    repo_tags = ["docker-dhcp-relay:latest"],
+)

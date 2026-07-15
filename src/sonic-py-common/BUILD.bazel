@@ -11,10 +11,9 @@ VERSION = "1.0"
 # setup.py: packages=['sonic_py_common']. Package sources all live in
 # `sonic_py_common/` at the module root.
 #
-# Note: son624 BUILD excludes sonic_db_dump_load.py claiming it "requires
-# redis-dump-load"; but Make wheel INCLUDES it (verified against
-# target/python-wheels/trixie/sonic_py_common-1.0-py3-none-any.whl). We
-# include all .py to match Make output.
+# Note: all .py files are included (including sonic_db_dump_load.py) to match
+# the Make wheel output (verified against
+# target/python-wheels/trixie/sonic_py_common-1.0-py3-none-any.whl).
 py_library(
     name = "sources",
     srcs = glob(["sonic_py_common/**/*.py"]),

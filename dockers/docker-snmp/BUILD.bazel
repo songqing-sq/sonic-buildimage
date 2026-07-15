@@ -6,16 +6,13 @@ load("@tar.bzl", "tar")
 # =============================================================================
 # docker-snmp: SONiC SNMP agent container (Net-SNMP snmpd + async SONiC MIB
 # implementation). Mirrors dockers/docker-snmp/Dockerfile.j2 +
-# rules/docker-snmp.mk. son624 (bookworm) has NO Bazel reference for this
-# image — this is a fresh migration built from son624's Dockerfile.j2 semantics
-# and the trixie Dockerfile.j2 recipe.
+# rules/docker-snmp.mk, built from the Dockerfile.j2 recipe.
 #
-# Key trixie-specific decisions:
-# 1. snmp/snmpd come from Debian apt (@trixie), NOT SONiC-built debs. On
-#    bookworm rules/snmpd.mk builds them from source (LIBSNMP_BASE + SNMP +
-#    SNMPD deb targets); on trixie the entire SNMP block is inside
-#    `ifeq ($(BLDENV),bookworm)` so those Make vars are empty and the
-#    Dockerfile does `apt install snmp snmpd` instead.
+# Key decisions:
+# 1. snmp/snmpd come from Debian apt (@trixie), NOT SONiC-built debs. The Make
+#    SNMP/SNMPD deb targets in rules/snmpd.mk are not built in this build
+#    environment, so those Make vars are empty and the Dockerfile does
+#    `apt install snmp snmpd` instead.
 # 2. `python3 -m sonic_ax_impl install` at build time copies
 #    <asyncsnmp>/sonic_ax_impl/bin/sysDescr_pass.py to /usr/share/snmp/ with
 #    +x. Bazel doesn't run wheel post-install code, so we replicate this
@@ -53,8 +50,8 @@ flatten(
 )
 
 # NOTE: no `sonic_pkgs` layer. rules/docker-snmp.mk _DEPENDS is `$(SNMP)
-# $(SNMPD)`, but on trixie those Make vars are empty (the SNMP/SNMPD deb
-# targets only exist inside the bookworm branch of rules/snmpd.mk) — snmp/snmpd
+# $(SNMPD)`, but those Make vars are empty in this build environment (the
+# SNMP/SNMPD deb targets in rules/snmpd.mk are not built here) — snmp/snmpd
 # are apt packages in apt_layer above. All SONiC-built debs this image needs
 # (libswsscommon, python3-swsscommon, libyang3, sonic-eventd, ...) already come
 # from the parent docker-config-engine-trixie image, so there is no SONiC-deb

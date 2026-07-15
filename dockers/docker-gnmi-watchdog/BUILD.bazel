@@ -1,0 +1,60 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# docker-gnmi-watchdog: gNMI watchdog container.
+#
+# Mirrors dockers/docker-gnmi-watchdog/Dockerfile.j2 + rules/docker-gnmi-watchdog.mk.
+#
+# Dockerfile.j2's builder stage (`apt-get install build-essential` +
+# rustup + `cargo build --release`) is replaced by rules_rust, which produces
+# the gnmi_watchdog binary hermetically at build time (see watchdog/BUILD.bazel
+# + the @watchdog_crates crate hub in the root MODULE.bazel). So no apt or
+# builder-stage layers are needed in the final image.
+#
+# NOTE: the Rust crate target name is `gnmi_watchdog` but the upstream cargo
+# package builds an artifact named `watchdog` (Dockerfile.j2 line 34 copies
+# `/watchdog/target/release/watchdog`). watchdog/BUILD.bazel's rust_binary is
+# named gnmi_watchdog so the produced binary is already `gnmi_watchdog`,
+# matching the Make image's final /usr/bin/gnmi_watchdog.
+#
+# The supervisor-proc-exit-listener is NOT packaged here: rules/
+# docker-gnmi-watchdog.mk defines no `_FILES += $(SUPERVISOR_PROC_EXIT_LISTENER_SCRIPT)`,
+# and this image's supervisord.conf does not reference the listener. It is in
+# any case already present in the docker-config-engine-trixie base.
+
+# COPY directives from Dockerfile.j2:
+#   - supervisord.conf                           -> /etc/supervisor/conf.d/
+#   - builder /watchdog/target/release/watchdog  -> /usr/bin/gnmi_watchdog (0755)
+tar(
+    name = "files",
+    srcs = [
+        "supervisord.conf",
+        "//dockers/docker-gnmi-watchdog/watchdog:gnmi_watchdog",
+    ],
+    mtree = [
+        "./usr/bin/gnmi_watchdog uid=0 gid=0 mode=0755 type=file content=$(location //dockers/docker-gnmi-watchdog/watchdog:gnmi_watchdog)",
+        "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location :supervisord.conf)",
+    ],
+)
+
+# Dockerfile.j2 final stage: FROM docker-config-engine-trixie,
+# ENTRYPOINT ["/usr/local/bin/supervisord"], ENV DEBIAN_FRONTEND=noninteractive.
+# IMAGE_VERSION is a `docker build` ARG in the Make flow, not a runtime input,
+# so it is not reproduced here (same treatment as the other migrated trixie
+# dockers).
+oci_image(
+    name = "docker-gnmi-watchdog",
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    entrypoint = ["/usr/local/bin/supervisord"],
+    env = {"DEBIAN_FRONTEND": "noninteractive"},
+    tars = [
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-gnmi-watchdog",
+    repo_tags = ["docker-gnmi-watchdog:latest"],
+)

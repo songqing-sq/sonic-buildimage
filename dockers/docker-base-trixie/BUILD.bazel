@@ -6,8 +6,7 @@ load("@tar.bzl", "mutate", "tar")
 
 exports_files(["etc/rsyslog.conf"])
 
-# jinjanator provides `j2` (trixie's Dockerfile.j2 uses `pip3 install jinjanator`,
-# unlike bookworm which used the older j2cli).
+# jinjanator provides `j2` (the Dockerfile.j2 uses `pip3 install jinjanator`).
 site_packages(
     name = "pip_layer",
     srcs = [
@@ -321,8 +320,8 @@ oci_image(
     architecture = DEBIAN_ARCH,
     # Match the Make base-trixie image: no ENTRYPOINT (Dockerfile declares
     # none; Make image Entrypoint=null) and Env carries only PATH. The former
-    # entrypoint=supervisord + DEBIAN_FRONTEND/PYTHONPATH were son624-derived
-    # deviations. PYTHONPATH is no longer needed: PYTHON_MAJOR_MINOR is now
+    # entrypoint=supervisord + DEBIAN_FRONTEND/PYTHONPATH were deviations from
+    # the Make image. PYTHONPATH is no longer needed: PYTHON_MAJOR_MINOR is now
     # 3.13 in sonic_rules, so site_packages lays pip content into
     # /usr/lib/python3/dist-packages/ (already on sys.path).
     env = {
@@ -347,8 +346,8 @@ oci_load(
 )
 
 # Debug tools layer, shared by all trixie debug image variants. Not baked
-# into the base image; overlaid onto debug variant images. Mirrors bookworm's
-# split for _DBG_IMAGE_PACKAGES.
+# into the base image; overlaid onto debug variant images. Covers
+# _DBG_IMAGE_PACKAGES.
 flatten(
     name = "debug-packages",
     deduplicate = True,

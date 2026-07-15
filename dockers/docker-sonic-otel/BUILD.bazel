@@ -1,0 +1,109 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# docker-sonic-otel: OpenTelemetry Collector (contrib) container.
+#
+# Mirrors dockers/docker-sonic-otel/Dockerfile.j2 + rules/docker-otel.mk.
+#
+# Dockerfile.j2 downloads the official otelcol-contrib .deb from GitHub at
+# build time (`wget` + `dpkg -i`). We fetch the same prebuilt .deb via
+# http_file in the root MODULE.bazel (@otelcol_contrib_amd64 / _arm64) and
+# crack its data.tar into an image layer here — no builder stage / apt needed.
+# docker_sonic_otel_debs is empty (no locally-built debs), so nothing else is
+# installed.
+
+# Dockerfile.j2 build stage: `apt-get install -y ca-certificates curl wget`.
+# The two-stage rsync carries these into the final image. ca-certificates and
+# curl are already in the docker-config-engine-trixie base, so only wget is
+# added here (shared @trixie apt pool; rules_distroless dedups the rest).
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//wget",
+    ],
+)
+
+# Crack the otelcol-contrib .deb (an `ar` archive) and emit its data payload as
+# a gzip tar layer. The upstream data ships systemd units under `./lib/systemd`;
+# on a usrmerged trixie rootfs dpkg relocates `/lib` to `/usr/lib` (the Make
+# image lands them at `./usr/lib/systemd`), so we rewrite the `./lib/` prefix to
+# `./usr/lib/` to match Make and avoid a real `/lib` dir shadowing the base
+# image's /lib -> usr/lib symlink.
+genrule(
+    name = "otelcol_data",
+    srcs = select({
+        "@platforms//cpu:x86_64": ["@otelcol_contrib_amd64//file"],
+        "@platforms//cpu:aarch64": ["@otelcol_contrib_arm64//file"],
+    }),
+    outs = ["otelcol_data.tar.gz"],
+    cmd = """
+set -eo pipefail
+tmp=$$(mktemp -d)
+trap 'rm -rf $$tmp' EXIT
+"$(BSDTAR_BIN)" -xf $< -C $$tmp
+data_file=$$(ls $$tmp/data.tar.* | head -n1)
+unpacked=$$tmp/unpacked
+mkdir -p $$unpacked
+"$(BSDTAR_BIN)" -xf $$data_file -C $$unpacked
+# usrmerge: fold ./lib into ./usr/lib (matches dpkg on trixie).
+if [ -d $$unpacked/lib ]; then
+    mkdir -p $$unpacked/usr
+    cp -a $$unpacked/lib/. $$unpacked/usr/lib/
+    rm -rf $$unpacked/lib
+fi
+"$(BSDTAR_BIN)" --gzip --uid 0 --gid 0 --numeric-owner -cf $@ -C $$unpacked .
+""",
+    toolchains = ["@bsd_tar_toolchains//:resolved_toolchain"],
+)
+
+# COPY directives from Dockerfile.j2:
+#   - start.sh, otel.sh        -> /usr/bin/ (0755)
+#   - supervisord.conf         -> /etc/supervisor/conf.d/
+#   - critical_processes       -> /etc/supervisor/
+# Plus the `ln -sf /usr/bin/otelcol-contrib /usr/local/bin/otelcol-contrib`
+# symlink the Dockerfile creates (otel.sh execs /usr/local/bin/otelcol-contrib).
+#
+# monit_otel is NOT packaged: rules/docker-otel.mk's `_BASE_IMAGE_FILES =
+# monit_otel:/etc/monit/conf.d` places it at the host layer (outside the
+# container), so it is intentionally not in this image.
+tar(
+    name = "files",
+    srcs = [
+        "start.sh",
+        "otel.sh",
+        "supervisord.conf",
+        "critical_processes",
+    ],
+    mtree = [
+        "./usr/bin/start.sh uid=0 gid=0 mode=0755 type=file content=$(location :start.sh)",
+        "./usr/bin/otel.sh uid=0 gid=0 mode=0755 type=file content=$(location :otel.sh)",
+        "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location :supervisord.conf)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location :critical_processes)",
+        "./usr/local/bin/otelcol-contrib uid=0 gid=0 mode=0777 type=link link=/usr/bin/otelcol-contrib",
+    ],
+)
+
+# Dockerfile.j2 final stage: FROM docker-config-engine-trixie,
+# ENTRYPOINT ["/usr/local/bin/supervisord"], ENV DEBIAN_FRONTEND=noninteractive.
+# IMAGE_VERSION is a `docker build` ARG in the Make flow, not a runtime input,
+# so it is not reproduced here (same treatment as the other migrated dockers).
+oci_image(
+    name = "docker-sonic-otel",
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    entrypoint = ["/usr/local/bin/supervisord"],
+    env = {"DEBIAN_FRONTEND": "noninteractive"},
+    tars = [
+        ":apt_layer",
+        ":otelcol_data",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-sonic-otel",
+    repo_tags = ["docker-sonic-otel:latest"],
+)

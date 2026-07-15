@@ -248,6 +248,25 @@ apt.install(
         # base, so docker-router-advertiser is the first image to carry it.
         "radvd",
 
+        # -------- docker-sonic-otel runtime apt deps --------
+        # docker-sonic-otel/Dockerfile.j2 apt-installs ca-certificates/curl/wget
+        # in its build stage; the two-stage rsync carries them into the final
+        # image. ca-certificates and curl are already in the base above, so only
+        # wget is new here.
+        "wget",
+
+        # -------- docker-dhcp-relay runtime apt deps --------
+        # Runtime libs linked by the sonic-built dhcp debs (dhcp4relay /
+        # dhcp6relay / dhcpmon) + isc-dhcp-relay. The -dev variants the
+        # Dockerfile apt-installs are build-only (purged), so only these runtime
+        # .so packages ship. libpcap0.8t64 is already declared in the
+        # docker-orchagent block below (deduped here). Not present in the
+        # config-engine base.
+        "libevent-2.1-7t64",
+        "libevent-pthreads-2.1-7t64",
+        "libexplain51t64",
+        "libjsoncpp26",
+
         # -------- docker-nat runtime apt deps --------
         # docker-nat/Dockerfile.j2 `apt install -f -y bridge-utils conntrack
         # iptables` (on trixie iptables comes from Debian repos, not local

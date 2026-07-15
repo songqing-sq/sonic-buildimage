@@ -2,7 +2,7 @@
 
 cffi is venv-gated in the @libyang3_py3_pip hub. To pull it in we apply
 a rule transition that sets the @aspect_rules_py venv flag to "default"
-(the venv we declared in MODULE.bazel). Same idea as son624's
+(the venv we declared in MODULE.bazel). Same idea as
 sonic_rules//python:site_packages.bzl `_venv_transition`.
 """
 

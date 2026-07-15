@@ -1,6 +1,6 @@
 # Build file for the thrift sdist (fetched via http_archive as @thrift_fastbinary_src
 # in the root MODULE.bazel). thrift==0.13.0's pure-Python package is provided by
-# the uv/pip hub (@pip_pmon8//thrift). Its optional C++ acceleration extension
+# the uv/pip hub (@pip_pmon9//thrift). Its optional C++ acceleration extension
 # `thrift.protocol.fastbinary` is NOT built by the aspect uv extension: aspect's
 # sdist_configure classified thrift as pure-Python and produced a py3-none-any
 # wheel, so fastbinary.*.so was never compiled. thrift then silently falls back
@@ -85,7 +85,7 @@ cc_shared_library(
 )
 
 # Ready-to-layer tar placing the compiled extension beside the pip-installed
-# thrift package. site_packages lays @pip_pmon8//thrift at
+# thrift package. site_packages lays @pip_pmon9//thrift at
 # /usr/lib/python3/dist-packages/thrift/, so fastbinary goes into its
 # protocol/ subpackage. Consumed by docker-platform-monitor's python_layer.
 tar(

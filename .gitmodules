@@ -63,7 +63,7 @@
 	url = https://github.com/secdev/scapy.git
 [submodule "src/sonic-mgmt-framework"]
 	path = src/sonic-mgmt-framework
-	url = https://github.com/sonic-net/sonic-mgmt-framework
+	url = https://github.com/songqing-sq/sonic-mgmt-framework
 [submodule "src/sonic-ztp"]
 	path = src/sonic-ztp
 	url = https://github.com/sonic-net/sonic-ztp
@@ -73,7 +73,7 @@
 	branch = master
 [submodule "src/sonic-mgmt-common"]
 	path = src/sonic-mgmt-common
-	url = https://github.com/sonic-net/sonic-mgmt-common.git
+	url = https://github.com/songqing-sq/sonic-mgmt-common
 [submodule "src/wpasupplicant/sonic-wpa-supplicant"]
 	path = src/wpasupplicant/sonic-wpa-supplicant
 	url = https://github.com/sonic-net/sonic-wpa-supplicant.git
@@ -101,7 +101,7 @@
 	url = https://github.com/songqing-sq/sonic-host-services
 [submodule "src/sonic-gnmi"]
 	path = src/sonic-gnmi
-	url = https://github.com/sonic-net/sonic-gnmi.git
+	url = https://github.com/songqing-sq/sonic-gnmi
 [submodule "src/sonic-bmp"]
 	path = src/sonic-bmp
 	url = https://github.com/songqing-sq/sonic-bmp.git
@@ -110,7 +110,7 @@
 	url = https://github.com/sonic-net/sonic-genl-packet
 [submodule "src/dhcpmon"]
 	path = src/dhcpmon
-	url = https://github.com/sonic-net/sonic-dhcpmon.git
+	url = https://github.com/songqing-sq/sonic-dhcpmon
 [submodule "src/sonic-dash-api"]
 	path = src/sonic-dash-api
 	url = https://github.com/songqing-sq/sonic-dash-api.git

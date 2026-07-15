@@ -2,6 +2,11 @@ exports_files(
     [
         "arp_update",
         "update_chassisdb_config",
+        # sidecar _FILES sources (docker-gnmi-sidecar / docker-restapi-sidecar).
+        # gnmi.sh is a symlink to service_mgmt.sh, so reference the real target.
+        "k8s_pod_control.sh",
+        "service_mgmt.sh",
+        "restapi.sh",
     ],
     visibility = ["//visibility:public"],
 )

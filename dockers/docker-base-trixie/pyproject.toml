@@ -84,6 +84,10 @@ dependencies = [
     # (dependency of restore_neighbors.py). Pure-Python; its only transitive
     # (win-inet-pton) carries a win32-only marker and is not installed on linux.
     "pyroute2==0.5.14",
+
+    # ---- docker-dhcp-relay deps ----
+    # sonic-dhcp-utilities install_requires: psutil (already above) + freezegun.
+    "freezegun",
 ]
 
 # pyangbind unconditionally depends on enum34, which on Python 3 shadows the
