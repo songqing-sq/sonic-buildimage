@@ -15,13 +15,12 @@ COPTS = [
 # The Make link line (LIBS in Makefile):
 #   -lhiredis -lswsscommon -lzmq -lboost_serialization -llua5.1
 # plus per-binary Bazel adds -levent / -lboost_thread / -lboost_system for
-# the events_service side. -lpthread / -luuid come transitively from libswsscommon.
+# the events_service side. -luuid comes transitively from libswsscommon.
 # hiredis / zmq / boost_serialization / uuid are already carried by the
 # swsscommon shared library and its dev-package deps; only the libraries
-# that eventd itself calls directly need to be repeated here.
-LINKOPTS = [
-    "-lpthread",
-]
+# that eventd itself calls directly need to be repeated here. pthread is
+# pulled via the framework's system_libs target (uses -pthread, not -lpthread).
+PTHREAD_DEP = ["@sonic_build_infra//system_libs:pthread"]
 
 # ------ eventd binary (Make: OBJS = src/eventd.o + src/main.o) ------
 cc_binary(
@@ -33,7 +32,6 @@ cc_binary(
     ],
     copts = COPTS,
     includes = ["src"],
-    linkopts = LINKOPTS,
     dynamic_deps = [
         "@sonic-swss-common//:swsscommon_shared",
         "@libnl3//:libnl_3_shared",
@@ -44,7 +42,7 @@ cc_binary(
     deps = [
         "@sonic-swss-common//:swsscommon",
         "@eventd_deps//liblua5.1-0-dev:lua5.1",
-    ],
+    ] + PTHREAD_DEP,
 )
 
 # ------ eventdb binary (Make: EVENTDB_OBJS) ------
@@ -62,7 +60,6 @@ cc_binary(
     ],
     copts = COPTS,
     includes = ["src"],
-    linkopts = LINKOPTS,
     dynamic_deps = [
         "@sonic-swss-common//:swsscommon_shared",
         "@libnl3//:libnl_3_shared",
@@ -73,7 +70,7 @@ cc_binary(
     deps = [
         "@sonic-swss-common//:swsscommon",
         "@eventd_deps//liblua5.1-0-dev:lua5.1",
-    ],
+    ] + PTHREAD_DEP,
 )
 
 # ------ events_tool binary (Make: TOOL_OBJS) ------
@@ -81,7 +78,6 @@ cc_binary(
     name = "events_tool",
     srcs = ["tools/events_tool.cpp"],
     copts = COPTS,
-    linkopts = LINKOPTS,
     dynamic_deps = [
         "@sonic-swss-common//:swsscommon_shared",
         "@libnl3//:libnl_3_shared",
@@ -92,7 +88,7 @@ cc_binary(
     deps = [
         "@sonic-swss-common//:swsscommon",
         "@eventd_deps//liblua5.1-0-dev:lua5.1",
-    ],
+    ] + PTHREAD_DEP,
 )
 
 # ------ rsyslog_plugin binary (Make: RSYSLOG-PLUGIN_OBJS) ------
@@ -109,7 +105,6 @@ cc_binary(
     ],
     copts = COPTS,
     includes = ["rsyslog_plugin"],
-    linkopts = LINKOPTS,
     dynamic_deps = [
         "@sonic-swss-common//:swsscommon_shared",
         "@libnl3//:libnl_3_shared",
@@ -120,7 +115,7 @@ cc_binary(
     deps = [
         "@sonic-swss-common//:swsscommon",
         "@eventd_deps//liblua5.1-0-dev:lua5.1",
-    ],
+    ] + PTHREAD_DEP,
 )
 
 # ------ sonic-eventd .deb (main) ------

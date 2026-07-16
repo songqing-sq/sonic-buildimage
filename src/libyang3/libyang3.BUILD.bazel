@@ -262,6 +262,7 @@ sonic_shared_library_versioned(
     deps = [
         "@libyang3_deps//libpcre2-dev:libpcre2",
         "@libyang3_deps//libxxhash-dev:libxxhash",
+        "@sonic_build_infra//system_libs:m",
     ],
     copts = [
         "-DLIBYANG_BUILD",
@@ -272,7 +273,6 @@ sonic_shared_library_versioned(
         "-Wextra",
         "-Wpedantic",
     ],
-    linkopts = ["-lm"],
     includes = [
         "src",
         "src/plugins_exts",
@@ -350,7 +350,10 @@ cc_binary(
         ":tools_config_h",
         "compat/compat.c",
     ],
-    deps = [":yang"],
+    deps = [
+        ":yang",
+        "@sonic_build_infra//system_libs:m",
+    ],
     copts = [
         "-std=c11",
         "-Wall",
@@ -358,7 +361,6 @@ cc_binary(
         "-iquote{REPO_DIR}/tools/lint",
         "-iquote{REPO_DIR}/tools/lint/linenoise",
     ],
-    linkopts = ["-lm"],
 )
 
 # =============================================================================
@@ -371,14 +373,16 @@ cc_binary(
         "compat/compat.c",
         ":tools_config_h",
     ],
-    deps = [":yang"],
+    deps = [
+        ":yang",
+        "@sonic_build_infra//system_libs:m",
+    ],
     copts = [
         "-std=c11",
         "-Wall",
         "-Wextra",
     ],
     includes = ["."],
-    linkopts = ["-lm"],
 )
 
 # =============================================================================

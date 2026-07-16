@@ -101,13 +101,13 @@ cc_binary(
         "rebootbackend",
     ],
     linkopts = [
-        "-lpthread",
         "-Wl,--as-needed",
     ],
     deps = [
         ":rebootgnoi",
         "@protobuf//:json_util",
         "@sonic-swss-common//:swsscommon",
+        "@sonic_build_infra//system_libs:pthread",
         # Link ONLY the core dbus-c++-1 variant (matches Make's `-ldbus-c++-1`).
         # The meta `:libdbus-c++` target bundles the ecore + glib dispatcher
         # variants too, which drag in the EFL closure (libecore/libeina/libeo/

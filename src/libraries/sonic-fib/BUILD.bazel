@@ -104,6 +104,7 @@ sonic_shared_library_versioned(
     deps = [
         ":generated_headers",
         "@sonic_fib_deps//nlohmann-json3-dev:nlohmann-json3",
+        "@sonic_build_infra//system_libs:pthread",
     ],
     copts = LIB_COPTS,
     includes = [
@@ -111,7 +112,6 @@ sonic_shared_library_versioned(
         "src/c-api",
     ],
     linkopts = [
-        "-lpthread",
         "-Wl,-z,now",
     ],
     soversion = "0",
