@@ -97,19 +97,37 @@ passwd(
             "shell": "/usr/sbin/nologin",
             "username": "_lldpd",
         },
-        # Debian-snmp system user. Created by the snmpd apt package postinst,
-        # which runs:
-        #   adduser --quiet --system --group Debian-snmp (home /var/lib/snmp)
-        # docker-snmp launches `snmpd -u Debian-snmp -g Debian-snmp`, which
-        # aborts with "Bad user id: Debian-snmp" if the user is missing. Bazel
-        # installs deb data without running postinst, so we create it here.
-        # uid/gid pinned to 102/103 (next free after _lldpd).
+        # Debian-snmp system user. Created by the snmpd apt package postinst
+        # (verified from its control.tar), which runs:
+        #   adduser --quiet --system --group --home /var/lib/snmp \
+        #       --disabled-password --disabled-login --shell /bin/false \
+        #       --force-badname Debian-snmp
+        # and then `chown Debian-snmp:Debian-snmp /var/lib/snmp` (the dir chown
+        # is replicated in docker-snmp's BUILD). docker-snmp launches
+        # `snmpd -u Debian-snmp -g Debian-snmp`, which aborts with "Bad user id:
+        # Debian-snmp" if the user is missing. Bazel installs deb data without
+        # running postinst, so we create it here. uid/gid pinned to 102/103
+        # (next free after _lldpd).
         {
             "uid": 102,
             "gid": 103,
             "home": "/var/lib/snmp",
-            "shell": "/usr/sbin/nologin",
+            "shell": "/bin/false",
             "username": "Debian-snmp",
+        },
+        # radvd system user. Created by the radvd apt postinst (verified from
+        # control.tar): `adduser --quiet --system --no-create-home --home
+        # /run/radvd radvd` — NO --group, so it lands in nogroup (gid 65534).
+        # SONiC runs `radvd -n` (no -u), so radvd stays root and does not
+        # strictly need this user (verified: radvd starts fine without it); we
+        # create it for parity with the Make image and in case a radvd.conf
+        # specifies a user. uid pinned to 103 (next free).
+        {
+            "uid": 103,
+            "gid": 65534,
+            "home": "/run/radvd",
+            "shell": "/usr/sbin/nologin",
+            "username": "radvd",
         },
     ],
 )

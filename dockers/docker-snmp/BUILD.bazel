@@ -138,6 +138,11 @@ tar(
         "./usr/share/sonic/templates/supervisord.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :supervisord.conf.j2)",
         "./usr/share/sonic/templates/sysDescription.j2 uid=0 gid=0 mode=0644 type=file content=$(location :sysDescription.j2)",
         "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location :critical_processes)",
+        # snmpd postinst chowns /var/lib/snmp to Debian-snmp (the apt data ships
+        # it root-owned); snmpd drops to Debian-snmp at runtime and writes its
+        # persistent state (cert_indexes etc.) there. uid/gid match the
+        # Debian-snmp user declared in docker-base-trixie's passwd/group.
+        "./var/lib/snmp uid=102 gid=103 mode=0755 type=dir",
     ],
 )
 
