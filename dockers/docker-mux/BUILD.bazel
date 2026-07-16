@@ -29,6 +29,9 @@ flatten(
         "@trixie//libboost-log1.83.0:data",
         "@trixie//libboost-program-options1.83.0:data",
         "@trixie//libboost-thread1.83.0:data",
+        "@trixie//libboost-date-time1.83.0:data",
+        "@trixie//libboost-system1.83.0:data",
+        "@trixie//libicu76:data",
     ],
 )
 

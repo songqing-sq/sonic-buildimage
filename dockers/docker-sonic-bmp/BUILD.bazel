@@ -2,14 +2,25 @@ load("@rules_deb//distroless:defs.bzl", "flatten")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@tar.bzl", "tar")
 
+# openbmpd links libyaml-cpp.so.0.8 (verified via ldd), which is NOT present in
+# the docker-config-engine-trixie base and is not shipped by the sonic-bmp deb.
+# flatten() does not resolve the deb's Depends, so we ship the runtime lib here.
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//libyaml-cpp0.8:data",
+    ],
+)
+
 # rules/docker-bmp.mk:
 #   $(DOCKER_BMP)_INSTALL_DEBS = $(LIBSWSSCOMMON) $(SONIC_BMPD)
 #                                $(PYTHON3_SWSSCOMMON) $(LIBYANG3_PY3)
 # libswsscommon / python3-swsscommon / libyang3 / python3-libyang are ALL already
 # present in the docker-config-engine-trixie base (see that BUILD.bazel sonic_pkgs
-# lines 58-90). The only package delta of docker-sonic-bmp vs its base is the
+# lines 58-90). The remaining package delta of docker-sonic-bmp vs its base is the
 # SONIC_BMPD deb (sonic-bmp), which lays /usr/bin/openbmpd and the conffile
-# /etc/bmp/openbmpd.conf. Verified against the Make image top layer.
+# /etc/bmp/openbmpd.conf, plus the libyaml-cpp0.8 runtime lib in :apt_layer above.
 # `_data` (contents) + `_statusd` (dpkg status.d stub) so `dpkg -l` lists it.
 flatten(
     name = "sonic_pkgs",
@@ -74,6 +85,7 @@ oci_image(
     },
     workdir = "/",
     tars = [
+        ":apt_layer",
         ":sonic_pkgs",
         ":python_layer",
         ":files",

@@ -24,9 +24,13 @@ flatten(
     tars = [
         "@trixie//libevent-2.1-7t64",
         "@trixie//libevent-pthreads-2.1-7t64",
+        "@trixie//libevent-extra-2.1-7t64",
+        "@trixie//libevent-openssl-2.1-7t64",
         "@trixie//libexplain51t64",
         "@trixie//libjsoncpp26",
         "@trixie//libpcap0.8t64",
+        "@trixie//libboost-system1.83.0",
+        "@trixie//libboost-thread1.83.0",
     ],
 )
 

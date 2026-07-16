@@ -268,11 +268,19 @@ apt.install(
         # Dockerfile apt-installs are build-only (purged), so only these runtime
         # .so packages ship. libpcap0.8t64 is already declared in the
         # docker-orchagent block below (deduped here). Not present in the
-        # config-engine base.
+        # config-engine base. libboost-system/thread and libevent-extra/openssl
+        # are the runtime .so's dhcp4/6relay + dhcpmon link (verified via ldd:
+        # libboost_system/thread.so.1.83.0, libevent_extra/libevent_openssl-2.1.so.7).
+        # libevent_extra and libevent_openssl live in SEPARATE packages
+        # (libevent-extra-2.1-7t64 and libevent-openssl-2.1-7t64 respectively).
         "libevent-2.1-7t64",
         "libevent-pthreads-2.1-7t64",
+        "libevent-extra-2.1-7t64",
+        "libevent-openssl-2.1-7t64",
         "libexplain51t64",
         "libjsoncpp26",
+        "libboost-system1.83.0",
+        "libboost-thread1.83.0",
 
         # -------- docker-nat runtime apt deps --------
         # docker-nat/Dockerfile.j2 `apt install -f -y bridge-utils conntrack
@@ -390,21 +398,23 @@ apt.install(
         # -------- docker-mux runtime apt deps --------
         # rules/docker-mux.mk installs the sonic-linkmgrd .deb via `apt install`
         # (Dockerfile.j2 install_debian_packages), on top of the
-        # docker-config-engine-trixie base. Measured package delta (Make
-        # docker-mux image dpkg list minus Make docker-config-engine-trixie base)
-        # is EXACTLY 5 packages: sonic-linkmgrd (SONiC-built, shipped from
-        # @sonic-linkmgrd, NOT apt) plus the four Boost runtime libs below that
-        # linkmgrd links. linkmgrd's other Depends (libc6, libgcc-s1,
-        # libstdc++6, libboost-serialization1.83.0, libnl-3-200,
-        # libnl-route-3-200, libswsscommon, libmnl0) are already present in the
-        # config-engine base, so only these four are new. flatten() does not
-        # resolve deb Depends, so docker-mux/BUILD.bazel lists each explicitly.
-        # Registering the names here only makes @trixie//<pkg> addressable; it
-        # does NOT add them to any other image.
+        # docker-config-engine-trixie base. The linkmgrd runtime .so closure was
+        # verified via ldd on the built binary: it links the Boost libs below
+        # plus libboost_date_time.so.1.83.0, libboost_system.so.1.83.0, and
+        # libicudata.so.76 (icu is pulled in transitively by Boost.Log/Regex).
+        # linkmgrd's other Depends (libc6, libgcc-s1, libstdc++6,
+        # libboost-serialization1.83.0, libnl-3-200, libnl-route-3-200,
+        # libswsscommon, libmnl0) are already present in the config-engine base.
+        # flatten() does not resolve deb Depends, so docker-mux/BUILD.bazel lists
+        # each explicitly. Registering names here only makes @trixie//<pkg>
+        # addressable; it does NOT add them to any other image. libboost-system
+        # is already declared in the docker-dhcp-relay block above.
         "libboost-filesystem1.83.0",
         "libboost-log1.83.0",
         "libboost-program-options1.83.0",
         "libboost-thread1.83.0",
+        "libboost-date-time1.83.0",
+        "libicu76",
 
         # -------- Debug-only variant packages (rules/docker-base-trixie.mk _DBG_IMAGE_PACKAGES) --------
         # These are NOT baked into the base image (see BUILD.bazel `flat` list),
