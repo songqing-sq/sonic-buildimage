@@ -89,6 +89,18 @@ flatten(
     ],
 )
 
+# lldpd postinst runs `dpkg-statoverride --add _lldpd adm 4750 /usr/sbin/lldpcli`
+# so lldpcli is setgid-adm (lets the unprivileged client reach lldpd's control
+# socket). flatten() does not run postinst, and OCI layers cannot re-stat a file
+# from a lower layer without re-supplying content — so we extract lldpcli from
+# the deb data tar and re-lay it in :files with uid=_lldpd gid=adm mode=4750.
+genrule(
+    name = "lldpcli_bin",
+    srcs = ["@lldpd//:lldpd_1.0.16-1+deb12u1.deb_data"],
+    outs = ["lldpcli"],
+    cmd = "tar -xOf $(location @lldpd//:lldpd_1.0.16-1+deb12u1.deb_data) ./usr/sbin/lldpcli > $@",
+)
+
 # COPY'd SONiC files. dzf Dockerfile.j2 + Dockerfile.common.j2:
 #   COPY docker-lldp-init.sh        -> /usr/bin/            (0755)
 #   COPY start.sh                   -> /usr/bin/            (0755)
@@ -122,6 +134,7 @@ tar(
         "lldpdSysDescr.conf.j2",
         "lldpd",
         "critical_processes",
+        ":lldpcli",
     ],
     mtree = [
         "./usr/bin/docker-lldp-init.sh uid=0 gid=0 mode=0755 type=file content=$(location docker-lldp-init.sh)",
@@ -133,6 +146,8 @@ tar(
         "./usr/share/sonic/templates/lldpd.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location lldpd.conf.j2)",
         "./usr/share/sonic/templates/lldpdSysDescr.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location lldpdSysDescr.conf.j2)",
         "./etc/default/lldpd uid=0 gid=0 mode=0644 type=file content=$(location lldpd)",
+        # lldpd postinst dpkg-statoverride: lldpcli -> _lldpd:adm 4750 (setgid).
+        "./usr/sbin/lldpcli uid=101 gid=4 mode=4750 type=file content=$(location :lldpcli)",
         "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location critical_processes)",
     ],
 )

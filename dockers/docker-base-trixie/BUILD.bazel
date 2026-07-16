@@ -80,6 +80,37 @@ passwd(
             "shell": "/usr/sbin/nologin",
             "username": "_apt",
         },
+        # _lldpd system user. Created by the lldpd deb postinst (see
+        # src/lldpd/BUILD.bazel), which runs:
+        #   adduser --system --home /run/lldpd --no-create-home --group _lldpd
+        # lldpd is compiled with privilege separation, so it drops to _lldpd at
+        # startup and REFUSES to run without it ("no _lldpd user for privilege
+        # separation, please create it" -> exit). Bazel installs deb data
+        # without running postinst, so we create the user here. uid/gid are
+        # pinned (declarative passwd can't allocate dynamically); 101/102 avoid
+        # the redis(100/101) and _apt(105) values already in use. lldpcli's
+        # setgid-adm 4750 override is handled in docker-lldp's BUILD.
+        {
+            "uid": 101,
+            "gid": 102,
+            "home": "/run/lldpd",
+            "shell": "/usr/sbin/nologin",
+            "username": "_lldpd",
+        },
+        # Debian-snmp system user. Created by the snmpd apt package postinst,
+        # which runs:
+        #   adduser --quiet --system --group Debian-snmp (home /var/lib/snmp)
+        # docker-snmp launches `snmpd -u Debian-snmp -g Debian-snmp`, which
+        # aborts with "Bad user id: Debian-snmp" if the user is missing. Bazel
+        # installs deb data without running postinst, so we create it here.
+        # uid/gid pinned to 102/103 (next free after _lldpd).
+        {
+            "uid": 102,
+            "gid": 103,
+            "home": "/var/lib/snmp",
+            "shell": "/usr/sbin/nologin",
+            "username": "Debian-snmp",
+        },
     ],
 )
 
@@ -97,6 +128,16 @@ group(
         {
             "name": "redis",
             "gid": 101,
+        },
+        # Per-user groups created by adduser --group in the lldpd / snmpd
+        # postinst (see the matching passwd entries above).
+        {
+            "name": "_lldpd",
+            "gid": 102,
+        },
+        {
+            "name": "Debian-snmp",
+            "gid": 103,
         },
         # nogroup: the default group for --system users created without --group
         # (e.g. _apt above). Standard Debian gid 65534.
