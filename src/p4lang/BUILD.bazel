@@ -1,6 +1,6 @@
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
-load("//:sysroot.bzl", "deb_data_tar", "deb_sysroot", "filtered_libdir")
+load("//:sysroot.bzl", "autotools_env", "deb_data_tar", "deb_sysroot", "filtered_libdir", "pruned_tree")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -177,5 +177,151 @@ sonic_deb(
         "libgrpc++-dev",
         "libgrpc-dev",
         "protobuf-compiler-grpc",
+    ],
+)
+
+# =============================================================================
+# p4lang-bmv2 1.15.0-9  (Stage 2)
+#
+# Autotools build (autogen.sh + configure --with-pdfixed --with-thrift
+# --with-nanomsg --with-pi + make + make install), wrapped with
+# rules_foreign_cc configure_make. Reuses the PI framework: a dedicated apt
+# sysroot (adds thrift/nanomsg/pcap/gmp/ssl + boost filesystem/program_options)
+# plus the PI install tree (pi_gendir) staged for --with-pi (-lpi... + PI/*.h).
+# =============================================================================
+
+deb_sysroot(
+    name = "bmv2_sysroot",
+    tars = [
+        "@p4lang_bmv2_deps//autoconf:autoconf",
+        "@p4lang_bmv2_deps//automake:automake",
+        "@p4lang_bmv2_deps//libtool:libtool",
+        "@p4lang_bmv2_deps//m4:m4",
+        "@p4lang_bmv2_deps//pkgconf:pkgconf",
+        "@p4lang_bmv2_deps//pkgconf-bin:pkgconf-bin",
+        "@p4lang_bmv2_deps//cmake:cmake",
+        "@p4lang_bmv2_deps//protobuf-compiler:protobuf-compiler",
+        "@p4lang_bmv2_deps//protobuf-compiler-grpc:protobuf-compiler-grpc",
+        "@p4lang_bmv2_deps//thrift-compiler:thrift-compiler",
+        "@p4lang_bmv2_deps//libprotoc-dev:libprotoc-dev",
+        "@p4lang_bmv2_deps//libprotobuf-dev:libprotobuf-dev",
+        "@p4lang_bmv2_deps//libgrpc-dev:libgrpc-dev",
+        "@p4lang_bmv2_deps//libgrpc++-dev:libgrpc++-dev",
+        "@p4lang_bmv2_deps//libthrift-dev:libthrift-dev",
+        "@p4lang_bmv2_deps//libboost-dev:libboost-dev",
+        "@p4lang_bmv2_deps//libboost-system1.83-dev:libboost-system1.83-dev",
+        "@p4lang_bmv2_deps//libboost-thread1.83-dev:libboost-thread1.83-dev",
+        "@p4lang_bmv2_deps//libboost-filesystem1.83-dev:libboost-filesystem1.83-dev",
+        "@p4lang_bmv2_deps//libboost-program-options1.83-dev:libboost-program-options1.83-dev",
+        "@p4lang_bmv2_deps//libgmp-dev:libgmp-dev",
+        "@p4lang_bmv2_deps//libnanomsg-dev:libnanomsg-dev",
+        "@p4lang_bmv2_deps//libpcap-dev:libpcap-dev",
+        "@p4lang_bmv2_deps//libssl-dev:libssl-dev",
+        "@p4lang_bmv2_deps//libreadline-dev:libreadline-dev",
+        "@p4lang_bmv2_deps//python3-thrift:python3-thrift",
+    ],
+)
+
+filtered_libdir(
+    name = "bmv2_libs",
+    src = ":bmv2_sysroot",
+)
+
+# PI install tree with .la files stripped, staged for bmv2's --with-pi link
+# (libtool would otherwise follow PI's non-relocatable .la archives).
+pruned_tree(
+    name = "pi_staged",
+    src = ":pi_gendir",
+)
+
+_BSR = "$$EXT_BUILD_ROOT$$/$(execpath :bmv2_sysroot)"
+
+_BLIBS = "$$EXT_BUILD_ROOT$$/$(execpath :bmv2_libs)"
+
+_PIGEN = "$$EXT_BUILD_ROOT$$/$(execpath :pi_staged)"
+
+configure_make(
+    name = "bmv2_build",
+    lib_source = "@p4lang_bmv2_src//:all_srcs",
+    args = ["-j`nproc`"],
+    autogen = True,
+    autogen_command = "./autogen.sh",
+    configure_in_place = True,
+    configure_prefix = "ln -sfn $$EXT_BUILD_ROOT$$/bazel-out ./bazel-out && ",
+    configure_options = [
+        "--with-pdfixed",
+        "--with-thrift",
+        "--with-nanomsg",
+        "--with-pi",
+        "--with-boost-libdir=" + _BSR + "/usr/lib/x86_64-linux-gnu",
+    ],
+    build_data = [
+        ":bmv2_sysroot",
+        ":bmv2_libs",
+        ":pi_staged",
+    ],
+    env = autotools_env(
+        _BSR,
+        _BLIBS + ":" + _PIGEN + "/lib",
+        extra_includes = [_PIGEN + "/include"],
+        extra_libdirs = [_PIGEN + "/lib"],
+    ),
+    out_binaries = ["simple_switch"],
+    out_shared_libs = [
+        "libbmpi.so.0.0.0",
+        "libbmall.so.0.0.0",
+    ],
+    targets = [
+        "all",
+        "install",
+    ],
+)
+
+filegroup(
+    name = "bmv2_gendir",
+    srcs = [":bmv2_build"],
+    output_group = "gen_dir",
+)
+
+# Debian data.tar.gz for bmv2 (bin/lib/include/python remapped to /usr).
+deb_data_tar(
+    name = "bmv2_data",
+    gendir = ":bmv2_gendir",
+)
+
+# The p4lang-bmv2 .deb. Depends mirror the Make baseline control.
+sonic_deb(
+    name = "p4lang-bmv2_1.15.0-9.deb",
+    data = ":bmv2_data",
+    content = {},
+    package = "p4lang-bmv2",
+    version = "1.15.0-9",
+    architecture = "amd64",
+    section = "net",
+    package_file_name = "p4lang-bmv2_1.15.0-9_amd64.deb",
+    homepage = "https://github.com/p4lang/behavioral-model",
+    description = "P4 behavioral model (bmv2)\n A P4 software switch (behavioral model) and its simple_switch/\n simple_switch_grpc targets, built against the P4Runtime (PI) library.",
+    depends = [
+        "libboost-filesystem1.83.0 (>= 1.83.0)",
+        "libboost-program-options1.83.0 (>= 1.83.0)",
+        "libboost-thread1.83.0 (>= 1.83.0)",
+        "libc6 (>= 2.38)",
+        "libgcc-s1 (>= 3.0)",
+        "libgmp10 (>= 2:6.3.0+dfsg)",
+        "libgrpc++1.51t64 (>= 1.51.1)",
+        "libgrpc29t64 (>= 1.51.1)",
+        "libnanomsg5 (>= 1.1.5)",
+        "libpcap0.8t64 (>= 1.5.1)",
+        "libprotobuf32t64 (>= 3.21.12)",
+        "libstdc++6 (>= 14)",
+        "libthrift-0.19.0t64 (>= 0.19.0-1~)",
+        "p4lang-pi (>= 0.1.1)",
+        "python3:any",
+        "libtool",
+        "pkg-config",
+        "protobuf-compiler",
+        "protobuf-compiler-grpc",
+        "python3-thrift",
+        "thrift-compiler",
     ],
 )

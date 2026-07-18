@@ -1,0 +1,12 @@
+Add <cstdint> to dynamic_bitset.h (source hunk extracted from the Debian
+use-boost-1.83.patch). Required so std::uint*_t types resolve under gcc-14
+libstdc++, which no longer transitively includes <cstdint>.
+--- a/include/bm/bm_sim/dynamic_bitset.h
++++ b/include/bm/bm_sim/dynamic_bitset.h
+@@ -23,6 +23,7 @@
+ 
+ #include <bitset>
+ #include <cassert>
++#include <cstdint>
+ #include <limits>
+ #include <vector>

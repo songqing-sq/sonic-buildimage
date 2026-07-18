@@ -33,6 +33,20 @@ http_archive(
     ],
 )
 
+# bmv2 1.15.0 orig tarball. Ships no vendored Bazel files. The Debian
+# use-boost-1.83.patch's single source hunk (adds <cstdint> to
+# dynamic_bitset.h for gcc-14 libstdc++) is applied here; the rest of that
+# patch is debian/control-only and is reflected in sonic_deb(depends=).
+http_archive(
+    name = "p4lang_bmv2_src",
+    build_file = "//:p4lang-bmv2.BUILD",
+    sha256 = "083bb907e45597af8e29ef3b0a92d33d282ba23840ddd5cfb8372d2f030ab415",
+    urls = ["http://download.opensuse.org/repositories/home:/p4lang/Debian_11/p4lang-bmv2_1.15.0.orig.tar.gz"],
+    patch_tool = "patch",
+    patch_args = ["-p1"],
+    patches = ["//:bmv2_patches/add-cstdint.patch"],
+)
+
 # =============================================================================
 # Build tools + dev libraries from the pinned public Debian trixie snapshot.
 # These mirror PI's debian/control Build-Depends exactly (protobuf 3.21 / grpc
@@ -88,3 +102,39 @@ apt.install(
     suites = ["trixie", "trixie-updates", "trixie-security"],
 )
 use_repo(apt, "p4lang_pi_deps")
+
+# bmv2 build tools + dev libs (adds thrift/nanomsg/pcap/gmp/ssl + more boost
+# on top of PI's set). Mirrors p4lang-bmv2 debian/control Build-Depends.
+apt.install(
+    dependency_set = "p4lang_bmv2_deps",
+    packages = [
+        "autoconf:amd64",
+        "automake:amd64",
+        "libtool:amd64",
+        "m4:amd64",
+        "pkgconf:amd64",
+        "pkgconf-bin:amd64",
+        "cmake:amd64",
+        "protobuf-compiler:amd64",
+        "protobuf-compiler-grpc:amd64",
+        "thrift-compiler:amd64",
+        "libprotoc-dev:amd64",
+        "libprotobuf-dev:amd64",
+        "libgrpc-dev:amd64",
+        "libgrpc++-dev:amd64",
+        "libthrift-dev:amd64",
+        "libboost-dev:amd64",
+        "libboost-system1.83-dev:amd64",
+        "libboost-thread1.83-dev:amd64",
+        "libboost-filesystem1.83-dev:amd64",
+        "libboost-program-options1.83-dev:amd64",
+        "libgmp-dev:amd64",
+        "libnanomsg-dev:amd64",
+        "libpcap-dev:amd64",
+        "libssl-dev:amd64",
+        "libreadline-dev:amd64",
+        "python3-thrift:amd64",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(apt, "p4lang_bmv2_deps")

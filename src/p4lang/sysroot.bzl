@@ -10,6 +10,55 @@ tarballs into a single TreeArtifact -- a real rootfs with usr/bin, usr/share,
 usr/lib, pkgconfig, etc.
 """
 
+def autotools_env(sr, libs, extra_includes = [], extra_libdirs = [], extra_cxxflags = ""):
+    """Environment for a relocated Debian autotools+pkgconf+protoc build.
+
+    Args:
+        sr: shell expr for the sysroot root (e.g. "$$EXT_BUILD_ROOT$$/$(execpath :x)").
+        libs: shell expr for the filtered LD_LIBRARY_PATH lib dir.
+        extra_includes: additional -I dirs (shell exprs).
+        extra_libdirs: additional -L dirs (shell exprs).
+        extra_cxxflags: extra CXXFLAGS string appended.
+
+    Returns:
+        dict of env var name -> value.
+    """
+    lib = sr + "/usr/lib/x86_64-linux-gnu"
+    inc = sr + "/usr/include"
+    inc_ma = sr + "/usr/include/x86_64-linux-gnu"
+    cppflags = " ".join(["-I" + inc, "-I" + inc_ma] + ["-I" + d for d in extra_includes])
+    cxxflags = cppflags + " -std=c++17" + ((" " + extra_cxxflags) if extra_cxxflags else "")
+    ldflags = " ".join(["-L" + lib] + ["-L" + d for d in extra_libdirs])
+    return {
+        "PATH": "/usr/bin:/bin:" + sr + "/usr/bin",
+        "LD_LIBRARY_PATH": libs,
+        "PKG_CONFIG_PATH": lib + "/pkgconfig:" + sr + "/usr/share/pkgconfig",
+        "PKG_CONFIG_SYSROOT_DIR": sr,
+        "ACLOCAL_PATH": sr + "/usr/share/aclocal",
+        "ACLOCAL_AUTOMAKE_DIR": sr + "/usr/share/aclocal-1.17",
+        "AUTOMAKE_LIBDIR": sr + "/usr/share/automake-1.17",
+        "AUTOMAKE_UNINSTALLED": "1",
+        "PERL5LIB": sr + "/usr/share/autoconf:" + sr + "/usr/share/automake-1.17",
+        "autom4te_perllibdir": sr + "/usr/share/autoconf",
+        "AC_MACRODIR": sr + "/usr/share/autoconf",
+        "trailer_m4": sr + "/usr/share/autoconf/autoconf/trailer.m4",
+        "AUTOM4TE": sr + "/usr/bin/autom4te",
+        "AUTOCONF": sr + "/usr/bin/autoconf",
+        "AUTOHEADER": sr + "/usr/bin/autoheader",
+        "AUTOMAKE": sr + "/usr/bin/automake",
+        "ACLOCAL": sr + "/usr/bin/aclocal",
+        "AUTORECONF": sr + "/usr/bin/autoreconf",
+        "AUTOPOINT": sr + "/usr/bin/autopoint",
+        "LIBTOOLIZE": sr + "/usr/bin/libtoolize",
+        "LT_SYSROOT_PREFIX": sr,
+        "M4": sr + "/usr/bin/m4",
+        "CPPFLAGS": cppflags,
+        "CFLAGS": cppflags,
+        "CXXFLAGS": cxxflags,
+        "LDFLAGS": ldflags,
+    }
+
+
 def _deb_sysroot_impl(ctx):
     tars = []
     for t in ctx.attr.tars:
@@ -38,6 +87,9 @@ mkdir -p "$OUT"
 for t in "$@"; do
   tar -xzf "$t" -C "$OUT" 2>/dev/null || tar -xf "$t" -C "$OUT"
 done
+# Bazel TreeArtifacts reject dangling symlinks (e.g. qtchooser's default.conf
+# pulled transitively by cmake); drop them.
+find "$OUT" -xtype l -delete 2>/dev/null || true
 # Recreate the unversioned automake/aclocal names that dpkg's update-alternatives
 # would normally symlink in postinst (we do not run maintainer scripts). autoreconf
 # invokes `automake`/`aclocal` by their unversioned names.
@@ -170,5 +222,36 @@ deb_data_tar = rule(
     implementation = _deb_data_tar_impl,
     attrs = {
         "gendir": attr.label(mandatory = True),
+    },
+)
+
+def _pruned_tree_impl(ctx):
+    dirs = [f for f in ctx.attr.src[DefaultInfo].files.to_list() if f.is_directory]
+    if len(dirs) != 1:
+        fail("expected exactly one directory artifact, got {}".format(len(dirs)))
+    src = dirs[0]
+    out = ctx.actions.declare_directory(ctx.label.name)
+    ctx.actions.run_shell(
+        inputs = [src],
+        outputs = [out],
+        command = """
+set -eu
+SRC="$1"; OUT="$2"
+mkdir -p "$OUT"
+cp -aL "$SRC/." "$OUT/" 2>/dev/null || cp -a "$SRC/." "$OUT/"
+# Drop libtool .la archives: they embed non-relocatable libdir/dependency_libs
+# paths that make a downstream consumer's libtool link fail.
+find "$OUT" -name '*.la' -delete 2>/dev/null || true
+""",
+        arguments = [src.path, out.path],
+        mnemonic = "PruneLaTree",
+        progress_message = "Copying %s without .la files" % ctx.label.name,
+    )
+    return [DefaultInfo(files = depset([out]))]
+
+pruned_tree = rule(
+    implementation = _pruned_tree_impl,
+    attrs = {
+        "src": attr.label(mandatory = True),
     },
 )
