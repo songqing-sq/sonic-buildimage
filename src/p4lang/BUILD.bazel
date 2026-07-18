@@ -1,0 +1,181 @@
+load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+load("//:sysroot.bzl", "deb_data_tar", "deb_sysroot", "filtered_libdir")
+
+package(default_visibility = ["//visibility:public"])
+
+# Complete Debian trixie build sysroot (autotools + pkgconf + protoc/grpc
+# codegen + protobuf/grpc/boost/readline dev libs) assembled from the pinned
+# apt package content tarballs. See sysroot.bzl.
+deb_sysroot(
+    name = "pi_sysroot",
+    tars = [
+        "@p4lang_pi_deps//autoconf:autoconf",
+        "@p4lang_pi_deps//automake:automake",
+        "@p4lang_pi_deps//libtool:libtool",
+        "@p4lang_pi_deps//m4:m4",
+        "@p4lang_pi_deps//pkgconf:pkgconf",
+        "@p4lang_pi_deps//pkgconf-bin:pkgconf-bin",
+        "@p4lang_pi_deps//protobuf-compiler:protobuf-compiler",
+        "@p4lang_pi_deps//protobuf-compiler-grpc:protobuf-compiler-grpc",
+        "@p4lang_pi_deps//libprotoc-dev:libprotoc-dev",
+        "@p4lang_pi_deps//libprotobuf-dev:libprotobuf-dev",
+        "@p4lang_pi_deps//libgrpc-dev:libgrpc-dev",
+        "@p4lang_pi_deps//libgrpc++-dev:libgrpc++-dev",
+        "@p4lang_pi_deps//libboost-dev:libboost-dev",
+        "@p4lang_pi_deps//libboost-system1.83-dev:libboost-system1.83-dev",
+        "@p4lang_pi_deps//libboost-thread1.83-dev:libboost-thread1.83-dev",
+        "@p4lang_pi_deps//libreadline-dev:libreadline-dev",
+    ],
+)
+
+# LD_LIBRARY_PATH-safe shared-lib dir: all sysroot .so files EXCEPT core glibc
+# (host glibc 2.43 > trixie 2.41; shadowing libc/libm breaks host coreutils).
+filtered_libdir(
+    name = "pi_libs",
+    src = ":pi_sysroot",
+)
+
+# =============================================================================
+# p4lang-pi 0.1.1-1
+#
+# Approach: rules_foreign_cc `configure_make` wraps PI's upstream autotools
+# build ("凑合跑通" -- functional parity, not byte parity). Upstream
+# `autogen.sh` runs `autoreconf -fi`; debian/rules then runs
+# `./configure --with-proto --with-cli` + `make all` + `make install`.
+#
+# PI's proto/ subdir configure requires (proto/configure.ac):
+#   - pkg-config protobuf.pc / grpc.pc / grpc++.pc
+#   - protoc, grpc_cpp_plugin, grpc_python_plugin on PATH
+# and the top-level build needs autoconf/automake/libtool/m4 + readline/boost.
+#
+# Everything is supplied hermetically from the pinned public Debian trixie
+# snapshot via the @p4lang_pi_deps merged sysroot (`//:directory` TreeArtifact),
+# staged as build_data and wired in through PATH / PKG_CONFIG_* / CPPFLAGS /
+# LDFLAGS. protobuf 3.21 / grpc 1.51 match PI's debian/control exactly.
+# =============================================================================
+
+SYSROOT = ":pi_sysroot"
+
+# rules_foreign_cc runs the action with cwd in $BUILD_TMPDIR and exports
+# $EXT_BUILD_ROOT (the exec root); $(execpath) of the sysroot TreeArtifact is
+# relative to that root, so anchor it with $EXT_BUILD_ROOT.
+_SR = "$$EXT_BUILD_ROOT$$/$(execpath " + SYSROOT + ")"
+
+_LIB = _SR + "/usr/lib/x86_64-linux-gnu"
+_INC = _SR + "/usr/include"
+
+# LD_LIBRARY_PATH-safe lib dir (filtered_libdir output), for running tools.
+_LIBS = "$$EXT_BUILD_ROOT$$/$(execpath :pi_libs)"
+
+configure_make(
+    name = "pi_build",
+    lib_source = "@p4lang_pi_src//:all_srcs",
+    args = ["-j`nproc`"],
+    autogen = True,
+    autogen_command = "./autogen.sh",
+    configure_in_place = True,
+    configure_prefix = "ln -sfn $$EXT_BUILD_ROOT$$/bazel-out ./bazel-out && ",
+    configure_options = [
+        "--with-proto",
+        "--with-cli",
+        "--with-boost-libdir=" + _SR + "/usr/lib/x86_64-linux-gnu",
+    ],
+    build_data = [
+        SYSROOT,
+        ":pi_libs",
+    ],
+    env = {
+        "PATH": _SR + "/usr/bin:/bin:/usr/bin",
+        "LD_LIBRARY_PATH": _LIBS,
+        "PKG_CONFIG_PATH": _LIB + "/pkgconfig:" + _SR + "/usr/share/pkgconfig",
+        "PKG_CONFIG_SYSROOT_DIR": _SR,
+        "ACLOCAL_PATH": _SR + "/usr/share/aclocal",
+        "ACLOCAL_AUTOMAKE_DIR": _SR + "/usr/share/aclocal-1.17",
+        "AUTOMAKE_LIBDIR": _SR + "/usr/share/automake-1.17",
+        "AUTOMAKE_UNINSTALLED": "1",
+        "PERL5LIB": _SR + "/usr/share/autoconf:" + _SR + "/usr/share/automake-1.17",
+        "autom4te_perllibdir": _SR + "/usr/share/autoconf",
+        "AC_MACRODIR": _SR + "/usr/share/autoconf",
+        "trailer_m4": _SR + "/usr/share/autoconf/autoconf/trailer.m4",
+        "AUTOM4TE": _SR + "/usr/bin/autom4te",
+        "AUTOCONF": _SR + "/usr/bin/autoconf",
+        "AUTOHEADER": _SR + "/usr/bin/autoheader",
+        "AUTOMAKE": _SR + "/usr/bin/automake",
+        "ACLOCAL": _SR + "/usr/bin/aclocal",
+        "AUTORECONF": _SR + "/usr/bin/autoreconf",
+        "AUTOPOINT": _SR + "/usr/bin/autopoint",
+        "LIBTOOLIZE": _SR + "/usr/bin/libtoolize",
+        "LT_SYSROOT_PREFIX": _SR,
+        "M4": _SR + "/usr/bin/m4",
+        "CPPFLAGS": "-I" + _INC,
+        "CFLAGS": "-I" + _INC,
+        "CXXFLAGS": "-I" + _INC + " -std=c++17",
+        "LDFLAGS": "-L" + _LIB,
+    },
+    out_binaries = [
+        "pi_CLI_dummy",
+        "pi_convert_p4info",
+        "pi_gen_fe_defines",
+        "pi_gen_native_json",
+    ],
+    out_shared_libs = [
+        "libpi.so.0.0.0",
+        "libpiall.so.0.0.0",
+    ],
+    targets = [
+        "all",
+        "install",
+    ],
+)
+
+# Full install tree (all libs/bins/headers) exposed via rules_foreign_cc's
+# gen_dir output group, for packaging the complete PI deb.
+filegroup(
+    name = "pi_gendir",
+    srcs = [":pi_build"],
+    output_group = "gen_dir",
+)
+
+# Debian data.tar.gz: remap the install tree into /usr/{bin,lib/<multiarch>,
+# include} + /usr/lib/python3/dist-packages.
+deb_data_tar(
+    name = "pi_data",
+    gendir = ":pi_gendir",
+)
+
+# The p4lang-pi .deb. Depends mirror the Make baseline control (protobuf 3.21 /
+# grpc 1.51 runtime + the dev/-compiler packages PI's debian/control lists).
+sonic_deb(
+    name = "p4lang-pi_0.1.1-1.deb",
+    data = ":pi_data",
+    content = {},
+    package = "p4lang-pi",
+    version = "0.1.1-1",
+    architecture = "amd64",
+    section = "net",
+    package_file_name = "p4lang-pi_0.1.1-1_amd64.deb",
+    homepage = "https://github.com/p4lang/PI",
+    description = "Implementation framework of a P4Runtime server\n Protocol Independent API (PI or P4 Runtime) defines a set of APIs that allow\n interacting with entities defined in a P4 program.",
+    depends = [
+        "libabsl20240722 (>= 20240722.0-1)",
+        "libboost-thread1.83.0 (>= 1.83.0)",
+        "libc6 (>= 2.34)",
+        "libgcc-s1 (>= 3.0)",
+        "libgrpc++1.51t64 (>= 1.51.1)",
+        "libgrpc29t64 (>= 1.51.1)",
+        "libprotobuf32t64 (>= 3.21.12)",
+        "libreadline8t64 (>= 6.0)",
+        "libstdc++6 (>= 14)",
+        "python3:any",
+        "libboost1.83-dev",
+        "libboost-system1.83-dev",
+        "libboost-thread1.83-dev",
+        "libprotobuf-dev",
+        "libprotoc-dev",
+        "protobuf-compiler",
+        "libgrpc++-dev",
+        "libgrpc-dev",
+        "protobuf-compiler-grpc",
+    ],
+)

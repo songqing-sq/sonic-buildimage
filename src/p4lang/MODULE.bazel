@@ -1,0 +1,90 @@
+module(
+    name = "p4lang",
+    version = "0.1.1",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "rules_foreign_cc", version = "0.15.1")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+# =============================================================================
+# Upstream orig tarballs (opensuse home:/p4lang mirror, public). Fetched via the
+# native http_archive so we can use `patch_cmds` to drop the vendored Bazel
+# BUILD/WORKSPACE files (they would split each source tree into sub-packages and
+# break the `glob(["**"])` filegroup that rules_foreign_cc feeds as lib_source).
+# =============================================================================
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "p4lang_pi_src",
+    build_file = "//:p4lang-pi.BUILD",
+    sha256 = "6d34c3d0accf0b7fe5e17c0c0d1259a9c231abae96d227b58b1c33ebe8962545",
+    urls = ["http://download.opensuse.org/repositories/home:/p4lang/Debian_11/p4lang-pi_0.1.1.orig.tar.gz"],
+    # Drop vendored Bazel files so the whole tree is one package (see above).
+    # Delete by explicit path so the build_file-generated root BUILD.bazel is
+    # never removed (a broad `find -name BUILD.bazel -delete` would clobber it).
+    patch_cmds = [
+        "rm -f BUILD WORKSPACE bazel/BUILD frontends_extra/cpp/BUILD lib/BUILD proto/BUILD proto/frontend/BUILD proto/p4info/BUILD proto/server/BUILD proto/tests/BUILD proto/third_party/BUILD tests/BUILD third_party/BUILD third_party/cJSON/BUILD",
+        "rm -f proto/p4runtime/bazel/example/BUILD.bazel proto/p4runtime/proto/BUILD.bazel third_party/googletest/BUILD.bazel third_party/googletest/googlemock/test/BUILD.bazel third_party/googletest/googletest/test/BUILD.bazel",
+    ],
+)
+
+# =============================================================================
+# Build tools + dev libraries from the pinned public Debian trixie snapshot.
+# These mirror PI's debian/control Build-Depends exactly (protobuf 3.21 / grpc
+# 1.51 from trixie), so the produced .deb links against the same soname set as
+# the Make baseline. Two dependency sets:
+#   - p4lang_buildtools : host-executable tools (autoconf stack, pkg-config,
+#                         protoc + grpc plugins) staged onto PATH for the
+#                         configure_make action.
+#   - p4lang_pi_deps    : cc_library dev deps (headers+libs) staged into
+#                         $EXT_BUILD_DEPS by rules_foreign_cc.
+# =============================================================================
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = [
+        "trixie",
+        "trixie-updates",
+    ],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+apt.install(
+    dependency_set = "p4lang_pi_deps",
+    packages = [
+        # Host-executable build tools (autotools stack + pkg-config + protoc &
+        # grpc code generators). These run on the x86_64 build host inside the
+        # sandbox, sourced from the merged sysroot's usr/bin.
+        "autoconf:amd64",
+        "automake:amd64",
+        "libtool:amd64",
+        "m4:amd64",
+        "pkgconf:amd64",
+        "pkgconf-bin:amd64",
+        "protobuf-compiler:amd64",
+        "protobuf-compiler-grpc:amd64",
+        # Dev libraries (headers + import libs + pkg-config .pc files). protobuf
+        # 3.21 / grpc 1.51 match PI's debian/control Build-Depends exactly.
+        "libprotoc-dev:amd64",
+        "libprotobuf-dev:amd64",
+        "libgrpc-dev:amd64",
+        "libgrpc++-dev:amd64",
+        "libboost-dev:amd64",
+        "libboost-system1.83-dev:amd64",
+        "libboost-thread1.83-dev:amd64",
+        "libreadline-dev:amd64",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(apt, "p4lang_pi_deps")
