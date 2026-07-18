@@ -1,0 +1,58 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# Dockerfile.j2 lines 12-16: install_debian_packages(docker_dash_ha_debs), which
+# per rules/docker-dash-ha.mk is just $(DASH_HA). The deb's runtime deps
+# (libc6, libgcc-s1, libswsscommon) are already shipped by the
+# docker-swss-layer-trixie base (config-engine layer), so no apt_layer is
+# needed. `flatten` does NOT resolve Depends; the package delta relative to base
+# is exactly the single dash-ha deb (verified against Make image delta).
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        "@sonic-dash-ha//:dash-ha_1.0.0.deb_data",
+        "@sonic-dash-ha//:dash-ha_1.0.0.deb_statusd",
+    ],
+)
+
+# Dockerfile.j2 lines 23-24 (COPY). Only two files. Unlike the sonic-bazel
+# reference (bookworm), our Make Dockerfile.j2 does NOT copy
+# supervisor-proc-exit-listener into the image: our supervisord.conf invokes
+# /usr/bin/supervisor-proc-exit-listener-rs, which is provided by the base
+# (sonic-supervisord-utilities-rs deb), not by this image's delta.
+tar(
+    name = "files",
+    srcs = [
+        "supervisord.conf",
+        "critical_processes",
+    ],
+    mtree = [
+        "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location :supervisord.conf)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location :critical_processes)",
+    ],
+)
+
+# Make final-stage Dockerfile.j2 sets ENV DEBIAN_FRONTEND=noninteractive and
+# ENTRYPOINT ["/usr/local/bin/supervisord"] (align with Make docker inspect).
+oci_image(
+    name = "docker-dash-ha",
+    base = "//dockers/docker-swss-layer-trixie:docker-swss-layer-trixie",
+    entrypoint = ["/usr/local/bin/supervisord"],
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+    },
+    workdir = "/",
+    tars = [
+        ":sonic_pkgs",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-dash-ha",
+    repo_tags = ["docker-dash-ha:latest"],
+)
