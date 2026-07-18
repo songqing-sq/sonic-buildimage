@@ -17,16 +17,19 @@ sonic_deb(
     maintainer = "FRRouting-Dev <dev@lists.frrouting.org>",
     description = "FRRouting suite - Python tools\n The FRRouting suite uses a small Python tool to provide configuration\n reload functionality, particularly useful when the interactive configuration\n shell is not used.",
     depends = [
-        "frr (<< 10.5.5-~)",
-        "frr (>= 10.5.4~)",
-        "python3",
+        "frr (<< 10.5.4-sonic.0-~)",
+        "frr (>= 10.5.4-sonic-0~)",
+        "python3:any",
     ],
     content = {
         "/usr/lib/frr:*:0755": [
-            "@frr_patched//:frr/tools/frr-reload.py",
-            "@frr_patched//:frr/tools/generate_support_bundle.py",
-            "@frr_patched//:frr/tools/frr_babeltrace.py",
-            "@frr_patched//:frr/ospfclient/ospfclient.py",
+            "@frr_patched//:frr-reload_py_shebang",
+            "@frr_patched//:generate_support_bundle_py_shebang",
+            "@frr_patched//:frr_babeltrace_py_shebang",
+            "@frr_patched//:ospfclient_py_shebang",
+        ],
+        "/usr/share/lintian/overrides:*:0644": [
+            "@frr_patched//:frr_pythontools_lintian_gen",
         ],
     },
     visibility = ["//visibility:public"],
@@ -230,7 +233,8 @@ sonic_deb(
     description = "FRRouting suite - SNMP support\n Adds SNMP support to FRR's daemons by attaching to net-snmp's snmpd\n through the AgentX protocol.",
     depends = [
         "frr (= {})".format(VERSION),
-        "snmpd",
+        "libc6 (>= 2.38)",
+        "libsnmp40t64 (>= 5.9.4+dfsg)",
     ],
     gen_dbg = True,
     content = {
@@ -245,6 +249,9 @@ sonic_deb(
             "@frr_patched//:ospfd_snmp_shared",
             "@frr_patched//:ripd_snmp_shared",
             "@frr_patched//:zebra_snmp_shared",
+        ],
+        "/usr/share/lintian/overrides:*:0644": [
+            "@frr_patched//:frr_snmp_lintian_gen",
         ],
     },
     visibility = ["//visibility:public"],

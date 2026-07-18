@@ -2538,7 +2538,6 @@ cc_shared_library(
         ":libfrr_shared",
         "@libyang3//:yang_shared",
     ],
-    user_link_flags = ["-Wl,-soname,zebra_fpm.so"],
     shared_lib_name = "zebra_fpm.so",
     visibility = ["//visibility:public"],
 )
@@ -2573,7 +2572,6 @@ cc_shared_library(
         ":libfrr_shared",
         "@libyang3//:yang_shared",
     ],
-    user_link_flags = ["-Wl,-soname,dplane_fpm_nl.so"],
     shared_lib_name = "dplane_fpm_nl.so",
     visibility = ["//visibility:public"],
 )
@@ -2616,9 +2614,6 @@ cc_shared_library(
         ":libfrr_shared",
         "@libyang3//:yang_shared",
         "@sonic-fib//:nexthopgroup_shared",
-    ],
-    user_link_flags = [
-        "-Wl,-soname,dplane_fpm_sonic.so",
     ],
     shared_lib_name = "dplane_fpm_sonic.so",
     visibility = ["//visibility:public"],
@@ -2671,7 +2666,6 @@ cc_shared_library(
         ":libfrrcares_shared",
         "@libyang3//:yang_shared",
     ],
-    user_link_flags = ["-Wl,-soname,bgpd_bmp.so"],
     shared_lib_name = "bgpd_bmp.so",
     visibility = ["//visibility:public"],
 )
@@ -2705,7 +2699,6 @@ cc_shared_library(
         ":libfrr_shared",
         "@libyang3//:yang_shared",
     ],
-    user_link_flags = ["-Wl,-soname,zebra_cumulus_mlag.so"],
     shared_lib_name = "zebra_cumulus_mlag.so",
     visibility = ["//visibility:public"],
 )
@@ -2814,7 +2807,6 @@ cc_shared_library(
         ":libfrr_shared",
         "@libyang3//:yang_shared",
     ],
-    user_link_flags = ["-Wl,-soname,pathd_pcep.so"],
     shared_lib_name = "pathd_pcep.so",
     visibility = ["//visibility:public"],
 )
@@ -3118,6 +3110,45 @@ genrule(
     visibility = ["//visibility:public"],
 )
 
+# usr/share/lintian/overrides/frr-snmp <- debian/frr-snmp.lintian-overrides.
+genrule(
+    name = "frr_snmp_lintian_gen",
+    srcs = ["frr/debian/frr-snmp.lintian-overrides"],
+    outs = ["gen/lintian/frr-snmp"],
+    cmd = "cp $< $@",
+    visibility = ["//visibility:public"],
+)
+
+# usr/share/lintian/overrides/frr-pythontools <- debian/frr-pythontools.lintian-overrides.
+genrule(
+    name = "frr_pythontools_lintian_gen",
+    srcs = ["frr/debian/frr-pythontools.lintian-overrides"],
+    outs = ["gen/lintian/frr-pythontools"],
+    cmd = "cp $< $@",
+    visibility = ["//visibility:public"],
+)
+
+# frr-pythontools scripts: reduce the shebang (first line) to a bare "#!" to
+# match the Make baseline byte-for-byte. Upstream debian/rules does
+# `sed -e '1c #!$(shell which $PYTHON)'` where $PYTHON expands empty in make's
+# shell, leaving a bare "#!". These scripts are invoked as `python3 <script>`
+# (frrcommon.sh), so the shebang is cosmetic; we replicate Make exactly.
+[
+    genrule(
+        name = "{}_shebang".format(stem),
+        srcs = [src],
+        outs = ["gen/pythontools/{}".format(fname)],
+        cmd = "sed '1s|^.*$$|#!|' $< > $@",
+        visibility = ["//visibility:public"],
+    )
+    for stem, fname, src in [
+        ("frr-reload_py", "frr-reload.py", "frr/tools/frr-reload.py"),
+        ("generate_support_bundle_py", "generate_support_bundle.py", "frr/tools/generate_support_bundle.py"),
+        ("frr_babeltrace_py", "frr_babeltrace.py", "frr/tools/frr_babeltrace.py"),
+        ("ospfclient_py", "ospfclient.py", "frr/ospfclient/ospfclient.py"),
+    ]
+]
+
 # The 10 IETF/deviation yang models shipped flat under /usr/share/yang
 # (dist_yangmodels_DATA yang/ietf/*).  Kept separate from frr_yang_models so
 # the deb content key can wildcard-flatten the ietf/ subdir prefix.
@@ -3206,7 +3237,6 @@ cc_shared_library(
     name = "bgpd_snmp_shared",
     deps = [":bgpd_snmp_objs"],
     dynamic_deps = [":libfrr_shared", ":libfrrsnmp_shared", "@libyang3//:yang_shared"],
-    user_link_flags = ["-Wl,-soname,bgpd_snmp.so"],
     shared_lib_name = "bgpd_snmp.so",
     visibility = ["//visibility:public"],
 )
@@ -3248,7 +3278,6 @@ cc_shared_library(
         name = "{}_snmp_shared".format(d),
         deps = [":{}_snmp_objs".format(d)],
         dynamic_deps = [":libfrr_shared", ":libfrrsnmp_shared", "@libyang3//:yang_shared"],
-        user_link_flags = ["-Wl,-soname,{}_snmp.so".format(d)],
         shared_lib_name = "{}_snmp.so".format(d),
         visibility = ["//visibility:public"],
     )
