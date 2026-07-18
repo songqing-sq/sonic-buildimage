@@ -1,0 +1,289 @@
+load("@rules_deb//distroless:defs.bzl", "flatten", "group", "passwd")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# =============================================================================
+# docker-fpm-frr: SONiC FRRouting (BGP/zebra/staticd/...) container.
+# Mirrors dockers/docker-fpm-frr/{Dockerfile.j2,Dockerfile.common.j2} +
+# rules/docker-fpm-frr.mk, layered on the docker-swss-layer-trixie base.
+#
+# Global switches (rules/config): ENABLE_FRR_TCMALLOC=y (ships
+# libgoogle-perftools4t64), ENABLE_FRR_SNMP_AGENT=y (ships frr-snmp +
+# /etc/snmp/frr.conf), ENABLE_ASAN=n.
+#
+# _BASE_IMAGE_FILES (vtysh/rvtysh/TSA/TSB/TSC/TS/platform_utils/idf_isolation/
+# prefix_list under base_image_files/) are HOST-side files installed OUTSIDE the
+# container by the Make build — they are intentionally NOT shipped here. The
+# top-level TSA/TSB/TSC/TS (different files) ARE COPY'd into the container by
+# Dockerfile.common.j2 and are shipped in :files below.
+# =============================================================================
+
+# APT runtime deps added on top of the swss-layer base. frr's deb Depends
+# (verified from the Make image) pulls logrotate + a runtime .so closure;
+# frr-snmp links libsnmp40t64 (-> libsensors5 -> libpci3). flatten() does NOT
+# resolve Depends, so every runtime .so package NOT already in the base is
+# listed explicitly. Ground truth = Make docker-fpm-frr image package delta vs
+# docker-swss-layer-trixie base. apt-Depends-only baggage (systemd, cron,
+# cron-daemon-common, libapparmor1, libsystemd-shared, sensible-utils, lsof,
+# liblsof0) is intentionally NOT shipped — it is never runtime-linked by the
+# FRR daemons (which run under supervisord, not systemd) and is dropped by the
+# hermetic distroless resolver, matching every other migrated image. All names
+# are declared in the shared @trixie pool (base_trixie.MODULE.bazel).
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        # logrotate + tcmalloc (ENABLE_FRR_TCMALLOC=y).
+        "@trixie//logrotate:data",
+        "@trixie//libgoogle-perftools4t64:data",
+        "@trixie//libtcmalloc-minimal4t64:data",
+        "@trixie//libunwind8:data",
+        # frr binary runtime .so (frr deb Depends not already in base).
+        "@trixie//libcares2:data",
+        "@trixie//libjson-c5:data",
+        "@trixie//libpcre2-posix3:data",
+        # frr-snmp -> libsnmp40t64 runtime closure (not already in base).
+        "@trixie//libsnmp40t64:data",
+        "@trixie//libsnmp-base:data",
+        "@trixie//libsensors5:data",
+        "@trixie//libsensors-config:data",
+        "@trixie//libpci3:data",
+        "@trixie//pci.ids:data",
+    ],
+)
+
+# SONiC-built debs installed by install_debian_packages(docker_fpm_frr_debs).
+# _DEPENDS = FRR + SWSS + LIBYANG3 (+ FRR_SNMP). SWSS is already in the
+# swss-layer base; LIBYANG3 is already in the config-engine base — so NEITHER is
+# re-listed here (Lesson: never re-ship packages already carried by the base).
+# frr-pythontools is an extra_package of the frr deb but is NOT installed in the
+# Make image (verified: only `frr` + `frr-snmp` appear in the Make package
+# delta), so it is intentionally NOT shipped. Each deb ships _data (contents) +
+# _statusd (dpkg status.d stub).
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        "@sonic-frr//:frr_10.5.4-sonic-0_amd64.deb_data",
+        "@sonic-frr//:frr_10.5.4-sonic-0_amd64.deb_statusd",
+        "@sonic-frr//:frr-snmp_10.5.4-sonic-0_amd64.deb_data",
+        "@sonic-frr//:frr-snmp_10.5.4-sonic-0_amd64.deb_statusd",
+    ],
+)
+
+# Python wheels installed by install_python_wheels(docker_fpm_frr_whls):
+# SONIC_BGPCFGD + SONIC_FRR_MGMT_FRAMEWORK. Each module's :install tar ships the
+# installed site-packages content + console scripts (bgpcfgd/bgpmon/bfdmon/
+# staticroutebfd, frrcfgd). flatten(deduplicate) drops anything already present
+# in the config-engine python_layer base.
+flatten(
+    name = "python_layer",
+    deduplicate = True,
+    tars = [
+        "@sonic-bgpcfgd//:install",
+        "@sonic-frr-mgmt-framework//:install",
+    ],
+)
+
+# frr user/group. Dockerfile.j2 builder stage runs
+#   groupadd -g 300 frr ; useradd -u 300 -g 300 -M -s /bin/false frr
+# (FRR_USER_UID/GID=300 from rules/config). distroless runs no useradd, and the
+# passwd()/group() rules regenerate the WHOLE /etc/passwd + /etc/group, so we
+# must re-declare every entry already baked by docker-base-trixie and append
+# frr, otherwise this layer would clobber root/redis/_apt/... Kept in sync with
+# docker-base-trixie/BUILD.bazel passwd()/group().
+passwd(
+    name = "passwd",
+    entries = [
+        {"uid": 0, "gid": 0, "home": "/root", "shell": "/bin/bash", "username": "root"},
+        {"uid": 100, "gid": 101, "home": "/var/lib/redis", "shell": "/usr/sbin/nologin", "username": "redis"},
+        {"uid": 105, "gid": 65534, "home": "/nonexistent", "shell": "/usr/sbin/nologin", "username": "_apt"},
+        {"uid": 101, "gid": 102, "home": "/run/lldpd", "shell": "/usr/sbin/nologin", "username": "_lldpd"},
+        {"uid": 102, "gid": 103, "home": "/var/lib/snmp", "shell": "/bin/false", "username": "Debian-snmp"},
+        {"uid": 103, "gid": 65534, "home": "/run/radvd", "shell": "/usr/sbin/nologin", "username": "radvd"},
+        # frr (docker-fpm-frr): useradd -u 300 -g 300 -M -s /bin/false frr.
+        {"uid": 300, "gid": 300, "home": "/home/frr", "shell": "/bin/false", "username": "frr"},
+    ],
+)
+
+group(
+    name = "group",
+    entries = [
+        {"name": "root", "gid": 0},
+        {"name": "adm", "gid": 4},
+        {"name": "redis", "gid": 101},
+        {"name": "_lldpd", "gid": 102},
+        {"name": "Debian-snmp", "gid": 103},
+        {"name": "nogroup", "gid": 65534},
+        # frr (docker-fpm-frr): groupadd -g 300 frr.
+        {"name": "frr", "gid": 300},
+    ],
+)
+
+# COPY directives from Dockerfile.j2 + Dockerfile.common.j2.
+#   docker_init.sh          -> /usr/bin/docker_init.sh (static; NO j2 render).
+#   snmp.conf               -> /etc/snmp/frr.conf (ENABLE_FRR_SNMP_AGENT=y).
+#   frr/**                  -> /usr/share/sonic/templates/** (COPY of the dir
+#                              CONTENTS, verified via docker_init.sh paths).
+#   TSA/TSB/TSC/TS          -> /usr/bin/ (top-level scripts, chmod a+x).
+#   zsocket.sh              -> /usr/bin/zsocket.sh (chmod a+x).
+#   vtysh.conf              -> /etc/frr/vtysh.conf. NOTE: root:root 0644, NOT
+#                              300:300 — Dockerfile.common.j2 COPYs it AFTER the
+#                              builder's `chown -R frr:frr /etc/frr`, so it keeps
+#                              root ownership (verified in the Make image). The
+#                              frr-deb /etc/frr files (daemons/frr.conf) are
+#                              300:300; docker_init.sh re-chowns /etc/frr at
+#                              runtime anyway.
+tar(
+    name = "files",
+    srcs = [
+        "docker_init.sh",
+        "snmp.conf",
+        "vtysh.conf",
+        "TSA",
+        "TSB",
+        "TSC",
+        "TS",
+        "zsocket.sh",
+        "frr/bgpd/bgpd.conf.j2",
+        "frr/bgpd/bgpd.main.conf.j2",
+        "frr/bgpd/bgpd.spine_chassis_frontend_router.conf.j2",
+        "frr/bgpd/gen_bgpd.conf.j2",
+        "frr/bgpd/idf_isolate/idf_isolate.conf.j2",
+        "frr/bgpd/idf_isolate/idf_unisolate.conf.j2",
+        "frr/bgpd/radian/add_radian.conf.j2",
+        "frr/bgpd/radian/del_radian.conf.j2",
+        "frr/bgpd/suppress_prefix/add_suppress_prefix.conf.j2",
+        "frr/bgpd/suppress_prefix/del_suppress_prefix.conf.j2",
+        "frr/bgpd/templates/dynamic/delete.conf.j2",
+        "frr/bgpd/templates/dynamic/instance.conf.j2",
+        "frr/bgpd/templates/dynamic/peer-group.conf.j2",
+        "frr/bgpd/templates/dynamic/policies.conf.j2",
+        "frr/bgpd/templates/dynamic/update.conf.j2",
+        "frr/bgpd/templates/general/instance.conf.j2",
+        "frr/bgpd/templates/general/peer-group.conf.j2",
+        "frr/bgpd/templates/general/policies.conf.j2",
+        "frr/bgpd/templates/internal/additional_loopbacks.conf.j2",
+        "frr/bgpd/templates/internal/instance.conf.j2",
+        "frr/bgpd/templates/internal/peer-group.conf.j2",
+        "frr/bgpd/templates/internal/policies.conf.j2",
+        "frr/bgpd/templates/monitors/instance.conf.j2",
+        "frr/bgpd/templates/monitors/peer-group.conf.j2",
+        "frr/bgpd/templates/monitors/policies.conf.j2",
+        "frr/bgpd/templates/sentinels/instance.conf.j2",
+        "frr/bgpd/templates/sentinels/peer-group.conf.j2",
+        "frr/bgpd/templates/sentinels/policies.conf.j2",
+        "frr/bgpd/templates/voq_chassis/instance.conf.j2",
+        "frr/bgpd/templates/voq_chassis/peer-group.conf.j2",
+        "frr/bgpd/templates/voq_chassis/policies.conf.j2",
+        "frr/bgpd/tsa/bgpd.tsa.isolate.conf.j2",
+        "frr/bgpd/tsa/bgpd.tsa.unisolate.conf.j2",
+        "frr/bgpd/wcmp/bgpd.wcmp.conf.j2",
+        "frr/common/daemons.common.conf.j2",
+        "frr/common/functions.conf.j2",
+        "frr/frr.conf.j2",
+        "frr/frr_vars.j2",
+        "frr/gen_frr.conf.j2",
+        "frr/isolate.j2",
+        "frr/sharpd/sharpd.conf.j2",
+        "frr/staticd/gen_staticd.conf.j2",
+        "frr/staticd/staticd.conf.j2",
+        "frr/staticd/staticd.loopback_route.conf.j2",
+        "frr/supervisord/critical_processes.j2",
+        "frr/supervisord/supervisord.conf.common.j2",
+        "frr/supervisord/supervisord.conf.j2",
+        "frr/unisolate.j2",
+        "frr/zebra/zebra.conf.j2",
+        "frr/zebra/zebra.interfaces.conf.j2",
+        "frr/zebra/zebra.set_src.conf.j2",
+    ],
+    mtree = [
+        "./usr/bin/docker_init.sh uid=0 gid=0 mode=0755 type=file content=$(location :docker_init.sh)",
+        "./etc/snmp/frr.conf uid=0 gid=0 mode=0644 type=file content=$(location :snmp.conf)",
+        "./usr/bin/TSA uid=0 gid=0 mode=0755 type=file content=$(location :TSA)",
+        "./usr/bin/TSB uid=0 gid=0 mode=0755 type=file content=$(location :TSB)",
+        "./usr/bin/TSC uid=0 gid=0 mode=0755 type=file content=$(location :TSC)",
+        "./usr/bin/TS uid=0 gid=0 mode=0755 type=file content=$(location :TS)",
+        "./usr/bin/zsocket.sh uid=0 gid=0 mode=0755 type=file content=$(location :zsocket.sh)",
+        "./etc/frr/vtysh.conf uid=0 gid=0 mode=0644 type=file content=$(location :vtysh.conf)",
+        "./usr/share/sonic/templates/bgpd/bgpd.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/bgpd.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/bgpd.main.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/bgpd.main.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/bgpd.spine_chassis_frontend_router.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/bgpd.spine_chassis_frontend_router.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/gen_bgpd.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/gen_bgpd.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/idf_isolate/idf_isolate.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/idf_isolate/idf_isolate.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/idf_isolate/idf_unisolate.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/idf_isolate/idf_unisolate.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/radian/add_radian.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/radian/add_radian.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/radian/del_radian.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/radian/del_radian.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/suppress_prefix/add_suppress_prefix.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/suppress_prefix/add_suppress_prefix.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/suppress_prefix/del_suppress_prefix.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/suppress_prefix/del_suppress_prefix.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/dynamic/delete.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/dynamic/delete.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/dynamic/instance.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/dynamic/instance.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/dynamic/peer-group.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/dynamic/peer-group.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/dynamic/policies.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/dynamic/policies.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/dynamic/update.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/dynamic/update.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/general/instance.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/general/instance.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/general/peer-group.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/general/peer-group.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/general/policies.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/general/policies.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/internal/additional_loopbacks.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/internal/additional_loopbacks.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/internal/instance.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/internal/instance.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/internal/peer-group.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/internal/peer-group.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/internal/policies.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/internal/policies.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/monitors/instance.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/monitors/instance.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/monitors/peer-group.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/monitors/peer-group.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/monitors/policies.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/monitors/policies.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/sentinels/instance.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/sentinels/instance.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/sentinels/peer-group.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/sentinels/peer-group.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/sentinels/policies.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/sentinels/policies.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/voq_chassis/instance.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/voq_chassis/instance.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/voq_chassis/peer-group.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/voq_chassis/peer-group.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/templates/voq_chassis/policies.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/templates/voq_chassis/policies.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/tsa/bgpd.tsa.isolate.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/tsa/bgpd.tsa.isolate.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/tsa/bgpd.tsa.unisolate.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/tsa/bgpd.tsa.unisolate.conf.j2)",
+        "./usr/share/sonic/templates/bgpd/wcmp/bgpd.wcmp.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/bgpd/wcmp/bgpd.wcmp.conf.j2)",
+        "./usr/share/sonic/templates/common/daemons.common.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/common/daemons.common.conf.j2)",
+        "./usr/share/sonic/templates/common/functions.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/common/functions.conf.j2)",
+        "./usr/share/sonic/templates/frr.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/frr.conf.j2)",
+        "./usr/share/sonic/templates/frr_vars.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/frr_vars.j2)",
+        "./usr/share/sonic/templates/gen_frr.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/gen_frr.conf.j2)",
+        "./usr/share/sonic/templates/isolate.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/isolate.j2)",
+        "./usr/share/sonic/templates/sharpd/sharpd.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/sharpd/sharpd.conf.j2)",
+        "./usr/share/sonic/templates/staticd/gen_staticd.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/staticd/gen_staticd.conf.j2)",
+        "./usr/share/sonic/templates/staticd/staticd.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/staticd/staticd.conf.j2)",
+        "./usr/share/sonic/templates/staticd/staticd.loopback_route.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/staticd/staticd.loopback_route.conf.j2)",
+        "./usr/share/sonic/templates/supervisord/critical_processes.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/supervisord/critical_processes.j2)",
+        "./usr/share/sonic/templates/supervisord/supervisord.conf.common.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/supervisord/supervisord.conf.common.j2)",
+        "./usr/share/sonic/templates/supervisord/supervisord.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/supervisord/supervisord.conf.j2)",
+        "./usr/share/sonic/templates/unisolate.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/unisolate.j2)",
+        "./usr/share/sonic/templates/zebra/zebra.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/zebra/zebra.conf.j2)",
+        "./usr/share/sonic/templates/zebra/zebra.interfaces.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/zebra/zebra.interfaces.conf.j2)",
+        "./usr/share/sonic/templates/zebra/zebra.set_src.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/zebra/zebra.set_src.conf.j2)",
+    ],
+)
+
+# Make docker-fpm-frr final image config (docker inspect):
+# Entrypoint=["/usr/bin/docker_init.sh"], Cmd=null, WorkingDir=/,
+# Env adds DEBIAN_FRONTEND=noninteractive (PATH inherited from base).
+oci_image(
+    name = "docker-fpm-frr",
+    base = "//dockers/docker-swss-layer-trixie:docker-swss-layer-trixie",
+    entrypoint = ["/usr/bin/docker_init.sh"],
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+    },
+    workdir = "/",
+    tars = [
+        ":apt_layer",
+        ":sonic_pkgs",
+        ":python_layer",
+        ":passwd",
+        ":group",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-fpm-frr",
+    repo_tags = ["docker-fpm-frr:latest"],
+)

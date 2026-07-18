@@ -719,6 +719,15 @@ _FRR_DAEMON_LINKOPTS = [
     "-Wl,--export-dynamic",
     "-pthread",
     "-lm",
+    # FRR's versioned shared libs (libfrr.so.0, libmgmt_be_nb.so.0, ...) install
+    # under ${libdir}/frr = /usr/lib/x86_64-linux-gnu/frr, a subdir NOT on the
+    # default linker search path. The autotools/libtool Make build bakes a
+    # RUNPATH of exactly that dir into every daemon binary (verified via
+    # `readelf -d` on the Make image: RUNPATH=[/usr/lib/x86_64-linux-gnu/frr]).
+    # Without it the distroless image (no ldconfig / no /etc/ld.so.cache) fails
+    # to load libfrr.so.0 at daemon startup ("libfrr.so.0 => not found").
+    # amd64-specific, matching the amd64 deb (Make hardcodes the same path).
+    "-Wl,-rpath,/usr/lib/x86_64-linux-gnu/frr",
 ]
 
 _FRR_DAEMON_BASE_DEPS = [

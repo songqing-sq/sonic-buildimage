@@ -426,6 +426,38 @@ apt.install(
         "openssh-client",
         "sshpass",
         "strace",
+
+        # -------- docker-fpm-frr runtime apt deps --------
+        # docker-fpm-frr/Dockerfile.j2 build stage `apt install -y logrotate`
+        # plus `libgoogle-perftools4t64` (ENABLE_FRR_TCMALLOC=y default: FRR is
+        # built with gperftools tcmalloc, so zebra/bgpd link libtcmalloc.so.4).
+        # frr's deb Depends (verified from the Make image dpkg status) is:
+        #   iproute2, logrotate, lsof, libc6, libcap2, libcares2, libcrypt1,
+        #   libgcc-s1, libgoogle-perftools4t64, libjson-c5, libpam0g,
+        #   libpcre2-posix3, libreadline8t64, libunwind8, libyang3.
+        # frr-snmp additionally links libsnmp40t64 (-> libsensors5 -> libpci3).
+        # Runtime .so packages NOT already in the swss-layer/config-engine base
+        # (verified against the Make docker-fpm-frr image package delta vs
+        # docker-swss-layer-trixie base) that must ship here:
+        #   logrotate, libgoogle-perftools4t64, libtcmalloc-minimal4t64
+        #   (perftools runtime .so), libunwind8, libcares2, libjson-c5.
+        #   libsnmp40t64/libsnmp-base/libsensors5/libsensors-config/libpci3/
+        #   pci.ids/libpcre2-posix3 are already registered above (docker-snmp /
+        #   docker-lldp / docker-sysmgr blocks) and ship here for frr-snmp.
+        # NOT shipped (apt Depends baggage, NOT runtime-linked, dropped by the
+        # hermetic distroless resolver — same philosophy as every other image):
+        #   systemd, libsystemd-shared, libapparmor1, cron, cron-daemon-common,
+        #   sensible-utils (logrotate's `cron|...|systemd-sysv` alternative),
+        #   lsof/liblsof0 (frr Depends, not linked). libpopt0, libreadline8t64,
+        #   libcap2, libcrypt1, libpam0g are already in the base rootfs.
+        # Registering names here only makes @trixie//<pkg> addressable; it does
+        # NOT add them to any other image.
+        "logrotate",
+        "libgoogle-perftools4t64",
+        "libtcmalloc-minimal4t64",
+        "libunwind8",
+        "libcares2",
+        "libjson-c5",
     ],
     suites = [
         "trixie",

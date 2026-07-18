@@ -1214,6 +1214,7 @@ cc_binary(
         "-pthread",
         "-lm",
         "-ldl",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu/frr",
     ],
     visibility = ["//visibility:public"],
 )
@@ -1379,6 +1380,7 @@ cc_binary(
         "-Wl,--export-dynamic",
         "-pthread",
         "-lm",
+        "-Wl,-rpath,/usr/lib/x86_64-linux-gnu/frr",
     ],
     visibility = ["//visibility:public"],
 )
@@ -1992,7 +1994,7 @@ cc_binary(
         "@libyang3//:yang_shared",
     ],
     copts = FRR_COMMON_COPTS + ["-DPIM_IPV=6"],
-    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm"],
+    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm", "-Wl,-rpath,/usr/lib/x86_64-linux-gnu/frr"],
     visibility = ["//visibility:public"],
 )
 
@@ -2109,7 +2111,7 @@ cc_binary(
         "@libyang3//:yang_shared",
     ],
     copts = FRR_COMMON_COPTS,
-    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm"],
+    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm", "-Wl,-rpath,/usr/lib/x86_64-linux-gnu/frr"],
     visibility = ["//visibility:public"],
 )
 
@@ -2186,7 +2188,7 @@ cc_binary(
         "@libyang3//:yang_shared",
     ],
     copts = FRR_COMMON_COPTS + ["-DFABRICD=1"],
-    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm"],
+    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm", "-Wl,-rpath,/usr/lib/x86_64-linux-gnu/frr"],
     visibility = ["//visibility:public"],
 )
 
@@ -2240,7 +2242,7 @@ cc_binary(
         "@libyang3//:yang_shared",
     ],
     copts = FRR_COMMON_COPTS,
-    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm"],
+    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm", "-Wl,-rpath,/usr/lib/x86_64-linux-gnu/frr"],
     visibility = ["//visibility:public"],
 )
 
@@ -2277,7 +2279,7 @@ cc_binary(
         "@libyang3//:yang_shared",
     ],
     copts = FRR_COMMON_COPTS + ["-DPIM_IPV=4"],
-    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm"],
+    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm", "-Wl,-rpath,/usr/lib/x86_64-linux-gnu/frr"],
     visibility = ["//visibility:public"],
 )
 
@@ -2437,7 +2439,7 @@ cc_binary(
         "@libyang3//:yang_shared",
     ],
     copts = FRR_COMMON_COPTS + ["-Ifrr"],
-    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm"],
+    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm", "-Wl,-rpath,/usr/lib/x86_64-linux-gnu/frr"],
     visibility = ["//visibility:public"],
 )
 
@@ -2954,7 +2956,7 @@ cc_binary(
         # VTYSH_ALL so vtysh_cmd.c compiles.  VERIFY-PHASE equivalence gap.
         "-DVTYSH_LIB=VTYSH_ALL",
     ],
-    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm"],
+    linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm", "-Wl,-rpath,/usr/lib/x86_64-linux-gnu/frr"],
     visibility = ["//visibility:public"],
 )
 

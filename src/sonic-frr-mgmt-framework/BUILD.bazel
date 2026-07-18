@@ -97,7 +97,12 @@ tar(
         "./usr/lib/python3/dist-packages/frrcfgd/frrcfgd.py uid=0 gid=0 mode=0644 type=file content=$(location frrcfgd/frrcfgd.py)",
         "./usr/local/bin/frrcfgd uid=0 gid=0 mode=0755 type=file content=$(location :frrcfgd_console_script)",
     ] + [
-        "./usr/share/sonic/frrcfgd/" + src.split("/")[-1] +
+        # setup.py `data_files=[('sonic/frrcfgd', [...])]` is a RELATIVE path, so
+        # `pip3 install` lays it under the install prefix (/usr/local on Debian)
+        # => /usr/local/sonic/frrcfgd/. docker-fpm-frr/docker_init.sh consumes it
+        # via `sonic-cfggen -T /usr/local/sonic/frrcfgd`, so the templates MUST
+        # land there (NOT /usr/share/sonic/frrcfgd).
+        "./usr/local/sonic/frrcfgd/" + src.split("/")[-1] +
         " uid=0 gid=0 mode=0644 type=file content=$(location " + src + ")"
         for src in _TEMPLATE_FILES
     ],
