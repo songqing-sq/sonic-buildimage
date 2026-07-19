@@ -1,0 +1,85 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# docker-dash-engine (platform/vs/docker-dash-engine.mk + Dockerfile.j2).
+#
+# Base is the upstream p4lang/behavioral-model image (Ubuntu 20.04.6), pulled
+# via oci.pull in the root MODULE.bazel and digest-pinned to the build the Make
+# `:latest` resolves to. The Make Dockerfile.j2 final stage is `FROM scratch` +
+# `COPY --from=base / /`, i.e. the whole base rootfs squashed plus the delta.
+#
+# Delta relative to base (what the Make Dockerfile.j2 adds):
+#   RUN apt install net-tools ...  -> :net_tools layer (provides ifconfig)
+#   COPY [start.sh, /usr/bin/]     -> /usr/bin/start.sh
+#   ENTRYPOINT ["/usr/bin/start.sh"]
+#
+# Intentionally OMITTED apt/pip (supervisor, rsyslog, python3-pip,
+# supervisord-dependent-startup): the active ENTRYPOINT is /usr/bin/start.sh,
+# which only needs simple_switch_grpc (base) + ifconfig (net-tools). The
+# supervisord.conf / critical_processes COPYs are commented out in the Make
+# Dockerfile.j2 and the entrypoint is not supervisord, so those packages are
+# never exercised at runtime. Reproducing them would require an Ubuntu-focal apt
+# pool (none exists in this repo) for zero runtime benefit; documented as an
+# accepted, functional-equivalence deviation in the verification report.
+#
+# net-tools is the ONE exception we do reproduce, because start.sh actively
+# calls ifconfig. We fetch the exact focal .deb (MODULE.bazel http_file) and
+# layer its data tree. The .deb places binaries under /bin and /sbin; the focal
+# base has those as symlinks to /usr/bin and /usr/sbin (usrmerge), and dpkg on
+# the Make side lands the files at /usr/bin,/usr/sbin accordingly. We remap the
+# paths so we do NOT clobber the base's /bin and /sbin symlinks, matching the
+# Make image (ifconfig ends up at /usr/sbin/ifconfig).
+genrule(
+    name = "net_tools_tar",
+    srcs = ["@net_tools_focal_deb//file"],
+    outs = ["net_tools.tar.gz"],
+    cmd = """
+set -eo pipefail
+tmp=$$(mktemp -d)
+trap 'rm -rf $$tmp' EXIT
+"$(BSDTAR_BIN)" -xf $< -C $$tmp
+data_file=$$(ls $$tmp/data.tar.* | head -n1)
+unpacked=$$tmp/unpacked
+mkdir -p $$unpacked
+"$(BSDTAR_BIN)" -xf $$data_file -C $$unpacked
+# usrmerge: fold ./bin and ./sbin into ./usr/{bin,sbin} (matches dpkg on the
+# focal base, whose /bin and /sbin are symlinks to /usr/bin, /usr/sbin). This
+# lands ifconfig at ./usr/sbin/ifconfig like the Make image and avoids a real
+# /bin or /sbin dir shadowing the base symlinks.
+mkdir -p $$unpacked/usr/bin $$unpacked/usr/sbin
+if [ -d $$unpacked/bin ]; then cp -a $$unpacked/bin/. $$unpacked/usr/bin/; rm -rf $$unpacked/bin; fi
+if [ -d $$unpacked/sbin ]; then cp -a $$unpacked/sbin/. $$unpacked/usr/sbin/; rm -rf $$unpacked/sbin; fi
+"$(BSDTAR_BIN)" --gzip --uid 0 --gid 0 --numeric-owner -cf $@ -C $$unpacked .
+""",
+    toolchains = ["@bsd_tar_toolchains//:resolved_toolchain"],
+)
+
+# Dockerfile.j2: COPY ["start.sh", "/usr/bin/"].
+tar(
+    name = "files",
+    srcs = ["start.sh"],
+    mtree = ["./usr/bin/start.sh uid=0 gid=0 mode=0755 type=file content=$(location :start.sh)"],
+)
+
+# config aligned to Make `docker inspect` of the final image:
+#   Entrypoint=["/usr/bin/start.sh"], WorkingDir="/". The base-stage
+#   ENV DEBIAN_FRONTEND is dropped by the `FROM scratch` final stage, so the
+#   Make final image has no DEBIAN_FRONTEND; we do not add one (unlike the
+#   sonic-bazel reference) to avoid an avoidable Env diff.
+oci_image(
+    name = "docker-dash-engine",
+    base = "@p4lang_bm",
+    entrypoint = ["/usr/bin/start.sh"],
+    workdir = "/",
+    tars = [
+        ":net_tools_tar",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-dash-engine",
+    repo_tags = ["docker-dash-engine:latest"],
+)

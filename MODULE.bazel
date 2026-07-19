@@ -32,6 +32,36 @@ use_repo(toolchains, "bsd_tar_toolchains")
 
 register_toolchains("@bsd_tar_toolchains//:all")
 
+# External OCI base images pulled from registries. docker-dash-engine
+# (platform/vs) uses the upstream p4lang/behavioral-model image as its base
+# (Ubuntu 20.04.6, provides simple_switch_grpc). Digest-pinned for
+# reproducibility. This is the digest the Make build's `:latest` resolves to
+# (os-release 20.04.6 matches the Make image). NOTE: unlike the sonic-bazel
+# reference (which pinned the 4-year-old ce45720e / 20.04.3 that lacks
+# net-tools), this base also lacks ifconfig; net-tools is layered explicitly
+# below so start.sh's `ifconfig eth1/eth2 up` works, matching the Make image.
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "p4lang_bm",
+    digest = "sha256:e00f14fe67747b7c0c63f0688bcdac9fb945c67ee49a04a6400b8e8847f76cf0",
+    image = "index.docker.io/p4lang/behavioral-model",
+    platforms = ["linux/amd64"],
+)
+use_repo(oci, "p4lang_bm", "p4lang_bm_linux_amd64")
+
+# net-tools .deb (Ubuntu focal), the exact version+build the Make Dockerfile.j2
+# `apt install net-tools` pulls (ifconfig binary matches the Make image byte size
+# 83216 / mtime 2025-05-28). Provides ifconfig for platform/vs/docker-dash-engine.
+# Public Ubuntu archive URL, digest-pinned. Runtime deps (libc6, libselinux1)
+# are already present in the p4lang base.
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+http_file(
+    name = "net_tools_focal_deb",
+    urls = ["http://archive.ubuntu.com/ubuntu/pool/main/n/net-tools/net-tools_1.60+git20180626.aebd88e-1ubuntu1.3_amd64.deb"],
+    sha256 = "1cb4553bcc5500fb1c60a502a03ae92e656aa51fb0f45b87655222de5f0329ca",
+    downloaded_file_path = "net-tools.deb",
+)
+
 # --- Rust ---
 # rules_rust registration must be in the root MODULE.bazel because
 # register_toolchains only takes effect from the root module; leaf modules
@@ -567,7 +597,7 @@ http_archive(
 # releases. Mirrors docker-sonic-otel/Dockerfile.j2's `wget` of
 # otelcol-contrib v0.144.0 (arch-specific). docker-sonic-otel cracks the .deb
 # and lays its data into the image (see dockers/docker-sonic-otel/BUILD.bazel).
-http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+# NOTE: http_file is declared once near the top of this file (net_tools block).
 
 _OTEL_VERSION = "0.144.0"
 
