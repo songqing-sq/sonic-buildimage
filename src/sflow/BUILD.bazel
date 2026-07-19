@@ -21,6 +21,15 @@ SFLOWTOOL_VERSION = "5.04"
 
 PSAMPLE_VERSION = "1.1-1"
 
+# Raw (un-sed'd) hsflowd SysV init script, re-exported from the @hsflowd_src
+# fetched repo so the docker-sflow OCI layer can apply the Dockerfile.j2 sed
+# (DAEMON_ARGS crash-log tweak) hermetically. The .deb keeps the pristine copy.
+filegroup(
+    name = "etc_initd_hsflowd_src",
+    srcs = ["@hsflowd_src//:etc_initd_hsflowd"],
+    visibility = ["//visibility:public"],
+)
+
 # =============================================================================
 # hsflowd packaging data files
 # =============================================================================

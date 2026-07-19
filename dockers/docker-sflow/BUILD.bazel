@@ -1,0 +1,117 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# APT-sourced runtime debs. Dockerfile.j2 line 11-13:
+#   apt-get install -f -y dmidecode
+# Package delta (Make docker-sflow minus Make docker-swss-layer-trixie) is
+# EXACTLY: dmidecode, hsflowd, psample, sflowtool. dmidecode is the only apt
+# package; its Depends (libc6) is already in the base. dmidecode is
+# Architecture: amd64 (arch-specific) so the bare `@trixie//dmidecode` label is
+# used (already declared in the shared @trixie pool at
+# dockers/docker-base-trixie/base_trixie.MODULE.bazel).
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//dmidecode",
+    ],
+)
+
+# SONiC-built debs. rules/docker-sflow.mk:
+#   $(DOCKER_SFLOW)_DEPENDS += $(SWSS) $(HSFLOWD) $(SFLOWTOOL) $(PSAMPLE)
+# SWSS is already installed in the docker-swss-layer-trixie base (its sonic_pkgs
+# ships swss + all transitive deps), so it is NOT re-flattened here. The Make
+# package delta relative to that base is exactly hsflowd/sflowtool/psample.
+# `flatten(deb_data)` does NOT resolve Depends, but the delta test proved these
+# three add no new transitive .so packages (hsflowd -lhiredis and psample -lmnl
+# resolve to libhiredis/libmnl0 already present in the base).
+# Each package ships `_data` (contents) + `_statusd` (dpkg status.d stub) so
+# `dpkg -l` inside the container lists it.
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        # hsflowd (host-sflow agent): /usr/sbin/hsflowd, /etc/hsflowd/modules/*.so,
+        # /etc/hsflowd.conf, /etc/init.d/hsflowd, /lib/systemd/system/hsflowd.service,
+        # /etc/dbus-1/system.d/net.sflow.hsflowd.conf.
+        "@sflow//:hsflowd_2.0.51-26.deb_data",
+        "@sflow//:hsflowd_2.0.51-26.deb_statusd",
+        # sflowtool: /usr/bin/sflowtool.
+        "@sflow//:sflowtool_5.04.deb_data",
+        "@sflow//:sflowtool_5.04.deb_statusd",
+        # psample: /usr/bin/psample, /usr/lib/*/libpsample.so{,.1,.1.0}.
+        "@sflow//:psample_1.1-1.deb_data",
+        "@sflow//:psample_1.1-1.deb_statusd",
+    ],
+)
+
+# Dockerfile.j2 line 23:
+#   sed -ri '/^DAEMON_ARGS=""/c DAEMON_ARGS="-c /var/log/hsflowd.crash"' \
+#           /etc/init.d/hsflowd
+# The hsflowd .deb ships the pristine init script (DAEMON_ARGS=""); the Make
+# image rewrites that one line to add crash logging. We reproduce it
+# hermetically by sed'ing the re-exported source init script (@sflow//:
+# etc_initd_hsflowd_src) and overlaying the result on top of the .deb copy via
+# the `files` tar (listed AFTER sonic_pkgs so last-writer-wins).
+genrule(
+    name = "hsflowd_initd",
+    srcs = ["@sflow//:etc_initd_hsflowd_src"],
+    outs = ["initd/hsflowd"],
+    cmd = "sed -r '/^DAEMON_ARGS=\"\"/c\\DAEMON_ARGS=\"-c /var/log/hsflowd.crash\"' $< > $@",
+)
+
+# COPY'd SONiC files (Dockerfile.j2 lines 25-27):
+#   COPY supervisord.conf   -> /etc/supervisor/conf.d/   (pre-rendered, static)
+#   COPY critical_processes -> /etc/supervisor
+#   COPY port_index_mapper.py -> /usr/bin
+# Plus the sed'd /etc/init.d/hsflowd overlay above.
+# NOTE: base_image_files/{psample,sflowtool} are HOST-side _BASE_IMAGE_FILES
+# shims (rules/docker-sflow.mk: _BASE_IMAGE_FILES += psample:/usr/bin/psample,
+# sflowtool:/usr/bin/sflowtool) — bash wrappers that `docker exec sflow ...`.
+# They are installed onto the SONiC host, NOT into this container. The
+# container's /usr/bin/{psample,sflowtool} are the real ELF binaries from the
+# psample/sflowtool debs above (verified against the Make image), so they are
+# intentionally NOT included here.
+tar(
+    name = "files",
+    srcs = [
+        "supervisord.conf",
+        "critical_processes",
+        "port_index_mapper.py",
+        ":hsflowd_initd",
+    ],
+    mtree = [
+        "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location supervisord.conf)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location critical_processes)",
+        "./usr/bin/port_index_mapper.py uid=0 gid=0 mode=0755 type=file content=$(location port_index_mapper.py)",
+        "./etc/init.d/hsflowd uid=0 gid=0 mode=0755 type=file content=$(location :hsflowd_initd)",
+    ],
+)
+
+# Make docker-sflow final stage (verified via `docker inspect` on the Make
+# image): Entrypoint=["/usr/local/bin/supervisord"], Cmd=null, WorkingDir="/",
+# Env adds DEBIAN_FRONTEND=noninteractive on top of the base PATH.
+# (com.azure.sonic.* image Labels are added by the Make SONiC image-build
+# machinery, not by this module — see diff doc "accepted differences".)
+oci_image(
+    name = "docker-sflow",
+    base = "//dockers/docker-swss-layer-trixie:docker-swss-layer-trixie",
+    entrypoint = ["/usr/local/bin/supervisord"],
+    workdir = "/",
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+    },
+    tars = [
+        ":apt_layer",
+        ":sonic_pkgs",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-sflow",
+    repo_tags = ["docker-sflow:latest"],
+)
