@@ -1,0 +1,285 @@
+# sflow package -> 5 .deb outputs across 3 upstream sources:
+#   hsflowd_2.0.51-26 (+dbgsym), sflowtool_5.04, psample_1.1-1 (+dbgsym)
+#
+# cc rules live in the fetched external repos (@hsflowd_src, @sflowtool_src,
+# @psample_src) via build_file_template; this file assembles the .deb layouts
+# with sonic_deb and hermetically generates the packaging data files
+# (changelogs, conffiles, maintainer scripts, shlibs, triggers) via write_file
+# so the build never depends on any SONiC Make output. The packaging metadata
+# (control fields, install layout, conffiles/scripts) reproduces the SONiC Make
+# baseline (target/debs/trixie/*.deb) -- i.e. the effect of hsflowd patch 0002,
+# which is deliberately not applied to the source tree.
+
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+HSFLOWD_VERSION = "2.0.51-26"
+
+SFLOWTOOL_VERSION = "5.04"
+
+PSAMPLE_VERSION = "1.1-1"
+
+# =============================================================================
+# hsflowd packaging data files
+# =============================================================================
+
+# Debian changelog (DellEMC initial-release stub, gzipped as changelog.Debian.gz).
+write_file(
+    name = "hsflowd_changelog",
+    out = "hsflowd/changelog.Debian",
+    content = [
+        "hsflowd (2.0.51-26) stable; urgency=medium",
+        "",
+        "  [ DellEMC ]",
+        "  * Initial release : hsflowd",
+        "",
+        " -- DellEMC <support@dell.com>  Mon, 29 Jul 2019 07:08:02 -0400",
+        "",
+    ],
+)
+
+genrule(
+    name = "hsflowd_changelog_gz",
+    srcs = [":hsflowd_changelog"],
+    outs = ["hsflowd/changelog.Debian.gz"],
+    cmd = "gzip -9nc $< > $@",
+)
+
+# conffiles: reproduces the baseline exactly. Upstream DEBIAN_build/conffiles
+# lists /etc/hsflowd.conf + the dbus conf; debhelper's dh_installdeb then
+# auto-appends every /etc file (hence the duplicate first two lines).
+write_file(
+    name = "hsflowd_conffiles",
+    out = "hsflowd/conffiles",
+    content = [
+        "/etc/hsflowd.conf",
+        "/etc/dbus-1/system.d/net.sflow.hsflowd.conf",
+        "/etc/dbus-1/system.d/net.sflow.hsflowd.conf",
+        "/etc/hsflowd.conf",
+        "/etc/hsflowd/modules/mod_dnssd.so",
+        "/etc/hsflowd/modules/mod_docker.so",
+        "/etc/hsflowd/modules/mod_dropmon.so",
+        "/etc/hsflowd/modules/mod_json.so",
+        "/etc/hsflowd/modules/mod_psample.so",
+        "/etc/hsflowd/modules/mod_sonic.so",
+        "/etc/init.d/hsflowd",
+        "",
+    ],
+)
+
+# Maintainer scripts: preinst/postinst/prerm are the upstream DEBIAN_build
+# stubs; postrm is the dh_installsystemd-generated script (matches baseline).
+write_file(
+    name = "hsflowd_preinst",
+    out = "hsflowd/preinst",
+    content = [
+        "#!/bin/bash",
+        "# config file behavior now handled by conffiles mechanism",
+        "exit 0",
+        "",
+    ],
+    is_executable = True,
+)
+
+write_file(
+    name = "hsflowd_postinst",
+    out = "hsflowd/postinst",
+    content = [
+        "#!/bin/bash",
+        "# either:",
+        "# update-rc.d hsflowd defaults",
+        "# or:",
+        "# systemctl daemon-reload",
+        "# systemctl enable hsflowd",
+        "exit 0",
+        "",
+    ],
+    is_executable = True,
+)
+
+write_file(
+    name = "hsflowd_prerm",
+    out = "hsflowd/prerm",
+    content = [
+        "#!/bin/bash",
+        "# if using init(1):",
+        "# update-rc.d -f hsflowd remove",
+        "exit 0",
+        "",
+    ],
+    is_executable = True,
+)
+
+write_file(
+    name = "hsflowd_postrm",
+    out = "hsflowd/postrm",
+    content = [
+        "#!/bin/sh",
+        "set -e",
+        "# Automatically added by dh_installsystemd/13.24.2",
+        "if [ \"$1\" = remove ] && [ -d /run/systemd/system ] ; then",
+        "\tsystemctl --system daemon-reload >/dev/null || true",
+        "fi",
+        "# End automatically added section",
+        "# Automatically added by dh_installsystemd/13.24.2",
+        "if [ \"$1\" = \"purge\" ]; then",
+        "\tif [ -x \"/usr/bin/deb-systemd-helper\" ]; then",
+        "\t\tdeb-systemd-helper purge 'hsflowd.service' >/dev/null || true",
+        "\tfi",
+        "fi",
+        "# End automatically added section",
+        "",
+    ],
+    is_executable = True,
+)
+
+# =============================================================================
+# hsflowd_2.0.51-26 (+ hsflowd-dbgsym). Section admin, Arch any, NO Depends.
+# Modules install 0644 (dh_fixperms lowers /etc/*.so to 0644 in the baseline).
+# =============================================================================
+sonic_deb(
+    name = "hsflowd_{}.deb".format(HSFLOWD_VERSION),
+    package = "hsflowd",
+    version = HSFLOWD_VERSION,
+    content = {
+        "/usr/sbin:*:0755": ["@hsflowd_src//:hsflowd"],
+        "/etc/hsflowd/modules:*:0644": [
+            "@hsflowd_src//:mod_dnssd.so",
+            "@hsflowd_src//:mod_docker.so",
+            "@hsflowd_src//:mod_dropmon.so",
+            "@hsflowd_src//:mod_json.so",
+            "@hsflowd_src//:mod_psample.so",
+            "@hsflowd_src//:mod_sonic.so",
+        ],
+        "/etc:*:0644": ["@hsflowd_src//:etc_hsflowd_conf"],
+        "/etc/init.d:*:0755": ["@hsflowd_src//:etc_initd_hsflowd"],
+        "/lib/systemd/system:*:0644": ["@hsflowd_src//:hsflowd_service"],
+        "/etc/dbus-1/system.d:*:0644": ["@hsflowd_src//:dbus_conf"],
+        "/usr/share/doc/hsflowd:*:0644": [":hsflowd_changelog_gz"],
+    },
+    conffiles_file = ":hsflowd_conffiles",
+    description = "sFlow(R) monitoring agent",
+    gen_dbg = True,
+    homepage = "sflow.net",
+    maintainer = "Neil McKee [neil.mckee@inmon.com]",
+    postinst = ":hsflowd_postinst",
+    postrm = ":hsflowd_postrm",
+    preinst = ":hsflowd_preinst",
+    prerm = ":hsflowd_prerm",
+    section = "admin",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# sflowtool_5.04. Section devel, Depends libc6 (>= 2.34). No dbgsym.
+# =============================================================================
+write_file(
+    name = "sflowtool_changelog",
+    out = "sflowtool/changelog",
+    content = [
+        "sflowtool (5.04) UNRELEASED; urgency=medium",
+        "",
+        "  [ DellEMC ]",
+        "  * Initial release : based on https://github.com/sflow/sflowtool",
+        "",
+        " -- DellEMC <support@dell.com>  Mon, 29 Jul 2019 07:08:02 -0400",
+        "",
+    ],
+)
+
+genrule(
+    name = "sflowtool_changelog_gz",
+    srcs = [":sflowtool_changelog"],
+    outs = ["sflowtool/changelog.gz"],
+    cmd = "gzip -9nc $< > $@",
+)
+
+sonic_deb(
+    name = "sflowtool_{}.deb".format(SFLOWTOOL_VERSION),
+    package = "sflowtool",
+    version = SFLOWTOOL_VERSION,
+    content = {
+        "/usr/bin:*:0755": ["@sflowtool_src//:sflowtool"],
+        "/usr/share/doc/sflowtool:*:0644": [":sflowtool_changelog_gz"],
+    },
+    depends = ["libc6 (>= 2.34)"],
+    description = "This package contains sflowtool from https://github.com/sflow/sflowtool",
+    maintainer = "DellEMC <support@dell.com>",
+    section = "devel",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# psample_1.1-1 (+ psample-dbgsym). Section devel,
+# Depends libc6, libmnl0 (>= 1.0.3-4~). Header NOT shipped (debian/rules removes
+# usr/include).
+# =============================================================================
+write_file(
+    name = "psample_changelog",
+    out = "psample/changelog.Debian",
+    content = [
+        "psample (1.1-1) UNRELEASED; urgency=medium",
+        "",
+        "  [ DellEMC ]",
+        "  * Initial release : based on https://github.com/Mellanox/libpsample",
+        "",
+        " -- DellEMC <support@dell.com>  Mon, 29 Jul 2019 07:08:02 -0400",
+        "",
+    ],
+)
+
+genrule(
+    name = "psample_changelog_gz",
+    srcs = [":psample_changelog"],
+    outs = ["psample/changelog.Debian.gz"],
+    cmd = "gzip -9nc $< > $@",
+)
+
+# shlibs/triggers: dh_makeshlibs output. shlibs is provided explicitly because
+# the sandbox objdump SONAME auto-lookup yields empty (peer note: lldpd).
+write_file(
+    name = "psample_shlibs",
+    out = "psample/shlibs",
+    content = [
+        "libpsample 1 psample",
+        "",
+    ],
+)
+
+write_file(
+    name = "psample_triggers",
+    out = "psample/triggers",
+    content = [
+        "# Triggers added by dh_makeshlibs/13.24.2",
+        "activate-noawait ldconfig",
+        "",
+    ],
+)
+
+sonic_deb(
+    name = "psample_{}.deb".format(PSAMPLE_VERSION),
+    package = "psample",
+    version = PSAMPLE_VERSION,
+    content = {
+        "/usr/bin:*:0755": ["@psample_src//:psample_bin"],
+        "${LIBDIR}:*:0644": [
+            "@psample_src//:psample_files",
+            "@psample_src//:psample_dev_link",
+        ],
+        "/usr/share/man/man8:*:0644": ["@psample_src//:psample_man_gz"],
+        "/usr/share/doc/psample:*:0644": [":psample_changelog_gz"],
+    },
+    depends = [
+        "libc6",
+        "libmnl0 (>= 1.0.3-4~)",
+    ],
+    description = "This package contains psample from https://github.com/Mellanox/libpsample",
+    gen_dbg = True,
+    maintainer = "DellEMC <support@dell.com>",
+    section = "devel",
+    shlibs = ":psample_shlibs",
+    triggers = ":psample_triggers",
+    visibility = ["//visibility:public"],
+)

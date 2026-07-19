@@ -279,6 +279,12 @@ local_path_override(
     path = "src/lldpd",
 )
 
+bazel_dep(name = "sflow", version = "1.0.0")
+local_path_override(
+    module_name = "sflow",
+    path = "src/sflow",
+)
+
 bazel_dep(name = "iproute2", version = "6.15.0-1")
 local_path_override(
     module_name = "iproute2",
