@@ -82,6 +82,7 @@ apt.install(
         "libdaemon-dev",
         "libjansson-dev",
         "libdbus-1-dev",
+        "libzmq3-dev",
     ],
     suites = ["trixie", "trixie-updates", "trixie-security"],
 )

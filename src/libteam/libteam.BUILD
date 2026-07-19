@@ -190,6 +190,10 @@ sonic_shared_library_versioned(
         "@libteam_deps//libdbus-1-dev:libdbus-1",
         "@libteam_deps//libdaemon-dev:libdaemon",
         "@libteam_deps//libjansson-dev:libjansson",
+        # cli_zmq.c is compiled under ENABLE_ZMQ (config.h) and calls zmq_*;
+        # link libzmq so libteamdctl.so.0.1.5 records NEEDED libzmq.so.5,
+        # matching the SONiC Make build.
+        "@libteam_deps//libzmq3-dev:libzmq3",
     ],
     soversion = LIBTEAMDCTL_SOVERSION,
     version = LIBTEAMDCTL_FULL_SOVERSION,
@@ -308,6 +312,9 @@ cc_binary(
         "@libteam_deps//libdaemon-dev:libdaemon",
         "@libteam_deps//libjansson-dev:libjansson",
         "@libteam_deps//libdbus-1-dev:libdbus-1",
+        # teamd_zmq.c is compiled under ENABLE_ZMQ (config.h) and calls zmq_*;
+        # link libzmq so teamd records NEEDED libzmq.so.5, matching Make.
+        "@libteam_deps//libzmq3-dev:libzmq3",
     ],
 )
 

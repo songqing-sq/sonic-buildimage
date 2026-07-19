@@ -1,7 +1,12 @@
 /* Hand-written replacement for autoheader-generated config.h.
- * Mirrors what `./configure --user=root --group=root --enable-dbus --disable-zmq`
+ * Mirrors what `./configure --user=root --group=root --enable-dbus --enable-zmq`
  * would produce on Debian trixie with libnl 3.7.0. Consumed by expand_template
- * (no @VAR@ placeholders remain). */
+ * (no @VAR@ placeholders remain).
+ *
+ * NOTE: ZeroMQ is default-enabled upstream (configure.ac: --disable-zmq
+ * [default=enabled]); the SONiC Make build has libzmq3-dev in its sysroot so
+ * ENABLE_ZMQ is defined and both libteamdctl.so and teamd link libzmq.so.5.
+ * cli_zmq.c and teamd_zmq.c are guarded by #ifdef ENABLE_ZMQ. */
 
 #define PACKAGE "libteam"
 #define PACKAGE_NAME "libteam"
@@ -17,6 +22,10 @@
 
 /* D-Bus API (libteamdctl cli_dbus.c + teamd_dbus.c). */
 #define ENABLE_DBUS 1
+
+/* ZeroMQ API (libteamdctl cli_zmq.c + teamd teamd_zmq.c). Default-enabled
+ * upstream; the SONiC Make build links libzmq.so.5, so we match it. */
+#define ENABLE_ZMQ 1
 
 /* Default daemon user/group. */
 #define TEAMD_USER "root"
