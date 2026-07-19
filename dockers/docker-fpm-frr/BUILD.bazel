@@ -49,6 +49,10 @@ flatten(
         "@trixie//libsensors-config:data",
         "@trixie//libpci3:data",
         "@trixie//pci.ids:data",
+        # zebra_snmp.so (-M snmp, enabled by default) additionally links
+        # libnetsnmptrapd.so.40 and libmariadb.so.3 — not in libsnmp40t64.
+        "@trixie//libnetsnmptrapd40t64:data",
+        "@trixie//libmariadb3:data",
     ],
 )
 
@@ -115,8 +119,15 @@ group(
         {"name": "_lldpd", "gid": 102},
         {"name": "Debian-snmp", "gid": 103},
         {"name": "nogroup", "gid": 65534},
-        # frr (docker-fpm-frr): groupadd -g 300 frr.
+        # frr (docker-fpm-frr): Dockerfile.j2 builder runs `groupadd -g 300 frr`,
+        # and the frr deb postinst (src/sonic-frr/frr/debian/frr.postinst) also
+        # runs `addgroup --system frrvty` + `usermod -a -G frrvty frr`. distroless
+        # runs no postinst, so we declare both here. Without frrvty, zebra aborts
+        # at startup: "privs_init: could not lookup vty group frrvty". frrvty gid
+        # is pinned to 301 (next free after frr's 300); the `users` field puts frr
+        # into frrvty, replicating `usermod -a -G frrvty frr`.
         {"name": "frr", "gid": 300},
+        {"name": "frrvty", "gid": 301, "users": ["frr"]},
     ],
 )
 
@@ -257,6 +268,10 @@ tar(
         "./usr/share/sonic/templates/zebra/zebra.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/zebra/zebra.conf.j2)",
         "./usr/share/sonic/templates/zebra/zebra.interfaces.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/zebra/zebra.interfaces.conf.j2)",
         "./usr/share/sonic/templates/zebra/zebra.set_src.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :frr/zebra/zebra.set_src.conf.j2)",
+        # frr postinst runs `mkdir -m 0755 -p /var/log/frr` (frr-owned); the frr
+        # deb data does not ship it and no init script creates it, so declare it
+        # here (frr uid/gid 300) or frr daemons have nowhere to write logs.
+        "./var/log/frr uid=300 gid=300 mode=0755 type=dir",
     ],
 )
 

@@ -435,12 +435,16 @@ apt.install(
         #   iproute2, logrotate, lsof, libc6, libcap2, libcares2, libcrypt1,
         #   libgcc-s1, libgoogle-perftools4t64, libjson-c5, libpam0g,
         #   libpcre2-posix3, libreadline8t64, libunwind8, libyang3.
-        # frr-snmp additionally links libsnmp40t64 (-> libsensors5 -> libpci3).
+        # frr-snmp additionally links libsnmp40t64 (-> libsensors5 -> libpci3),
+        # and zebra's `-M snmp` module (zebra_snmp.so, enabled by default) also
+        # links libnetsnmptrapd.so.40 (libnetsnmptrapd40t64) and libmariadb.so.3
+        # (libmariadb3) — without them zebra aborts loading the snmp module.
         # Runtime .so packages NOT already in the swss-layer/config-engine base
         # (verified against the Make docker-fpm-frr image package delta vs
         # docker-swss-layer-trixie base) that must ship here:
         #   logrotate, libgoogle-perftools4t64, libtcmalloc-minimal4t64
-        #   (perftools runtime .so), libunwind8, libcares2, libjson-c5.
+        #   (perftools runtime .so), libunwind8, libcares2, libjson-c5,
+        #   libnetsnmptrapd40t64, libmariadb3.
         #   libsnmp40t64/libsnmp-base/libsensors5/libsensors-config/libpci3/
         #   pci.ids/libpcre2-posix3 are already registered above (docker-snmp /
         #   docker-lldp / docker-sysmgr blocks) and ship here for frr-snmp.
@@ -458,6 +462,8 @@ apt.install(
         "libunwind8",
         "libcares2",
         "libjson-c5",
+        "libnetsnmptrapd40t64",
+        "libmariadb3",
     ],
     suites = [
         "trixie",
