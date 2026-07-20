@@ -330,6 +330,18 @@ local_path_override(
     path = "src/p4lang",
 )
 
+# dash-sai (libsai / libsai-dev): the DASH SAI pipeline library. Fetches
+# sonic-net/DASH @ d5c003dd + the opencomputeproject/SAI submodule @ 8dd59e5 as
+# tarballs via sonic_http_archive, compiles bmv2/dash_pipeline.p4 with p4c-bm2-ss
+# (from @p4lang), generates the DASH SAI headers/impls and builds libsai.so +
+# libdashsaimetadata.so. The wrapper module lives in src/dash-sai/DASH-bazel so
+# the DASH source tree (src/dash-sai/ + its Makefile) stays untouched for Make.
+bazel_dep(name = "dash-sai", version = "1.0.0")
+local_path_override(
+    module_name = "dash-sai",
+    path = "src/dash-sai/DASH-bazel",
+)
+
 # sonic-mgmt-framework and sonic-gnmi both bazel_dep on sonic-mgmt-common, but
 # local_path_override is only honored from the ROOT module, so the root must own
 # it here even though nothing in the root depends on it directly.

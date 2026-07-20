@@ -1,0 +1,38 @@
+package(default_visibility = ["//visibility:public"])
+
+# BUILD/template files consumed by sonic_http_archive(build_file_template=) in
+# this module's MODULE.bazel, plus the pip requirements lock. Exported so the
+# repository rules can read them as labels.
+exports_files([
+    "dash.BUILD",
+    "sai_submodule.BUILD",
+])
+
+# -----------------------------------------------------------------------------
+# @dash-sai//... label facade. The build graph lives in the fetched @dash_src
+# repo (dash.BUILD); these aliases re-export its targets under stable
+# @dash-sai//... labels, mirroring the src/sonic-sairedis/SAI-bazel pattern.
+# -----------------------------------------------------------------------------
+alias(
+    name = "p4_compile",
+    actual = "@dash_src//:p4_compile",
+)
+
+alias(
+    name = "sai_gen",
+    actual = "@dash_src//:sai_gen",
+)
+
+alias(
+    name = "libsai-dev_1.0.0.deb",
+    actual = "@dash_src//:libsai-dev_1.0.0.deb",
+)
+
+# NOTE: libsai_1.0.0.deb (the main package: libsai.so + libdashsaimetadata.so +
+# /etc/dash/*) is NOT yet exposed here. Its two shared libraries require the OCP
+# SAI meta doxygen+parse.pl codegen (stage 3, adapt src/sonic-sairedis/SAI-bazel
+# sai.BUILD meta targets to consume the stage-2 codegen-modified inc/experimental
+# headers) and the strict-`-Werror` DASH SAI C++ compile (stage 4, cc_library
+# over @dash_src//:sai_gen's lib.tar). See dash.BUILD "Stage 3/4 (TODO)".
+# The /etc/dash payload (stage 1) and the SAI headers (stage 2 -> libsai-dev)
+# are already produced and verified.

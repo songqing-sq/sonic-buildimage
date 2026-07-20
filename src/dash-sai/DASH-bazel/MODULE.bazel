@@ -1,0 +1,183 @@
+module(name = "dash-sai", version = "1.0.0")
+
+# =============================================================================
+# dash-sai (libsai / libsai-dev) — proper hermetic Bazel migration.
+#
+# Mirrors the Make recipe in src/dash-sai/Makefile + rules/dash-sai.mk, which:
+#   1. clones sonic-net/DASH @ d5c003dd + its SAI submodule (opencomputeproject
+#      /SAI @ 8dd59e5), 2. compiles bmv2/dash_pipeline.p4 with p4c-bm2-ss,
+#   3. runs SAI/sai_api_gen.py to generate DASH SAI headers/impls,
+#   4. builds libsaimetadata.so (OCP SAI meta) + libsai.so (DASH SAI lib),
+#   5. packages libsai + libsai-dev debs.
+#
+# The DASH source repo stays UNTOUCHED (src/dash-sai/ + its Makefile still work
+# for Make builds). This wrapper module fetches DASH + the SAI submodule as
+# tarballs via sonic_http_archive (the SAI submodule is NOT inside the DASH
+# GitHub archive tarball, so it is fetched separately at the .gitmodules-pinned
+# commit) and drives the whole build graph from dash.BUILD.
+# =============================================================================
+
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "rules_perl", version = "1.1.0")
+bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_shell", version = "0.6.1")
+bazel_dep(name = "bazel_lib", version = "3.1.1")
+bazel_dep(name = "rules_doxygen", version = "2.6.3")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+# p4lang provides the p4c-bm2-ss compiler (inside p4lang-p4c_*.deb). p4lang is
+# registered in the root MODULE.bazel via local_path_override, so this bazel_dep
+# resolves to that same local module.
+bazel_dep(name = "p4lang", version = "0.1.1")
+
+# Doxygen 1.9.5 pinned for the OCP SAI meta parse.pl generator — see the note in
+# src/sonic-sairedis/SAI-bazel/MODULE.bazel. Newer doxygen drops <memberdef>
+# from per-file XML and SAI's parse.pl then sees zero enums.
+doxygen_extension = use_extension("@rules_doxygen//:extensions.bzl", "doxygen_extension")
+doxygen_extension.configuration(
+    version = "1.9.5",
+    sha256 = "3b46471e7d4c3496e194d95042c7e5f738b93debacd22193aacc3df4dfe66267",
+    platform = "linux",
+)
+use_repo(doxygen_extension, "doxygen")
+
+sonic_http_archive = use_repo_rule(
+    "@sonic_build_infra//sonic_http_archive:sonic_http_archive.bzl",
+    "sonic_http_archive",
+)
+
+# DASH @ d5c003dd7774c2b43f275c0233acc73a0ea28d2f (DASH_SAI_COMMIT in
+# rules/dash-sai.mk). GitHub source tarball; sha256 pinned by fetching first.
+sonic_http_archive(
+    name = "dash_src",
+    urls = ["https://github.com/sonic-net/DASH/archive/d5c003dd7774c2b43f275c0233acc73a0ea28d2f.tar.gz"],
+    sha256 = "adaa155af1aeabaa03ef0ab536509f962c5e0d68802a6470851908a4447c32f7",
+    strip_prefix = "DASH-d5c003dd7774c2b43f275c0233acc73a0ea28d2f",
+    build_file_template = "//:dash.BUILD",
+    # run_sai_gen.py is symlinked into the fetched repo root so dash.BUILD can
+    # define the codegen py_binary with an in-repo main. Keeps the DASH source
+    # tree (src/dash-sai/) untouched.
+    extra_files = ["//:run_sai_gen.py"],
+)
+
+# OCP SAI submodule (dash-pipeline/SAI/SAI) at the .gitmodules gitlink commit
+# 8dd59e5eba472f0e53e8db00530e7c6e5ce2a335 recorded in DASH @ d5c003dd. NOT
+# present in the DASH GitHub archive tarball above (git archive omits submodule
+# contents), so fetched separately from opencomputeproject/SAI.
+sonic_http_archive(
+    name = "dash_sai_src",
+    urls = ["https://github.com/opencomputeproject/SAI/archive/8dd59e5eba472f0e53e8db00530e7c6e5ce2a335.tar.gz"],
+    sha256 = "1ca9533138f7e5be68473cebf062a5ca254b7673b6f368da7037694e173210c1",
+    strip_prefix = "SAI-8dd59e5eba472f0e53e8db00530e7c6e5ce2a335",
+    build_file_template = "//:sai_submodule.BUILD",
+)
+
+# -----------------------------------------------------------------------------
+# apt build/runtime deps. Trixie-aligned (same snapshot timestamps as the rest
+# of the workspace, e.g. src/libteam). p4c-bm2-ss (host-built binary shipped in
+# p4lang-p4c_*.deb) dynamically links libboost_iostreams + libgc/libgccpp, which
+# are not shipped in the deb — staged here and put on LD_LIBRARY_PATH.
+# -----------------------------------------------------------------------------
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie", "trixie-updates"],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+apt.install(
+    dependency_set = "dashsai_deps",
+    packages = [
+        "libgc1",
+        "libboost-iostreams1.83.0",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(apt, "dashsai_deps")
+
+# -----------------------------------------------------------------------------
+# Python deps for SAI/sai_api_gen.py (the DASH SAI header/impl generator).
+# Fetched as pinned wheels via http_archive + inline py_library BUILDs, the same
+# no-pip.parse approach the root MODULE.bazel uses for bitarray/thrift. (Avoids
+# rules_python's pip extension, whose transitive module graph pulls a broken
+# aspect_rules_py/protoc-gen-validate registry entry in this workspace.)
+# amd64 / CPython 3.11 wheels — dash-sai is an amd64-only package.
+# -----------------------------------------------------------------------------
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+_PY_LIB = """
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "lib",
+    srcs = glob(["**/*.py"]),
+    data = glob(["**/*"], exclude = ["**/*.py", "**/*.pyc"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = {deps},
+)
+"""
+
+http_archive(
+    name = "wheel_markupsafe",
+    urls = ["https://files.pythonhosted.org/packages/30/ac/0273f6fcb5f42e314c6d8cd99effae6a5354604d461b8d392b5ec9530a54/markupsafe-3.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl"],
+    sha256 = "0bf2a864d67e76e5c9a34dc26ec616a66b9888e25e7b9460e1c76d3293bd9dbf",
+    type = "zip",
+    build_file_content = _PY_LIB.format(deps = "[]"),
+)
+
+http_archive(
+    name = "wheel_jinja2",
+    urls = ["https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl"],
+    sha256 = "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+    type = "zip",
+    build_file_content = _PY_LIB.format(deps = '["@wheel_markupsafe//:lib"]'),
+)
+
+http_archive(
+    name = "wheel_pyyaml",
+    urls = ["https://files.pythonhosted.org/packages/71/60/917329f640924b18ff085ab889a11c763e0b573da888e8404ff486657602/pyyaml-6.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl"],
+    sha256 = "b8bb0864c5a28024fac8a632c443c87c5aa6f215c0b126c449ae1a150412f31d",
+    type = "zip",
+    build_file_content = _PY_LIB.format(deps = "[]"),
+)
+
+http_archive(
+    name = "wheel_fsspec",
+    urls = ["https://files.pythonhosted.org/packages/e5/22/4222d7ddf3da30f363edaa98e329c2bce6c65497c9cb2810931c8b2c0fbc/fsspec-2026.6.0-py3-none-any.whl"],
+    sha256 = "02e0b71817df9b2169dc30a16832045764def1191b43dcff5bb85bdee212d2a1",
+    type = "zip",
+    build_file_content = _PY_LIB.format(deps = "[]"),
+)
+
+http_archive(
+    name = "wheel_pyyaml_include",
+    urls = ["https://files.pythonhosted.org/packages/56/1f/ae83ff547e70cd3aeefe2ebaeeef41c4e1fd5ed2453396d249d17c3a7ead/pyyaml_include-2.2-py3-none-any.whl"],
+    sha256 = "489fff69f78bad8b9509d006297a0140fd91382a66775b8b1da0ce7e126c1815",
+    type = "zip",
+    build_file_content = _PY_LIB.format(deps = '["@wheel_pyyaml//:lib", "@wheel_fsspec//:lib"]'),
+)
+
+http_archive(
+    name = "wheel_ply",
+    urls = ["https://files.pythonhosted.org/packages/a3/58/35da89ee790598a0700ea49b2a66594140f44dec458c07e8e3d4979137fc/ply-3.11-py2.py3-none-any.whl"],
+    sha256 = "096f9b8350b65ebd2fd1346b12452efe5b9607f7482813ffca50c22722a807ce",
+    type = "zip",
+    build_file_content = _PY_LIB.format(deps = "[]"),
+)
+
+http_archive(
+    name = "wheel_jsonpath_ng",
+    urls = ["https://files.pythonhosted.org/packages/35/5a/73ecb3d82f8615f32ccdadeb9356726d6cae3a4bbc840b437ceb95708063/jsonpath_ng-1.7.0-py3-none-any.whl"],
+    sha256 = "f3d7f9e848cba1b6da28c55b1c26ff915dc9e0b1ba7e752a53d6da8d5cbd00b6",
+    type = "zip",
+    build_file_content = _PY_LIB.format(deps = '["@wheel_ply//:lib"]'),
+)
