@@ -78,7 +78,11 @@ LIBDIR=$$(dirname "$$(find "$$WORK/libs" -name 'libgc.so.1' | head -1)")
 cp "$$WORK/out/dash_pipeline.json"      $(execpath etc/dash/dash_pipeline.json)
 cp "$$WORK/out/dash_pipeline_p4rt.json" $(execpath etc/dash/dash_pipeline_p4rt.json)
 cp "$$WORK/out/dash_pipeline_p4rt.txt"  $(execpath etc/dash/dash_pipeline_p4rt.txt)
-cp "$$WORK/out/dash_pipeline_ir.json"   $(execpath etc/dash/dash_pipeline_ir.json)
+# p4c bakes the -I include dir into ir.json "filename" fields. That dir is the
+# ephemeral $$WORK extraction prefix, which leaks the sandbox/tmp path and is
+# non-deterministic across runs. Strip it so filenames read
+# /usr/share/p4c/p4include/... exactly like the Make build (reproducible parity).
+sed "s#$$WORK/p4c##g" "$$WORK/out/dash_pipeline_ir.json" > $(execpath etc/dash/dash_pipeline_ir.json)
 """,
 )
 
