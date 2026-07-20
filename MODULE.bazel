@@ -5,20 +5,6 @@ bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "rules_oci", version = "2.2.6")
-# rules_foreign_cc: wrap upstream autotools/CMake builds (used by the p4lang
-# leaf to build PI/bmv2/p4c from their orig tarballs via configure_make/cmake).
-# Registered here in the root module so its default cmake/make/ninja toolchains
-# take effect for leaf modules that local_path_override into this workspace.
-bazel_dep(name = "rules_foreign_cc", version = "0.15.1")
-
-# rules_foreign_cc's default pkgconfig toolchain builds pkg-config (and an old
-# bundled glib) from source, which fails to compile under gcc-14 (C23 makes
-# `bool` a keyword; glib's goption.c uses it as an identifier). The p4lang leaf
-# already provides `pkgconf` from its pinned apt sysroot on PATH, so register
-# the preinstalled pkgconfig toolchain at root priority; it resolves
-# `pkg-config` from PATH at action time instead of building it.
-register_toolchains("@rules_foreign_cc//toolchains:preinstalled_pkgconfig_toolchain")
-
 bazel_dep(name = "protobuf", version = "29.0")
 bazel_dep(name = "grpc", version = "1.71.0", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "rules_go", version = "0.60.0.sonic-patched", repo_name = "io_bazel_rules_go")
@@ -334,9 +320,10 @@ local_path_override(
     path = "src/sonic-sairedis/SAI-bazel",
 )
 
-# p4lang: PI + bmv2 + p4c built from their opensuse orig tarballs via
-# rules_foreign_cc (configure_make / cmake). Produces the three .deb targets
-# under //src/p4lang consumed downstream by dash-sai (p4c-bm2-ss).
+# p4lang: PI + bmv2 + p4c. Bridged via a "local make" genrule (see
+# src/p4lang/BUILD.bazel) that runs SONiC's own make and exposes the produced
+# .debs as Bazel targets (user-approved non-hermetic exception, scoped to
+# p4lang). Consumed downstream by dash-sai (p4c-bm2-ss) and docker images.
 bazel_dep(name = "p4lang", version = "0.1.1")
 local_path_override(
     module_name = "p4lang",
