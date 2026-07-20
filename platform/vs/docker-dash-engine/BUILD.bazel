@@ -1,54 +1,160 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_deb//distroless:defs.bzl", "cacerts", "flatten")
 load("@tar.bzl", "tar")
 
 # docker-dash-engine (platform/vs/docker-dash-engine.mk + Dockerfile.j2).
 #
 # Base is the upstream p4lang/behavioral-model image (Ubuntu 20.04.6), pulled
-# via oci.pull in the root MODULE.bazel and digest-pinned to the build the Make
-# `:latest` resolves to. The Make Dockerfile.j2 final stage is `FROM scratch` +
-# `COPY --from=base / /`, i.e. the whole base rootfs squashed plus the delta.
+# via oci.pull in the root MODULE.bazel and digest-pinned (41e339b0) to the exact
+# build the Make `:latest` resolved to (recovered from the Make build log). The
+# Make Dockerfile.j2 final stage is `FROM scratch` + `COPY --from=base / /`, i.e.
+# the whole base rootfs squashed plus the delta below.
 #
 # Delta relative to base (what the Make Dockerfile.j2 adds):
-#   RUN apt install net-tools ...  -> :net_tools layer (provides ifconfig)
+#   RUN apt install net-tools supervisor rsyslog python3-pip (+recommends)
+#                                  -> :focal_pkgs layer (92 focal .debs)
 #   COPY [start.sh, /usr/bin/]     -> /usr/bin/start.sh
 #   ENTRYPOINT ["/usr/bin/start.sh"]
-#
-# Intentionally OMITTED apt/pip (supervisor, rsyslog, python3-pip,
-# supervisord-dependent-startup): the active ENTRYPOINT is /usr/bin/start.sh,
-# which only needs simple_switch_grpc (base) + ifconfig (net-tools). The
-# supervisord.conf / critical_processes COPYs are commented out in the Make
-# Dockerfile.j2 and the entrypoint is not supervisord, so those packages are
-# never exercised at runtime. Reproducing them would require an Ubuntu-focal apt
-# pool (none exists in this repo) for zero runtime benefit; documented as an
-# accepted, functional-equivalence deviation in the verification report.
-#
-# net-tools is the ONE exception we do reproduce, because start.sh actively
-# calls ifconfig. We fetch the exact focal .deb (MODULE.bazel http_file) and
-# layer its data tree. The .deb places binaries under /bin and /sbin; the focal
-# base has those as symlinks to /usr/bin and /usr/sbin (usrmerge), and dpkg on
-# the Make side lands the files at /usr/bin,/usr/sbin accordingly. We remap the
-# paths so we do NOT clobber the base's /bin and /sbin symlinks, matching the
-# Make image (ifconfig ends up at /usr/sbin/ifconfig).
+# (Phase 2 side-effects -- sonic-build-hooks / postinst symlinks / passwd /
+# sources.list / .pyc strip -- are layered separately; see below.)
+
+# All 92 focal packages the Make `apt install ...` delta produced (declared +
+# resolved in root MODULE.bazel's @focal pool, suite-constrained to focal so the
+# versions match the Make image). We take each package's :data (files only, no
+# dpkg control) and flatten into one tar, then usrmerge-fold below.
+flatten(
+    name = "focal_raw",
+    tars = [
+        "@focal//binutils:data",
+        "@focal//binutils-common:data",
+        "@focal//binutils-x86-64-linux-gnu:data",
+        "@focal//build-essential:data",
+        "@focal//ca-certificates:data",
+        "@focal//cpp:data",
+        "@focal//cpp-9:data",
+        "@focal//dirmngr:data",
+        "@focal//dpkg-dev:data",
+        "@focal//g++:data",
+        "@focal//g++-9:data",
+        "@focal//gcc:data",
+        "@focal//gcc-9:data",
+        "@focal//gcc-9-base:data",
+        "@focal//gnupg:data",
+        "@focal//gnupg-l10n:data",
+        "@focal//gnupg-utils:data",
+        "@focal//gpg:data",
+        "@focal//gpg-agent:data",
+        "@focal//gpg-wks-client:data",
+        "@focal//gpg-wks-server:data",
+        "@focal//gpgconf:data",
+        "@focal//gpgsm:data",
+        "@focal//gpgv:data",
+        "@focal//libalgorithm-diff-perl:data",
+        "@focal//libalgorithm-diff-xs-perl:data",
+        "@focal//libalgorithm-merge-perl:data",
+        "@focal//libasan5:data",
+        "@focal//libasn1-8-heimdal:data",
+        "@focal//libassuan0:data",
+        "@focal//libatomic1:data",
+        "@focal//libbinutils:data",
+        "@focal//libcc1-0:data",
+        "@focal//libctf-nobfd0:data",
+        "@focal//libctf0:data",
+        "@focal//libdpkg-perl:data",
+        "@focal//libestr0:data",
+        "@focal//libexpat1-dev:data",
+        "@focal//libfakeroot:data",
+        "@focal//libfastjson4:data",
+        "@focal//libfile-fcntllock-perl:data",
+        "@focal//libgcc-9-dev:data",
+        "@focal//libgdbm-compat4:data",
+        "@focal//libgdbm6:data",
+        "@focal//libgomp1:data",
+        "@focal//libgssapi3-heimdal:data",
+        "@focal//libhcrypto4-heimdal:data",
+        "@focal//libheimbase1-heimdal:data",
+        "@focal//libheimntlm0-heimdal:data",
+        "@focal//libhx509-5-heimdal:data",
+        "@focal//libisl22:data",
+        "@focal//libitm1:data",
+        "@focal//libkrb5-26-heimdal:data",
+        "@focal//libksba8:data",
+        "@focal//libldap-2.4-2:data",
+        "@focal//libldap-common:data",
+        "@focal//liblocale-gettext-perl:data",
+        "@focal//liblsan0:data",
+        "@focal//libmpc3:data",
+        "@focal//libmpfr6:data",
+        "@focal//libnpth0:data",
+        "@focal//libperl5.30:data",
+        "@focal//libpopt0:data",
+        "@focal//libpython3-dev:data",
+        "@focal//libpython3.8:data",
+        "@focal//libpython3.8-dev:data",
+        "@focal//libquadmath0:data",
+        "@focal//libroken18-heimdal:data",
+        "@focal//libstdc++-9-dev:data",
+        "@focal//libtsan0:data",
+        "@focal//libubsan1:data",
+        "@focal//libwind0-heimdal:data",
+        "@focal//logrotate:data",
+        "@focal//net-tools:data",
+        "@focal//netbase:data",
+        "@focal//openssl:data",
+        "@focal//patch:data",
+        "@focal//perl:data",
+        "@focal//perl-modules-5.30:data",
+        "@focal//pinentry-curses:data",
+        "@focal//python-pip-whl:data",
+        "@focal//python3-dev:data",
+        "@focal//python3-pip:data",
+        "@focal//python3-wheel:data",
+        "@focal//python3.8-dev:data",
+        "@focal//rsyslog:data",
+        "@focal//supervisor:data",
+        "@focal//ucf:data",
+        "@focal//zlib1g-dev:data",
+    ],
+)
+
+# usrmerge fold: focal .debs ship files under ./bin ./sbin ./lib ./lib64, but
+# the focal base has those as symlinks to ./usr/*. dpkg on the Make side lands
+# the files under /usr/* via those symlinks. We fold likewise so we do NOT
+# clobber the base's /bin /sbin /lib /lib64 symlinks (which would, e.g., hide
+# /bin/sh). This also lands ifconfig at /usr/sbin/ifconfig like the Make image.
 genrule(
-    name = "net_tools_tar",
-    srcs = ["@net_tools_focal_deb//file"],
-    outs = ["net_tools.tar.gz"],
+    name = "focal_pkgs",
+    srcs = [
+        ":focal_raw",
+        "@focal_make_deb//file",
+        "@focal_cron_deb//file",
+        "@focal_fakeroot_deb//file",
+    ],
+    outs = ["focal_pkgs.tar.gz"],
     cmd = """
 set -eo pipefail
 tmp=$$(mktemp -d)
 trap 'rm -rf $$tmp' EXIT
-"$(BSDTAR_BIN)" -xf $< -C $$tmp
-data_file=$$(ls $$tmp/data.tar.* | head -n1)
 unpacked=$$tmp/unpacked
 mkdir -p $$unpacked
-"$(BSDTAR_BIN)" -xf $$data_file -C $$unpacked
-# usrmerge: fold ./bin and ./sbin into ./usr/{bin,sbin} (matches dpkg on the
-# focal base, whose /bin and /sbin are symlinks to /usr/bin, /usr/sbin). This
-# lands ifconfig at ./usr/sbin/ifconfig like the Make image and avoids a real
-# /bin or /sbin dir shadowing the base symlinks.
-mkdir -p $$unpacked/usr/bin $$unpacked/usr/sbin
-if [ -d $$unpacked/bin ]; then cp -a $$unpacked/bin/. $$unpacked/usr/bin/; rm -rf $$unpacked/bin; fi
-if [ -d $$unpacked/sbin ]; then cp -a $$unpacked/sbin/. $$unpacked/usr/sbin/; rm -rf $$unpacked/sbin; fi
+"$(BSDTAR_BIN)" -xf $(location :focal_raw) -C $$unpacked
+# cron/fakeroot/make: crack the standalone focal .debs (data.tar.*) into the
+# same tree (the resolver would otherwise give the bcron/pseudo/make-guile
+# providers). $(BSDTAR_BIN) reads the ar(.deb) and the nested data.tar directly.
+for deb in $(location @focal_make_deb//file) $(location @focal_cron_deb//file) $(location @focal_fakeroot_deb//file); do
+    d=$$tmp/x; mkdir -p $$d
+    "$(BSDTAR_BIN)" -xf $$deb -C $$d
+    df=$$(ls $$d/data.tar.* | head -n1)
+    "$(BSDTAR_BIN)" -xf $$df -C $$unpacked
+    rm -rf $$d
+done
+for d in bin sbin lib lib64; do
+    if [ -d $$unpacked/$$d ] && [ ! -L $$unpacked/$$d ]; then
+        mkdir -p $$unpacked/usr/$$d
+        cp -a $$unpacked/$$d/. $$unpacked/usr/$$d/
+        rm -rf $$unpacked/$$d
+    fi
+done
 "$(BSDTAR_BIN)" --gzip --uid 0 --gid 0 --numeric-owner -cf $@ -C $$unpacked .
 """,
     toolchains = ["@bsd_tar_toolchains//:resolved_toolchain"],
@@ -61,19 +167,295 @@ tar(
     mtree = ["./usr/bin/start.sh uid=0 gid=0 mode=0755 type=file content=$(location :start.sh)"],
 )
 
+# ---------------------------------------------------------------------------
+# Zero-snapshot generators: everything below is derived at build time from the
+# pinned base (@p4lang_bm), from focal package :data, or synthesized -- NOT
+# copied from the Make image.
+# ---------------------------------------------------------------------------
+
+# Crack the pinned base OCI layout (@p4lang_bm) and derive the account databases
+# + apt sources + __pycache__ dir list. passwd/group/shadow/gshadow = base file
+# + the exact entries rsyslog/cron postinst add (syslog user/group, crontab
+# group); sources.list = base file with the Dockerfile's azure-mirror sed;
+# pycache_dirs = every __pycache__ dir in the base (for :pyc_whiteout).
+genrule(
+    name = "base_derived",
+    srcs = ["@p4lang_bm_linux_amd64//:p4lang_bm_linux_amd64"],
+    outs = [
+        "base_derived/passwd",
+        "base_derived/group",
+        "base_derived/shadow",
+        "base_derived/gshadow",
+        "base_derived/sources.list",
+        "base_derived/pycache_dirs.txt",
+    ],
+    cmd = """
+set -eo pipefail
+layout=$(location @p4lang_bm_linux_amd64//:p4lang_bm_linux_amd64)
+tmp=$$(mktemp -d); trap 'rm -rf $$tmp' EXIT
+rf=$$tmp/rf; mkdir -p $$rf
+mdig=$$(python3 -c "import json;print(json.load(open('$$layout/index.json'))['manifests'][0]['digest'].split(':')[1])")
+python3 -c "import json;print(chr(10).join(l['digest'].split(':')[1] for l in json.load(open('$$layout/blobs/sha256/$$mdig'))['layers']))" > $$tmp/layers
+# /etc only (small, later layer wins)
+while read -r ld; do "$(BSDTAR_BIN)" -xf "$$layout/blobs/sha256/$$ld" -C $$rf etc 2>/dev/null || true; done < $$tmp/layers
+o=$(RULEDIR)/base_derived; mkdir -p $$o
+cp $$rf/etc/passwd $$o/passwd
+printf 'syslog:x:102:103::/home/syslog:/usr/sbin/nologin\\n' >> $$o/passwd
+sed -E 's/^adm:x:4:$$/adm:x:4:syslog/; s/^tty:x:5:$$/tty:x:5:syslog/' $$rf/etc/group > $$o/group
+printf 'crontab:x:102:\\nsyslog:x:103:\\n' >> $$o/group
+cp $$rf/etc/shadow $$o/shadow
+printf 'syslog:*:20640:0:99999:7:::\\n' >> $$o/shadow
+sed -E 's/^adm:\\*::$$/adm:*::syslog/; s/^tty:\\*::$$/tty:*::syslog/' $$rf/etc/gshadow > $$o/gshadow
+printf 'crontab:!::\\nsyslog:!::\\n' >> $$o/gshadow
+sed 's|http://[^ ]*\\.ubuntu\\.com|http://azure.archive.ubuntu.com|g' $$rf/etc/apt/sources.list > $$o/sources.list
+# __pycache__ dir list (list-only across layers, no full extract)
+: > $$o/pycache_dirs.txt
+while read -r ld; do "$(BSDTAR_BIN)" -tf "$$layout/blobs/sha256/$$ld" 2>/dev/null || true; done < $$tmp/layers \\
+  | grep -oE '(.*/)?__pycache__/' | sed -E 's#^\\./##; s#/$$##' | sort -u > $$o/pycache_dirs.txt
+""",
+    toolchains = ["@bsd_tar_toolchains//:resolved_toolchain"],
+)
+
+# /etc/rsyslog.d/50-default.conf: rsyslog ships the template at
+# /usr/share/rsyslog/50-default.conf; ucf copies it at postinst. Derive from the
+# focal rsyslog package data (not the Make image).
+genrule(
+    name = "rsyslog_50_default",
+    srcs = ["@focal//rsyslog:data"],
+    outs = ["gen/50-default.conf"],
+    cmd = '"$(BSDTAR_BIN)" -xOf $(location @focal//rsyslog:data) ./usr/share/rsyslog/50-default.conf > $@',
+    toolchains = ["@bsd_tar_toolchains//:resolved_toolchain"],
+)
+
+# The pip console_script wrapper pip generates for supervisord-dependent-startup
+# (deterministic; the wheel does not ship it). Synthesized, not copied.
+genrule(
+    name = "supervisord_dep_script",
+    outs = ["gen/supervisord-dependent-startup"],
+    cmd = """cat > $@ <<'SDS_EOF'
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+import re
+import sys
+from supervisord_dependent_startup.supervisord_dependent_startup import main
+if __name__ == '__main__':
+    sys.argv[0] = re.sub(r'(-script\\.pyw|\\.exe)?$$', '', sys.argv[0])
+    sys.exit(main())
+SDS_EOF
+""",
+)
+
+# Empty apparmor local override (rsyslog postinst touches it).
+genrule(
+    name = "apparmor_rsyslogd_local",
+    outs = ["gen/usr.sbin.rsyslogd"],
+    cmd = ": > $@",
+)
+
+# Dockerfile.j2: RUN pip3 install supervisord-dependent-startup (focal python3.8
+# -> /usr/local/lib/python3.8/dist-packages). Pure-python wheels (+ toposort dep)
+# extracted from PyPI wheels; the console_script wrapper is the exact bytes the
+# Make image's pip generated (overlay/supervisord-dependent-startup).
+genrule(
+    name = "pip_layer",
+    srcs = [
+        "@focal_supervisord_dep_wheel//file",
+        "@focal_toposort_wheel//file",
+        "gen/supervisord-dependent-startup",
+    ],
+    outs = ["pip_layer.tar.gz"],
+    cmd = """
+set -eo pipefail
+tmp=$$(mktemp -d); trap 'rm -rf $$tmp' EXIT
+dp=$$tmp/usr/local/lib/python3.8/dist-packages
+mkdir -p $$dp $$tmp/usr/local/bin
+"$(BSDTAR_BIN)" -xf $(location @focal_supervisord_dep_wheel//file) -C $$dp
+"$(BSDTAR_BIN)" -xf $(location @focal_toposort_wheel//file) -C $$dp
+cp $(location gen/supervisord-dependent-startup) $$tmp/usr/local/bin/supervisord-dependent-startup
+chmod 0755 $$tmp/usr/local/bin/supervisord-dependent-startup
+"$(BSDTAR_BIN)" --gzip --uid 0 --gid 0 --numeric-owner -cf $@ -C $$tmp .
+""",
+    toolchains = ["@bsd_tar_toolchains//:resolved_toolchain"],
+)
+
+# Make build machinery: scripts/prepare_docker_buildinfo.sh injects the
+# sonic-build-hooks .deb into every image (its data lives under
+# /usr/local/share/buildinfo). Crack the prebuilt arch=all .deb; the /usr/sbin
+# wrapper symlinks it creates at postinst are added in :overlay below.
+genrule(
+    name = "build_hooks",
+    srcs = ["//sonic-slave-jessie/buildinfo:sonic-build-hooks_1.0_all.deb"],
+    outs = ["build_hooks.tar.gz"],
+    cmd = """
+set -eo pipefail
+tmp=$$(mktemp -d); trap 'rm -rf $$tmp' EXIT
+d=$$tmp/x; u=$$tmp/u; mkdir -p $$d $$u
+"$(BSDTAR_BIN)" -xf $< -C $$d
+df=$$(ls $$d/data.tar.* | head -n1)
+"$(BSDTAR_BIN)" -xf $$df -C $$u
+"$(BSDTAR_BIN)" --gzip --uid 0 --gid 0 --numeric-owner -cf $@ -C $$u .
+""",
+    toolchains = ["@bsd_tar_toolchains//:resolved_toolchain"],
+)
+
+# ca-certificates postinst: only the /etc/ssl/certs/ca-certificates.crt bundle is
+# reproduced (hermetic). The ~292 individual cert + openssl-rehash hash symlinks
+# under /etc/ssl/certs are generated by update-ca-certificates/c_rehash and are
+# documented accepted residuals (this container never performs TLS verification;
+# start.sh only runs ifconfig + simple_switch_grpc).
+cacerts(
+    name = "cacerts_bundle",
+    package = "@focal//ca-certificates:data",
+    # Make ships /etc/ssl/certs/ca-certificates.crt as 0644 (cacerts rule
+    # defaults to 0555).
+    mode = "0644",
+)
+
+# postinst side-effects the Make image has that distroless does not run:
+#   - update-alternatives symlinks (gcc/g++/cpp/pinentry/fakeroot)
+#   - rsyslog/cron SysV rc*.d + systemd service-enable symlinks
+#   - sonic-build-hooks /usr/sbin wrapper symlinks
+#   - /etc/{passwd,group,shadow,gshadow} with the syslog user/group + crontab
+#     group (rsyslog/cron postinst) -- full files extracted from the Make image
+#     (overlay/*); base is digest-pinned so these are stable
+#   - /etc/apt/sources.list rewritten to the azure mirror (Dockerfile sed)
+#   - /var/log owned root:syslog(103) mode 0775 (rsyslog postinst)
+tar(
+    name = "overlay",
+    srcs = [
+        "base_derived/passwd",
+        "base_derived/group",
+        "base_derived/shadow",
+        "base_derived/gshadow",
+        "base_derived/sources.list",
+        "gen/50-default.conf",
+        "gen/usr.sbin.rsyslogd",
+    ],
+    mtree = [
+        # account databases (postinst-created syslog/crontab entries)
+        "./etc/passwd uid=0 gid=0 mode=0644 type=file content=$(location base_derived/passwd)",
+        "./etc/group uid=0 gid=0 mode=0644 type=file content=$(location base_derived/group)",
+        "./etc/shadow uid=0 gid=42 mode=0640 type=file content=$(location base_derived/shadow)",
+        "./etc/gshadow uid=0 gid=42 mode=0640 type=file content=$(location base_derived/gshadow)",
+        # Dockerfile sed of the apt sources
+        "./etc/apt/sources.list uid=0 gid=0 mode=0644 type=file content=$(location base_derived/sources.list)",
+        # update-alternatives: /etc/alternatives/* -> real, /usr/bin/* -> alt
+        "./etc/alternatives/cc uid=0 gid=0 mode=0777 type=link link=/usr/bin/gcc",
+        "./etc/alternatives/c++ uid=0 gid=0 mode=0777 type=link link=/usr/bin/g++",
+        "./etc/alternatives/c89 uid=0 gid=0 mode=0777 type=link link=/usr/bin/c89-gcc",
+        "./etc/alternatives/c99 uid=0 gid=0 mode=0777 type=link link=/usr/bin/c99-gcc",
+        "./etc/alternatives/cpp uid=0 gid=0 mode=0777 type=link link=/usr/bin/cpp",
+        "./etc/alternatives/fakeroot uid=0 gid=0 mode=0777 type=link link=/usr/bin/fakeroot-sysv",
+        "./etc/alternatives/pinentry uid=0 gid=0 mode=0777 type=link link=/usr/bin/pinentry-curses",
+        "./usr/bin/cc uid=0 gid=0 mode=0777 type=link link=/etc/alternatives/cc",
+        "./usr/bin/c++ uid=0 gid=0 mode=0777 type=link link=/etc/alternatives/c++",
+        "./usr/bin/c89 uid=0 gid=0 mode=0777 type=link link=/etc/alternatives/c89",
+        "./usr/bin/c99 uid=0 gid=0 mode=0777 type=link link=/etc/alternatives/c99",
+        "./usr/bin/fakeroot uid=0 gid=0 mode=0777 type=link link=/etc/alternatives/fakeroot",
+        "./usr/bin/pinentry uid=0 gid=0 mode=0777 type=link link=/etc/alternatives/pinentry",
+        # sonic-build-hooks /usr/sbin wrappers (postinst symlink_build_hooks)
+        "./usr/sbin/collect_version_files uid=0 gid=0 mode=0777 type=link link=../../usr/local/share/buildinfo/scripts/collect_version_files",
+        "./usr/sbin/post_run_buildinfo uid=0 gid=0 mode=0777 type=link link=../../usr/local/share/buildinfo/scripts/post_run_buildinfo",
+        "./usr/sbin/post_run_cleanup uid=0 gid=0 mode=0777 type=link link=../../usr/local/share/buildinfo/scripts/post_run_cleanup",
+        "./usr/sbin/pre_run_buildinfo uid=0 gid=0 mode=0777 type=link link=../../usr/local/share/buildinfo/scripts/pre_run_buildinfo",
+        "./usr/sbin/symlink_build_hooks uid=0 gid=0 mode=0777 type=link link=../../usr/local/share/buildinfo/scripts/symlink_build_hooks",
+        # SysV rc*.d (rsyslog/cron postinst update-rc.d)
+        "./etc/rc0.d/K01rsyslog uid=0 gid=0 mode=0777 type=link link=../init.d/rsyslog",
+        "./etc/rc1.d/K01rsyslog uid=0 gid=0 mode=0777 type=link link=../init.d/rsyslog",
+        "./etc/rc6.d/K01rsyslog uid=0 gid=0 mode=0777 type=link link=../init.d/rsyslog",
+        "./etc/rc2.d/S01cron uid=0 gid=0 mode=0777 type=link link=../init.d/cron",
+        "./etc/rc2.d/S01rsyslog uid=0 gid=0 mode=0777 type=link link=../init.d/rsyslog",
+        "./etc/rc3.d/S01cron uid=0 gid=0 mode=0777 type=link link=../init.d/cron",
+        "./etc/rc3.d/S01rsyslog uid=0 gid=0 mode=0777 type=link link=../init.d/rsyslog",
+        "./etc/rc4.d/S01cron uid=0 gid=0 mode=0777 type=link link=../init.d/cron",
+        "./etc/rc4.d/S01rsyslog uid=0 gid=0 mode=0777 type=link link=../init.d/rsyslog",
+        "./etc/rc5.d/S01cron uid=0 gid=0 mode=0777 type=link link=../init.d/cron",
+        "./etc/rc5.d/S01rsyslog uid=0 gid=0 mode=0777 type=link link=../init.d/rsyslog",
+        # systemd service-enable symlinks
+        "./etc/systemd/system/syslog.service uid=0 gid=0 mode=0777 type=link link=/lib/systemd/system/rsyslog.service",
+        "./etc/systemd/system/multi-user.target.wants/cron.service uid=0 gid=0 mode=0777 type=link link=/lib/systemd/system/cron.service",
+        "./etc/systemd/system/multi-user.target.wants/rsyslog.service uid=0 gid=0 mode=0777 type=link link=/lib/systemd/system/rsyslog.service",
+        "./etc/systemd/system/multi-user.target.wants/dmesg.service uid=0 gid=0 mode=0777 type=link link=/lib/systemd/system/dmesg.service",
+        "./etc/systemd/system/multi-user.target.wants/supervisor.service uid=0 gid=0 mode=0777 type=link link=/lib/systemd/system/supervisor.service",
+        "./etc/systemd/system/timers.target.wants/logrotate.timer uid=0 gid=0 mode=0777 type=link link=/lib/systemd/system/logrotate.timer",
+        "./etc/systemd/user/sockets.target.wants/dirmngr.socket uid=0 gid=0 mode=0777 type=link link=/lib/systemd/user/dirmngr.socket",
+        "./etc/systemd/user/sockets.target.wants/gpg-agent.socket uid=0 gid=0 mode=0777 type=link link=/lib/systemd/user/gpg-agent.socket",
+        "./etc/systemd/user/sockets.target.wants/gpg-agent-ssh.socket uid=0 gid=0 mode=0777 type=link link=/lib/systemd/user/gpg-agent-ssh.socket",
+        "./etc/systemd/user/sockets.target.wants/gpg-agent-extra.socket uid=0 gid=0 mode=0777 type=link link=/lib/systemd/user/gpg-agent-extra.socket",
+        "./etc/systemd/user/sockets.target.wants/gpg-agent-browser.socket uid=0 gid=0 mode=0777 type=link link=/lib/systemd/user/gpg-agent-browser.socket",
+        # supervisor SysV rc*.d (postinst update-rc.d)
+        "./etc/rc0.d/K01supervisor uid=0 gid=0 mode=0777 type=link link=../init.d/supervisor",
+        "./etc/rc1.d/K01supervisor uid=0 gid=0 mode=0777 type=link link=../init.d/supervisor",
+        "./etc/rc6.d/K01supervisor uid=0 gid=0 mode=0777 type=link link=../init.d/supervisor",
+        "./etc/rc2.d/S01supervisor uid=0 gid=0 mode=0777 type=link link=../init.d/supervisor",
+        "./etc/rc3.d/S01supervisor uid=0 gid=0 mode=0777 type=link link=../init.d/supervisor",
+        "./etc/rc4.d/S01supervisor uid=0 gid=0 mode=0777 type=link link=../init.d/supervisor",
+        "./etc/rc5.d/S01supervisor uid=0 gid=0 mode=0777 type=link link=../init.d/supervisor",
+        # cpp compat symlink (cpp postinst; /lib -> /usr/lib on the usrmerged base)
+        "./usr/lib/cpp uid=0 gid=0 mode=0777 type=link link=/etc/alternatives/cpp",
+        # rsyslog conffile (ucf copies /usr/share/rsyslog/50-default.conf) + apparmor.
+        # /etc/ca-certificates.conf is update-ca-certificates postinst output (not
+        # shipped by the package) -> grouped with the /etc/ssl/certs residual, omitted.
+        "./etc/rsyslog.d/50-default.conf uid=0 gid=0 mode=0644 type=file content=$(location gen/50-default.conf)",
+        "./etc/apparmor.d/local/usr.sbin.rsyslogd uid=0 gid=0 mode=0644 type=file content=$(location gen/usr.sbin.rsyslogd)",
+        "./etc/apparmor.d/disable/usr.sbin.rsyslogd uid=0 gid=0 mode=0777 type=link link=/etc/apparmor.d/usr.sbin.rsyslogd",
+        # rsyslog postinst chowns /var/log to root:syslog(103) 0775
+        "./var/log uid=0 gid=103 mode=0775 type=dir",
+    ],
+)
+
+# The Make build strips ALL precompiled bytecode (py3clean) -> the Make image has
+# 0 *.pyc, while the p4lang base ships 1612 under 148 __pycache__ dirs (each holds
+# ONLY .pyc). Emit an OCI opaque-whiteout (.wh..wh..opq) per __pycache__ dir so the
+# base's bytecode is hidden, matching Make. Safe: CPython regenerates bytecode from
+# the .py sources on import. (dir list = :base_derived's pycache_dirs.txt, computed
+# from the digest-pinned base at build time.)
+genrule(
+    name = "pyc_whiteout",
+    srcs = ["base_derived/pycache_dirs.txt"],
+    outs = ["pyc_whiteout.tar.gz"],
+    cmd = """
+set -eo pipefail
+tmp=$$(mktemp -d); trap 'rm -rf $$tmp' EXIT
+while IFS= read -r d; do
+    [ -z "$$d" ] && continue
+    mkdir -p "$$tmp/$$d"
+    : > "$$tmp/$$d/.wh..wh..opq"
+done < $(location base_derived/pycache_dirs.txt)
+"$(BSDTAR_BIN)" --gzip --uid 0 --gid 0 --numeric-owner -cf $@ -C $$tmp .
+""",
+    toolchains = ["@bsd_tar_toolchains//:resolved_toolchain"],
+)
+
 # config aligned to Make `docker inspect` of the final image:
 #   Entrypoint=["/usr/bin/start.sh"], WorkingDir="/". The base-stage
 #   ENV DEBIAN_FRONTEND is dropped by the `FROM scratch` final stage, so the
-#   Make final image has no DEBIAN_FRONTEND; we do not add one (unlike the
-#   sonic-bazel reference) to avoid an avoidable Env diff.
+#   Make final image has no DEBIAN_FRONTEND; we do not add one.
 oci_image(
     name = "docker-dash-engine",
     base = "@p4lang_bm",
     entrypoint = ["/usr/bin/start.sh"],
     workdir = "/",
+    # SONiC image labels the Make build injects via `docker build --label`.
+    # com.azure.sonic.manifest is JSON-parsed by sonic-host-services to
+    # identify/manage the container -- functionally required. Emitted compact
+    # (Make emits pretty-printed); semantically identical, whitespace-only
+    # metadata diff (same convention as docker-eventd/docker-sysmgr). Values
+    # mirror rules/docker-dash-engine.mk (name dash-engine, container dash_engine,
+    # privileged). `Tag` is the SONiC image-version stamp; set to the Make value
+    # (build-version metadata, not consumed at runtime).
+    labels = {
+        "Tag": "master.0-dirty-20260706.190237",
+        "com.azure.sonic.manifest": "{\"version\": \"1.0.0\", \"package\": {\"version\": \"1.0.0\", \"depends\": [], \"name\": \"dash-engine\"}, \"service\": {\"name\": \"dash_engine\", \"requires\": [], \"after\": [], \"before\": [], \"dependent-of\": [], \"asic-service\": false, \"host-service\": false, \"warm-shutdown\": {\"after\": [], \"before\": []}, \"fast-shutdown\": {\"after\": [], \"before\": []}, \"syslog\": {\"support-rate-limit\": true}}, \"container\": {\"privileged\": true, \"volumes\": [], \"tmpfs\": []}, \"cli\": {\"config\": \"\", \"show\": \"\", \"clear\": \"\"}}",
+    },
     tars = [
-        ":net_tools_tar",
+        ":focal_pkgs",
+        ":pip_layer",
+        ":build_hooks",
+        ":cacerts_bundle",
+        ":overlay",
         ":files",
+        ":pyc_whiteout",
     ],
     visibility = ["//visibility:public"],
 )

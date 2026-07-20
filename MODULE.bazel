@@ -34,33 +34,206 @@ register_toolchains("@bsd_tar_toolchains//:all")
 
 # External OCI base images pulled from registries. docker-dash-engine
 # (platform/vs) uses the upstream p4lang/behavioral-model image as its base
-# (Ubuntu 20.04.6, provides simple_switch_grpc). Digest-pinned for
-# reproducibility. This is the digest the Make build's `:latest` resolves to
-# (os-release 20.04.6 matches the Make image). NOTE: unlike the sonic-bazel
-# reference (which pinned the 4-year-old ce45720e / 20.04.3 that lacks
-# net-tools), this base also lacks ifconfig; net-tools is layered explicitly
-# below so start.sh's `ifconfig eth1/eth2 up` works, matching the Make image.
+# (Ubuntu 20.04.6, provides simple_switch_grpc). Digest-pinned to the EXACT
+# build the Make `:latest` resolved to at build time, recovered from the Make
+# build log (target/docker-dash-engine.gz.log: "Digest: sha256:41e339b0...").
+# This guarantees byte-parity of the behavioral-model binaries (simple_switch,
+# simple_switch_grpc, psa_switch, pna_nic, libbm*) with the Make image. NOTE:
+# the `:latest` tag has since moved (e00f14fe / ce45720e are different builds);
+# always pin the digest from the Make log, not today's :latest. This base lacks
+# ifconfig; net-tools is layered explicitly below so start.sh works.
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 oci.pull(
     name = "p4lang_bm",
-    digest = "sha256:e00f14fe67747b7c0c63f0688bcdac9fb945c67ee49a04a6400b8e8847f76cf0",
+    digest = "sha256:41e339b036f51653be4574c24ea7a8a041f010fe816cb2705e14ab78fcd9fe01",
     image = "index.docker.io/p4lang/behavioral-model",
     platforms = ["linux/amd64"],
 )
 use_repo(oci, "p4lang_bm", "p4lang_bm_linux_amd64")
 
-# net-tools .deb (Ubuntu focal), the exact version+build the Make Dockerfile.j2
-# `apt install net-tools` pulls (ifconfig binary matches the Make image byte size
-# 83216 / mtime 2025-05-28). Provides ifconfig for platform/vs/docker-dash-engine.
-# Public Ubuntu archive URL, digest-pinned. Runtime deps (libc6, libselinux1)
-# are already present in the p4lang base.
+# http_file repo rule (also used by docker-sonic-otel further below). net-tools
+# is NO LONGER fetched via a one-off archive.ubuntu.com URL (that pool evicts
+# superseded versions -> 404 risk); it now comes from the focal apt pool
+# (snapshot.ubuntu.com, eviction-safe) declared below alongside the other Make
+# delta packages.
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+# cron / fakeroot / make: concrete focal packages the Make image has, but each
+# is ALSO a virtual package provided by an alternative (bcron / pseudo /
+# make-guile). The rules_distroless resolver resolves the virtual name to the
+# provider and cannot be forced to the concrete package (even version-pinned),
+# so we fetch these three exact .debs directly from snapshot.ubuntu.com (same
+# eviction-safe snapshot as the focal pool) and crack them in BUILD.bazel.
+_FOCAL_SNAP = "https://snapshot.ubuntu.com/ubuntu/20260706T000000Z/pool/main"
+
 http_file(
-    name = "net_tools_focal_deb",
-    urls = ["http://archive.ubuntu.com/ubuntu/pool/main/n/net-tools/net-tools_1.60+git20180626.aebd88e-1ubuntu1.3_amd64.deb"],
-    sha256 = "1cb4553bcc5500fb1c60a502a03ae92e656aa51fb0f45b87655222de5f0329ca",
-    downloaded_file_path = "net-tools.deb",
+    name = "focal_make_deb",
+    urls = [_FOCAL_SNAP + "/m/make-dfsg/make_4.2.1-1.2_amd64.deb"],
+    sha256 = "41e534af98cdb6219bc98fa4276d9c928a0862b8b373d49ee1fbe0ae5db64dc2",
+    downloaded_file_path = "make.deb",
 )
+http_file(
+    name = "focal_cron_deb",
+    urls = [_FOCAL_SNAP + "/c/cron/cron_3.0pl1-136ubuntu1_amd64.deb"],
+    sha256 = "9ae7c01663ccb423f9013a86abd15ddb99da7685884dfb5c4cafc68b702ddcb5",
+    downloaded_file_path = "cron.deb",
+)
+http_file(
+    name = "focal_fakeroot_deb",
+    urls = [_FOCAL_SNAP + "/f/fakeroot/fakeroot_1.24-1_amd64.deb"],
+    sha256 = "2d9cc4fe6c6b0925e452d1454645171b957a37610a068e153abd6318746d996f",
+    downloaded_file_path = "fakeroot.deb",
+)
+
+# The Make Dockerfile.j2 `pip3 install supervisord-dependent-startup` (focal
+# python3.8) lands under /usr/local/lib/python3.8/dist-packages. Pure-python
+# wheels fetched from PyPI (pinned by sha256); extracted into that layout in
+# BUILD.bazel. toposort is its runtime dependency.
+http_file(
+    name = "focal_supervisord_dep_wheel",
+    urls = ["https://files.pythonhosted.org/packages/0e/66/d386c3d2cf36846ded0b9f4999a6c59fd04fb15d768e59d3acfa039102bc/supervisord_dependent_startup-1.4.0-py2.py3-none-any.whl"],
+    sha256 = "143a42bcf102010691a8d461d49c3e56ea46aa09e422dabed2b4890ecc67f4d9",
+    downloaded_file_path = "supervisord_dependent_startup-1.4.0-py2.py3-none-any.whl",
+)
+http_file(
+    name = "focal_toposort_wheel",
+    urls = ["https://files.pythonhosted.org/packages/f6/17/57b444fd314d5e1593350b9a31d000e7411ba8e17ce12dc7ad54ca76b810/toposort-1.10-py3-none-any.whl"],
+    sha256 = "cbdbc0d0bee4d2695ab2ceec97fe0679e9c10eab4b2a87a9372b929e70563a87",
+    downloaded_file_path = "toposort-1.10-py3-none-any.whl",
+)
+
+# Ubuntu 20.04 (focal) apt pool for platform/vs/docker-dash-engine strict-parity.
+# The Make Dockerfile.j2 runs `apt install net-tools supervisor rsyslog python3-pip`
+# (+recommends) on the p4lang/behavioral-model (focal) base; to reproduce that
+# delta we install the exact focal packages here. Pinned to snapshot.ubuntu.com
+# at the Make build date (20260706) so versions match the Make image byte-for-byte.
+# amd64-only (behavioral-model base is linux/amd64) — also sidesteps the
+# rules_distroless Arch:all mixed-arch leak. Isolated extension usage keeps this
+# separate from the @trixie pool.
+apt_focal = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt_focal.sources_list(
+    architectures = ["amd64"],
+    components = [
+        "main",
+        "universe",
+    ],
+    suites = [
+        "focal",
+        "focal-updates",
+        "focal-security",
+    ],
+    uris = ["https://snapshot.ubuntu.com/ubuntu/20260706T000000Z"],
+)
+apt_focal.install(
+    dependency_set = "focal",
+    # Constrain resolution to the focal suites only. The rules_distroless apt
+    # source universe is global (also contains the @trixie suites); without this
+    # the resolver picks the highest version = trixie. Suite-constraint is robust
+    # (no per-package version whack-a-mole); the snapshot pin fixes the versions.
+    suites = [
+        "focal",
+        "focal-updates",
+        "focal-security",
+    ],
+    packages = [
+        # The full delta the Make Dockerfile.j2 adds over the p4lang base:
+        # `apt install net-tools supervisor rsyslog python3-pip` + everything
+        # apt --install-recommends pulls (build-essential/gcc-9/perl/gnupg/cron
+        # /...), plus the gpgv upgrade (base 2.2.19-3ubuntu2.4 -> focal .5).
+        # Unpinned names; suite + snapshot pin resolve to the exact focal
+        # versions present in the Make image.
+        "binutils",
+        "binutils-common",
+        "binutils-x86-64-linux-gnu",
+        "build-essential",
+        "ca-certificates",
+        "cpp",
+        "cpp-9",
+        "dirmngr",
+        "dpkg-dev",
+        "g++",
+        "g++-9",
+        "gcc",
+        "gcc-9",
+        "gcc-9-base",
+        "gnupg",
+        "gnupg-l10n",
+        "gnupg-utils",
+        "gpg",
+        "gpg-agent",
+        "gpg-wks-client",
+        "gpg-wks-server",
+        "gpgconf",
+        "gpgsm",
+        "gpgv",
+        "libalgorithm-diff-perl",
+        "libalgorithm-diff-xs-perl",
+        "libalgorithm-merge-perl",
+        "libasan5",
+        "libasn1-8-heimdal",
+        "libassuan0",
+        "libatomic1",
+        "libbinutils",
+        "libcc1-0",
+        "libctf-nobfd0",
+        "libctf0",
+        "libdpkg-perl",
+        "libestr0",
+        "libexpat1-dev",
+        "libfakeroot",
+        "libfastjson4",
+        "libfile-fcntllock-perl",
+        "libgcc-9-dev",
+        "libgdbm-compat4",
+        "libgdbm6",
+        "libgomp1",
+        "libgssapi3-heimdal",
+        "libhcrypto4-heimdal",
+        "libheimbase1-heimdal",
+        "libheimntlm0-heimdal",
+        "libhx509-5-heimdal",
+        "libisl22",
+        "libitm1",
+        "libkrb5-26-heimdal",
+        "libksba8",
+        "libldap-2.4-2",
+        "libldap-common",
+        "liblocale-gettext-perl",
+        "liblsan0",
+        "libmpc3",
+        "libmpfr6",
+        "libnpth0",
+        "libperl5.30",
+        "libpopt0",
+        "libpython3-dev",
+        "libpython3.8",
+        "libpython3.8-dev",
+        "libquadmath0",
+        "libroken18-heimdal",
+        "libstdc++-9-dev",
+        "libtsan0",
+        "libubsan1",
+        "libwind0-heimdal",
+        "logrotate",
+        "net-tools",
+        "netbase",
+        "openssl",
+        "patch",
+        "perl",
+        "perl-modules-5.30",
+        "pinentry-curses",
+        "python-pip-whl",
+        "python3-dev",
+        "python3-pip",
+        "python3-wheel",
+        "python3.8-dev",
+        "rsyslog",
+        "supervisor",
+        "ucf",
+        "zlib1g-dev",
+    ],
+)
+use_repo(apt_focal, "focal")
 
 # --- Rust ---
 # rules_rust registration must be in the root MODULE.bazel because
