@@ -36,12 +36,19 @@ bazel_dep(name = "p4lang", version = "0.1.1")
 # src/sonic-sairedis/SAI-bazel/MODULE.bazel. Newer doxygen drops <memberdef>
 # from per-file XML and SAI's parse.pl then sees zero enums.
 doxygen_extension = use_extension("@rules_doxygen//:extensions.bzl", "doxygen_extension")
+
+# rules_doxygen's extension creates one repo per module that configures it; the
+# default name is "doxygen". src/sonic-sairedis/SAI-bazel (@sai) also configures
+# doxygen 1.9.5, so give this module's repo a distinct name to avoid the
+# "repo named doxygen already generated" collision, then bind it back to the
+# apparent name @doxygen used in dash.BUILD.
+doxygen_extension.repository(name = "doxygen_dashsai")
 doxygen_extension.configuration(
     version = "1.9.5",
     sha256 = "3b46471e7d4c3496e194d95042c7e5f738b93debacd22193aacc3df4dfe66267",
     platform = "linux",
 )
-use_repo(doxygen_extension, "doxygen")
+use_repo(doxygen_extension, doxygen = "doxygen_dashsai")
 
 sonic_http_archive = use_repo_rule(
     "@sonic_build_infra//sonic_http_archive:sonic_http_archive.bzl",
@@ -57,9 +64,14 @@ sonic_http_archive(
     strip_prefix = "DASH-d5c003dd7774c2b43f275c0233acc73a0ea28d2f",
     build_file_template = "//:dash.BUILD",
     # run_sai_gen.py is symlinked into the fetched repo root so dash.BUILD can
-    # define the codegen py_binary with an in-repo main. Keeps the DASH source
-    # tree (src/dash-sai/) untouched.
-    extra_files = ["//:run_sai_gen.py"],
+    # define the codegen py_binary with an in-repo main. deb_headers.bzl is
+    # symlinked in too so dash.BUILD can load("//:deb_headers.bzl", ...) for the
+    # -isystem third-party header CcInfo used by the libsai.so compile. Keeps the
+    # DASH source tree (src/dash-sai/) untouched.
+    extra_files = [
+        "//:run_sai_gen.py",
+        "//:deb_headers.bzl",
+    ],
 )
 
 # OCP SAI submodule (dash-pipeline/SAI/SAI) at the .gitmodules gitlink commit
@@ -98,6 +110,17 @@ apt.install(
     packages = [
         "libgc1",
         "libboost-iostreams1.83.0",
+        # Compile-time header providers for libsai.so (dash-pipeline/SAI/lib/*.cpp).
+        # DASH's SAI impl #includes protobuf 3.21.x, grpc++, and (transitively)
+        # abseil headers; the p4/PI headers come from @p4lang//:p4lang-pi. These
+        # headers are fed to the compile as -isystem via //:deb_headers — libsai
+        # is only compiled (never linked) against them, matching the Make build
+        # where /usr/include hosts these dev packages. Debian trixie ships
+        # protobuf 3.21.12 (matches the P4Runtime .pb.h generated in p4lang-pi).
+        "libprotobuf-dev",
+        "libgrpc++-dev",
+        "libgrpc-dev",
+        "libabsl-dev",
     ],
     suites = ["trixie", "trixie-updates", "trixie-security"],
 )
