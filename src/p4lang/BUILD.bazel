@@ -1,0 +1,57 @@
+# p4lang — "local make" bridge (user-directed pragmatic approach)
+#
+# Per explicit user instruction, p4lang is intentionally NOT re-migrated to a
+# hermetic source build. p4lang (PI + bmv2 + p4c) is a top-tier-scale C++ stack
+# (autotools/CMake, LLVM-scale p4c) and the goal here is only to "凑合跑通" so
+# downstream docker migrations that consume these .debs are not blocked.
+#
+# Each .deb target's build ACTION runs SONiC's own `make` (which builds the
+# package inside the sonic-slave-trixie container) and exposes the produced
+# .deb as a Bazel output. This is deliberately NON-HERMETIC:
+#   - runs `make` (SONiC build) + docker inside the action  => local = True
+#   - reaches the real workspace path + network              => no-sandbox / requires-network
+# It is a USER-APPROVED EXCEPTION to the hermetic-build / "no make from bazel"
+# rule, scoped to p4lang only. dash-sai IS migrated properly (see
+# src/dash-sai/DASH-bazel), consuming @p4lang//:p4lang-p4c_1.2.4.2-1.deb's
+# p4c-bm2-ss binary.
+#
+# `manual` tag keeps these out of `bazel build //...` wildcards so an
+# accidental wildcard build never triggers the heavy SONiC make; explicit
+# consumers (docker images) and explicit target builds still work.
+
+package(default_visibility = ["//visibility:public"])
+
+_WS = "/data/sonic/sonic-dzf"
+
+_DEBDIR = "target/debs/trixie"
+
+# target label  ->  produced .deb filename
+_DEBS = {
+    "p4lang-pi_0.1.1-1.deb": "p4lang-pi_0.1.1-1_amd64.deb",
+    "p4lang-bmv2_1.15.0-9.deb": "p4lang-bmv2_1.15.0-9_amd64.deb",
+    "p4lang-p4c_1.2.4.2-2.deb": "p4lang-p4c_1.2.4.2-2_amd64.deb",
+}
+
+[
+    genrule(
+        name = target,
+        outs = [deb_file],
+        # Run SONiC make for this deb (no-op if already up-to-date), then copy
+        # the produced artifact into the Bazel output tree.
+        cmd = ("set -e; " +
+               "make -C {ws} {dir}/{deb} 1>&2; " +
+               "cp {ws}/{dir}/{deb} $@").format(
+            ws = _WS,
+            dir = _DEBDIR,
+            deb = deb_file,
+        ),
+        local = True,
+        message = "SONiC make (local) -> " + deb_file,
+        tags = [
+            "no-sandbox",
+            "requires-network",
+            "manual",
+        ],
+    )
+    for target, deb_file in _DEBS.items()
+]

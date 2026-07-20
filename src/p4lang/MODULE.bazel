@@ -1,0 +1,11 @@
+# p4lang leaf module — "local make" bridge (see BUILD.bazel).
+#
+# This module intentionally declares no source fetch / build deps: the .deb
+# targets in BUILD.bazel produce their artifacts by running SONiC's own `make`
+# (local, non-hermetic) rather than a Bazel source build. Kept minimal so the
+# root workspace can register it via bazel_dep + local_path_override and
+# downstream targets can depend on @p4lang//:p4lang-*.deb.
+module(
+    name = "p4lang",
+    version = "0.1.1",
+)
