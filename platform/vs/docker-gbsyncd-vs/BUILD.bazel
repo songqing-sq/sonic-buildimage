@@ -1,0 +1,384 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# =============================================================================
+# docker-gbsyncd-vs (platform/vs/docker-gbsyncd-vs + docker-gbsyncd-trixie.mk template).
+#
+# Ground truth = the Make image package delta (target/IMG.gz minus the
+# docker-config-engine-trixie base), which is IDENTICAL for docker-syncd-vs and
+# docker-gbsyncd-vs (267 packages). 7 are SONiC-built (sonic_pkgs below); 257 are
+# Debian apt (apt_layer below), registered in the shared @trixie pool
+# (dockers/docker-base-trixie/base_trixie.MODULE.bazel).
+#
+# The remaining 3 (p4lang-bmv2 / p4lang-p4c / p4lang-pi) are intentionally NOT
+# shipped: they are NOT Debian apt packages (absent from the trixie snapshot) and
+# their only source is the non-hermetic @p4lang make-bridge (src/p4lang/BUILD.bazel
+# uses local=True + no-sandbox to shell out to SONiC `make`), which the hermetic
+# rules-of-migration forbid for image assembly. They are also NOT runtime deps:
+# the libsai deb has an empty Depends field and libsai.so's DT_NEEDED is only
+# libstdc++ / libgcc_s / libc (verified on the Make image). They are build-time
+# baggage left in the runtime image (like the gcc/clang/llvm toolchain the
+# Dockerfile also leaves installed). Documented as an accepted difference in the
+# migration diff report.
+#
+# Dockerfile.j2 build stage:
+#   ENV DEBIAN_FRONTEND=noninteractive
+#   apt-get install -f -y libcap2-bin
+#   dpkg -i libnl-3-dev libnl-route-3-dev              (SONiC-patched; DASH build)
+#   apt-get install -f -y <long runtime + -dev list>   (left in the runtime image)
+#   dpkg -i docker_<img>_debs  (SYNCD_VS closure: libsairedis/metadata/vs + libsai
+#                               via INCLUDE_VS_DASH_SAI=y, pulling p4lang/boost/
+#                               llvm/openmpi/ROCm/Qt5 apt closure through apt -f)
+#   COPY start.sh -> /usr/bin ; supervisord.conf -> /etc/supervisor/conf.d ;
+#        critical_processes -> /etc/supervisor
+#   final stage: FROM $BASE + rsync_from_builder_stage() squashes the delta onto
+#   the base; ENTRYPOINT ["/usr/local/bin/supervisord"].
+#
+# flatten() does NOT resolve deb Depends, so every apt closure member (all 260)
+# is listed explicitly as @trixie//<pkg>:data. The bookworm sonic-bazel reference
+# BUILD.bazel is NOT a usable template here: it targets bookworm and predates the
+# INCLUDE_VS_DASH_SAI=y libsai/p4lang closure (it lists neither), and it COPYs a
+# python supervisor-proc-exit-listener that this Dockerfile.j2 does not.
+# =============================================================================
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//autoconf:data",
+        "@trixie//automake:data",
+        "@trixie//autotools-dev:data",
+        "@trixie//binutils:data",
+        "@trixie//binutils-common:data",
+        "@trixie//binutils-x86-64-linux-gnu:data",
+        "@trixie//clang:data",
+        "@trixie//clang-19:data",
+        "@trixie//cpp:data",
+        "@trixie//cpp-14:data",
+        "@trixie//cpp-14-x86-64-linux-gnu:data",
+        "@trixie//cpp-x86-64-linux-gnu:data",
+        "@trixie//file:data",
+        "@trixie//flex:data",
+        "@trixie//gcc:data",
+        "@trixie//gcc-14:data",
+        "@trixie//gcc-14-x86-64-linux-gnu:data",
+        "@trixie//gcc-x86-64-linux-gnu:data",
+        "@trixie//gfortran-14:data",
+        "@trixie//gfortran-14-x86-64-linux-gnu:data",
+        "@trixie//ibverbs-providers:data",
+        "@trixie//icu-devtools:data",
+        "@trixie//libabsl-dev:data",
+        "@trixie//libabsl20240722:data",
+        "@trixie//libamd-comgr2:data",
+        "@trixie//libamdhip64-5:data",
+        "@trixie//libasan8:data",
+        "@trixie//libbinutils:data",
+        "@trixie//libboost-atomic1.83-dev:data",
+        "@trixie//libboost-atomic1.83.0:data",
+        "@trixie//libboost-chrono1.83-dev:data",
+        "@trixie//libboost-chrono1.83.0t64:data",
+        "@trixie//libboost-container1.83-dev:data",
+        "@trixie//libboost-container1.83.0:data",
+        "@trixie//libboost-context1.83-dev:data",
+        "@trixie//libboost-context1.83.0:data",
+        "@trixie//libboost-coroutine1.83-dev:data",
+        "@trixie//libboost-coroutine1.83.0:data",
+        "@trixie//libboost-date-time1.83-dev:data",
+        "@trixie//libboost-date-time1.83.0:data",
+        "@trixie//libboost-exception1.83-dev:data",
+        "@trixie//libboost-fiber1.83-dev:data",
+        "@trixie//libboost-fiber1.83.0:data",
+        "@trixie//libboost-filesystem1.83-dev:data",
+        "@trixie//libboost-filesystem1.83.0:data",
+        "@trixie//libboost-graph-parallel1.83-dev:data",
+        "@trixie//libboost-graph-parallel1.83.0:data",
+        "@trixie//libboost-graph1.83-dev:data",
+        "@trixie//libboost-graph1.83.0:data",
+        "@trixie//libboost-iostreams1.83-dev:data",
+        "@trixie//libboost-iostreams1.83.0:data",
+        "@trixie//libboost-json1.83-dev:data",
+        "@trixie//libboost-json1.83.0:data",
+        "@trixie//libboost-locale1.83-dev:data",
+        "@trixie//libboost-locale1.83.0:data",
+        "@trixie//libboost-log1.83-dev:data",
+        "@trixie//libboost-log1.83.0:data",
+        "@trixie//libboost-math1.83-dev:data",
+        "@trixie//libboost-math1.83.0:data",
+        "@trixie//libboost-mpi-python1.83-dev:data",
+        "@trixie//libboost-mpi-python1.83.0:data",
+        "@trixie//libboost-mpi1.83-dev:data",
+        "@trixie//libboost-mpi1.83.0:data",
+        "@trixie//libboost-nowide1.83-dev:data",
+        "@trixie//libboost-nowide1.83.0:data",
+        "@trixie//libboost-numpy1.83-dev:data",
+        "@trixie//libboost-numpy1.83.0:data",
+        "@trixie//libboost-program-options1.83-dev:data",
+        "@trixie//libboost-program-options1.83.0:data",
+        "@trixie//libboost-python1.83-dev:data",
+        "@trixie//libboost-python1.83.0:data",
+        "@trixie//libboost-random1.83-dev:data",
+        "@trixie//libboost-random1.83.0:data",
+        "@trixie//libboost-regex1.83-dev:data",
+        "@trixie//libboost-regex1.83.0:data",
+        "@trixie//libboost-serialization1.83-dev:data",
+        "@trixie//libboost-stacktrace1.83-dev:data",
+        "@trixie//libboost-stacktrace1.83.0:data",
+        "@trixie//libboost-system1.83-dev:data",
+        "@trixie//libboost-system1.83.0:data",
+        "@trixie//libboost-test1.83-dev:data",
+        "@trixie//libboost-test1.83.0:data",
+        "@trixie//libboost-thread1.83-dev:data",
+        "@trixie//libboost-thread1.83.0:data",
+        "@trixie//libboost-timer1.83-dev:data",
+        "@trixie//libboost-timer1.83.0:data",
+        "@trixie//libboost-type-erasure1.83-dev:data",
+        "@trixie//libboost-type-erasure1.83.0:data",
+        "@trixie//libboost-url1.83-dev:data",
+        "@trixie//libboost-url1.83.0:data",
+        "@trixie//libboost-wave1.83-dev:data",
+        "@trixie//libboost-wave1.83.0:data",
+        "@trixie//libboost1.83-all-dev:data",
+        "@trixie//libboost1.83-dev:data",
+        "@trixie//libboost1.83-tools-dev:data",
+        "@trixie//libbpf-dev:data",
+        "@trixie//libc-ares-dev:data",
+
+        "@trixie//libc-dev-bin:data",
+        "@trixie//libc6-dev:data",
+        "@trixie//libcap-dev:data",
+        "@trixie//libcares2:data",
+        "@trixie//libcbor0.10:data",
+        "@trixie//libcc1-0:data",
+        "@trixie//libclang-common-19-dev:data",
+        "@trixie//libclang-cpp19:data",
+        "@trixie//libclang1-19:data",
+        "@trixie//libcrypt-dev:data",
+        "@trixie//libctf-nobfd0:data",
+        "@trixie//libctf0:data",
+        "@trixie//libdbus-1-dev:data",
+        "@trixie//libdouble-conversion3:data",
+        "@trixie//libdrm-amdgpu1:data",
+        "@trixie//libdrm-common:data",
+        "@trixie//libdrm2:data",
+        "@trixie//libedit2:data",
+        "@trixie//libelf-dev:data",
+        "@trixie//libevent-2.1-7t64:data",
+        "@trixie//libevent-core-2.1-7t64:data",
+        "@trixie//libevent-dev:data",
+        "@trixie//libevent-extra-2.1-7t64:data",
+        "@trixie//libevent-openssl-2.1-7t64:data",
+        "@trixie//libevent-pthreads-2.1-7t64:data",
+        "@trixie//libexpat1-dev:data",
+        "@trixie//libfabric1:data",
+        "@trixie//libfido2-1:data",
+        "@trixie//libfl-dev:data",
+        "@trixie//libfl2:data",
+        "@trixie//libfuse3-4:data",
+        "@trixie//libgc-dev:data",
+        "@trixie//libgc1:data",
+        "@trixie//libgcc-14-dev:data",
+        "@trixie//libgfortran-14-dev:data",
+        "@trixie//libgfortran5:data",
+        "@trixie//libglib2.0-0t64:data",
+        "@trixie//libgmp-dev:data",
+        "@trixie//libgmpxx4ldbl:data",
+        "@trixie//libgomp1:data",
+        "@trixie//libgprofng0:data",
+        "@trixie//libgrpc++-dev:data",
+        "@trixie//libgrpc++1.51t64:data",
+        "@trixie//libgrpc-dev:data",
+        "@trixie//libgrpc29t64:data",
+        "@trixie//libhsa-runtime64-1:data",
+        "@trixie//libhsakmt1:data",
+        "@trixie//libhwasan0:data",
+        "@trixie//libhwloc-dev:data",
+        "@trixie//libhwloc-plugins:data",
+        "@trixie//libhwloc15:data",
+        "@trixie//libibmad5:data",
+        "@trixie//libibumad3:data",
+        "@trixie//libibverbs-dev:data",
+        "@trixie//libibverbs1:data",
+        "@trixie//libicu-dev:data",
+        "@trixie//libicu76:data",
+        "@trixie//libisl23:data",
+        "@trixie//libitm1:data",
+        "@trixie//libjs-jquery:data",
+        "@trixie//libjs-jquery-ui:data",
+        "@trixie//libjs-sphinxdoc:data",
+        "@trixie//libjs-underscore:data",
+        "@trixie//libllvm17t64:data",
+        "@trixie//libllvm19:data",
+        "@trixie//liblsan0:data",
+        "@trixie//libltdl-dev:data",
+        "@trixie//libltdl7:data",
+        "@trixie//libmagic-mgc:data",
+        "@trixie//libmagic1t64:data",
+        "@trixie//libmpc3:data",
+        "@trixie//libmpfr6:data",
+        "@trixie//libmunge2:data",
+        "@trixie//libnanomsg-dev:data",
+        "@trixie//libnanomsg5:data",
+        "@trixie//libnuma-dev:data",
+        "@trixie//libnuma1:data",
+        "@trixie//libobjc-14-dev:data",
+        "@trixie//libobjc4:data",
+        "@trixie//libopenmpi-dev:data",
+        "@trixie//libopenmpi40:data",
+        "@trixie//libpcap-dev:data",
+        "@trixie//libpcap0.8-dev:data",
+        "@trixie//libpcap0.8t64:data",
+        "@trixie//libpciaccess0:data",
+        "@trixie//libpcre2-16-0:data",
+        "@trixie//libpfm4:data",
+        "@trixie//libpkgconf3:data",
+        "@trixie//libpmix-dev:data",
+        "@trixie//libpmix2t64:data",
+        "@trixie//libprotobuf-dev:data",
+        "@trixie//libprotobuf-lite32t64:data",
+        "@trixie//libprotobuf32t64:data",
+        "@trixie//libprotoc-dev:data",
+        "@trixie//libprotoc32t64:data",
+        "@trixie//libpsm2-2:data",
+        "@trixie//libpython3-dev:data",
+        "@trixie//libpython3.13-dev:data",
+        "@trixie//libqt5core5t64:data",
+        "@trixie//libqt5dbus5t64:data",
+        "@trixie//libqt5network5t64:data",
+        "@trixie//libquadmath0:data",
+        "@trixie//librdmacm1t64:data",
+        "@trixie//libre2-11:data",
+        "@trixie//libre2-dev:data",
+        "@trixie//libsframe1:data",
+        "@trixie//libstdc++-14-dev:data",
+        "@trixie//libsystemd-dev:data",
+        "@trixie//libthrift-0.19.0t64:data",
+        "@trixie//libthrift-dev:data",
+        "@trixie//libtool:data",
+        "@trixie//libtsan2:data",
+        "@trixie//libubsan1:data",
+        "@trixie//libucx0:data",
+        "@trixie//libx11-6:data",
+        "@trixie//libx11-data:data",
+        "@trixie//libxau6:data",
+        "@trixie//libxcb1:data",
+        "@trixie//libxdmcp6:data",
+        "@trixie//libxext6:data",
+        "@trixie//libxml2:data",
+        "@trixie//libxnvctrl0:data",
+        "@trixie//libz3-4:data",
+        "@trixie//libze1:data",
+        "@trixie//libzstd-dev:data",
+        "@trixie//linux-libc-dev:data",
+        "@trixie//llvm:data",
+        "@trixie//llvm-19:data",
+        "@trixie//llvm-19-linker-tools:data",
+        "@trixie//llvm-19-runtime:data",
+        "@trixie//llvm-runtime:data",
+        "@trixie//m4:data",
+        "@trixie//mpi-default-bin:data",
+        "@trixie//mpi-default-dev:data",
+        "@trixie//ocl-icd-libopencl1:data",
+        "@trixie//openmpi-bin:data",
+        "@trixie//openmpi-common:data",
+        "@trixie//openssh-client:data",
+
+        "@trixie//pkgconf:data",
+        "@trixie//pkgconf-bin:data",
+        "@trixie//protobuf-compiler:data",
+        "@trixie//protobuf-compiler-grpc:data",
+        "@trixie//python3-dev:data",
+        "@trixie//python3-grpcio:data",
+        "@trixie//python3-protobuf:data",
+        "@trixie//python3-psutil:data",
+        "@trixie//python3-pyroute2:data",
+        "@trixie//python3-scapy:data",
+        "@trixie//python3-six:data",
+        "@trixie//python3-thrift:data",
+        "@trixie//python3.13-dev:data",
+        "@trixie//rpcsvc-proto:data",
+        "@trixie//sgml-base:data",
+        "@trixie//shared-mime-info:data",
+        "@trixie//tcpdump:data",
+        "@trixie//thrift-compiler:data",
+        "@trixie//xml-core:data",
+        "@trixie//zlib1g-dev:data",
+    ],
+)
+
+# SONiC-built debs (Dockerfile.j2 `dpkg -i libnl-3-dev libnl-route-3-dev` +
+# docker_<img>_debs). Both `_data` (file contents) and `_statusd` (distroless
+# dpkg status.d stub) are included so `dpkg -l` lists each package inside the
+# container, matching the Make image's package set.
+#   @sonic-sairedis: syncd-vs (SYNCD_VS) + its RDEPENDS libsairedis / libsaimetadata
+#                    / libsaivs. syncd-vs ships the syncd binary, syncd_start.sh,
+#                    gbsyncdmgrd and companion tools under /usr/bin.
+#   @libnl3:         SONiC-patched libnl-3-dev / libnl-route-3-dev (RTA_NH_ID
+#                    netlink attribute patch). The runtime libnl-3-200 / -route-3-200
+#                    .so.200 libs are already in the config-engine-trixie base.
+#   @dash-sai:       libsai (DASH SAI pipeline: libsai.so + libdashsaimetadata.so),
+#                    pulled in because INCLUDE_VS_DASH_SAI=y adds DASH_SAI to the
+#                    syncd-vs deb RDEPENDS.
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        "@sonic-sairedis//:syncd-vs_1.0.0.deb_data",
+        "@sonic-sairedis//:syncd-vs_1.0.0.deb_statusd",
+        "@sonic-sairedis//:libsairedis_1.0.0.deb_data",
+        "@sonic-sairedis//:libsairedis_1.0.0.deb_statusd",
+        "@sonic-sairedis//:libsaimetadata_1.0.0.deb_data",
+        "@sonic-sairedis//:libsaimetadata_1.0.0.deb_statusd",
+        "@sonic-sairedis//:libsaivs_1.0.0.deb_data",
+        "@sonic-sairedis//:libsaivs_1.0.0.deb_statusd",
+        "@libnl3//:libnl-3-dev_3.7.0-0.2+b1sonic1.deb_data",
+        "@libnl3//:libnl-3-dev_3.7.0-0.2+b1sonic1.deb_statusd",
+        "@libnl3//:libnl-route-3-dev_3.7.0-0.2+b1sonic1.deb_data",
+        "@libnl3//:libnl-route-3-dev_3.7.0-0.2+b1sonic1.deb_statusd",
+        "@dash-sai//:libsai_1.0.0.deb_data",
+        "@dash-sai//:libsai_1.0.0.deb_statusd",
+    ],
+)
+
+# COPY directives (Dockerfile.j2). supervisord.conf references
+# /usr/bin/supervisor-proc-exit-listener-rs, /usr/bin/syncd_start.sh (or
+# /usr/bin/gbsyncdmgrd) and `python3 -m supervisord_dependent_startup`; those
+# binaries come from the base image / the syncd-vs deb, not from this COPY.
+tar(
+    name = "files",
+    srcs = [
+        "start.sh",
+        "supervisord.conf",
+        "critical_processes",
+    ],
+    mtree = [
+        "./usr/bin/start.sh uid=0 gid=0 mode=0755 type=file content=$(location :start.sh)",
+        "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location :supervisord.conf)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location :critical_processes)",
+    ],
+)
+
+# config aligned to `docker inspect` of the Make image: Entrypoint=
+# ["/usr/local/bin/supervisord"], Env adds DEBIAN_FRONTEND=noninteractive
+# (PATH inherited from base), WorkingDir="/". The com.azure.sonic.* / Tag labels
+# the Make build machinery injects via `docker build --label` are omitted (same
+# accepted diff as docker-orchagent / docker-database / docker-teamd).
+oci_image(
+    name = "docker-gbsyncd-vs",
+    base = "//dockers/docker-config-engine-trixie:docker-config-engine-trixie",
+    entrypoint = ["/usr/local/bin/supervisord"],
+    env = {"DEBIAN_FRONTEND": "noninteractive"},
+    workdir = "/",
+    tars = [
+        ":apt_layer",
+        ":sonic_pkgs",
+        "@p4lang//:pi_runtime_layer",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-gbsyncd-vs",
+    repo_tags = ["docker-gbsyncd-vs:latest"],
+)

@@ -21,6 +21,9 @@
 
 package(default_visibility = ["//visibility:public"])
 
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
+load("@tar.bzl", "tar")
+
 _WS = "/data/sonic/sonic-dzf"
 
 _DEBDIR = "target/debs/trixie"
@@ -55,3 +58,64 @@ _DEBS = {
     )
     for target, deb_file in _DEBS.items()
 ]
+
+# =============================================================================
+# syncd_dash link/runtime support (Solution B, user-directed).
+#
+# @sonic-sairedis' syncd_dash dynamic-links the DASH libsai.so, which is built
+# allow_undefined=True and leaves the P4Runtime symbols (p4::v1::*), protobuf and
+# gpr/grpc undefined — Make satisfies them with `-lpiprotobuf -lpiprotogrpc
+# -lprotobuf -lgrpc++` (syncd/Makefile.am). libpiprotobuf/libpiprotogrpc exist
+# ONLY in p4lang-pi (no hermetic bazel cc build), so we crack the (non-hermetic)
+# p4lang-pi .deb and expose them as cc_import. Their transitive deps
+# (libprotobuf.so.32 / libgrpc++.so.1.51 / libgpr.so.29 /
+# libabsl_synchronization.so.20240722) are the Debian apt libs already shipped in
+# the docker image, so only these two .so need to be added.
+genrule(
+    name = "pi_runtime_sos",
+    srcs = [":p4lang-pi_0.1.1-1.deb"],
+    outs = [
+        "pi_runtime/libpiprotobuf.so.0.0.0",
+        "pi_runtime/libpiprotogrpc.so.0.0.0",
+    ],
+    cmd = ("set -e; d=$$(mktemp -d); " +
+           "dpkg-deb -x $(location :p4lang-pi_0.1.1-1.deb) $$d; " +
+           "cp $$d/usr/lib/x86_64-linux-gnu/libpiprotobuf.so.0.0.0 $(location pi_runtime/libpiprotobuf.so.0.0.0); " +
+           "cp $$d/usr/lib/x86_64-linux-gnu/libpiprotogrpc.so.0.0.0 $(location pi_runtime/libpiprotogrpc.so.0.0.0); " +
+           "rm -rf $$d"),
+    tags = [
+        "no-sandbox",
+        "manual",
+        "requires-network",
+    ],
+)
+
+# cc_import facades for linking syncd_dash. SONAME (libpiprotobuf.so.0 /
+# libpiprotogrpc.so.0) is read from the .so, so DT_NEEDED entries are correct.
+cc_import(
+    name = "libpiprotobuf",
+    shared_library = "pi_runtime/libpiprotobuf.so.0.0.0",
+)
+
+cc_import(
+    name = "libpiprotogrpc",
+    shared_library = "pi_runtime/libpiprotogrpc.so.0.0.0",
+)
+
+# Image layer: the two PI .so + their SONAME symlinks under the multiarch libdir,
+# so syncd_dash + libsai resolve p4::v1 at runtime. Added to the docker-syncd-vs /
+# docker-gbsyncd-vs oci_image tars.
+tar(
+    name = "pi_runtime_layer",
+    srcs = [
+        "pi_runtime/libpiprotobuf.so.0.0.0",
+        "pi_runtime/libpiprotogrpc.so.0.0.0",
+    ],
+    mtree = [
+        "./usr/lib/x86_64-linux-gnu/libpiprotobuf.so.0.0.0 uid=0 gid=0 mode=0644 type=file content=$(location pi_runtime/libpiprotobuf.so.0.0.0)",
+        "./usr/lib/x86_64-linux-gnu/libpiprotobuf.so.0 uid=0 gid=0 mode=0777 type=link link=libpiprotobuf.so.0.0.0",
+        "./usr/lib/x86_64-linux-gnu/libpiprotogrpc.so.0.0.0 uid=0 gid=0 mode=0644 type=file content=$(location pi_runtime/libpiprotogrpc.so.0.0.0)",
+        "./usr/lib/x86_64-linux-gnu/libpiprotogrpc.so.0 uid=0 gid=0 mode=0777 type=link link=libpiprotogrpc.so.0.0.0",
+    ],
+)
+
