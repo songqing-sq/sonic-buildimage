@@ -1,0 +1,63 @@
+module(
+    name = "wpasupplicant",
+    version = "2.9.0-14",
+)
+
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+# =============================================================================
+# wpasupplicant — upstream Debian trixie package re-wrapped as a SONiC .deb.
+#
+# The legacy SONiC build runs `dpkg-buildpackage` inside
+# src/wpasupplicant/sonic-wpa-supplicant/ (a SONiC fork of wpa 2.9.0-14) to
+# produce wpasupplicant_2.9.0-14_<arch>.deb. The fork's only functional delta
+# over upstream is the `macsec_sonic` wpa_supplicant driver
+# (src/drivers/driver_macsec_sonic.c + sonic_operators.{cpp,h}, enabled via
+# debian/config/wpasupplicant/linux: CONFIG_DRIVER_MACSEC_SONIC=y), which links
+# libswsscommon.
+#
+# Approach A (apt-repackage) re-wraps the trixie apt-extracted data tar into a
+# SONiC-named .deb so docker-macsec's dpkg-install path keeps working without
+# invoking dpkg-buildpackage in the Bazel sandbox. This is the same decision
+# taken by dzf's src/socat and by the reference project
+# sonic-bazel/src/wpasupplicant (whose docker-macsec consumes exactly this
+# apt-repackaged _data + _statusd pair).
+#
+# Trade-offs vs. legacy (see port_plan / diff docs):
+#   - The produced .deb does NOT include the `macsec_sonic` driver (upstream
+#     trixie wpa_supplicant is built without it). Rebuilding with the driver
+#     would require Approach B + a Bazel-migrated libswsscommon
+#     (src/sonic-swss-common), which is out of scope for this batch.
+#   - Version skew: the .deb keeps the SONiC-pinned name 2.9.0-14 while the
+#     data tar comes from trixie's current wpasupplicant.
+# =============================================================================
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = [
+        "trixie",
+        "trixie-updates",
+    ],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+apt.install(
+    dependency_set = "wpa_apt",
+    packages = ["wpasupplicant"],
+    suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
+)
+apt.lock(
+    into = "wpa_packages.lock",
+)
+use_repo(apt, "wpa_apt")

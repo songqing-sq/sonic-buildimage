@@ -1,0 +1,61 @@
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "2.9.0-14"
+
+# Extract the upstream Debian control tar's md5sums file so sonic_deb can bake
+# it into the SONiC-renamed control tar. Without this the generated `_statusd`
+# target fails because dpkg_statusd.sh requires `./md5sums` in the control tar.
+genrule(
+    name = "wpasupplicant_md5sums",
+    srcs = ["@wpa_apt//wpasupplicant:control"],
+    outs = ["wpasupplicant.md5sums"],
+    cmd = "tar -xf $(SRCS) -O ./md5sums > $@",
+)
+
+# =============================================================================
+# wpasupplicant — upstream Debian trixie package re-wrapped as a SONiC .deb.
+# See MODULE.bazel for the full Approach-A rationale and trade-offs (notably:
+# this build does NOT include the SONiC `macsec_sonic` driver — same decision
+# as the reference project sonic-bazel/src/wpasupplicant).
+# =============================================================================
+sonic_deb(
+    name = "wpasupplicant_{}.deb".format(VERSION),
+    package = "wpasupplicant",
+    version = VERSION,
+    # `content` is unused when `data` (a pre-built data tar) is provided;
+    # sonic_deb still requires it positionally.
+    content = {},
+    data = "@wpa_apt//wpasupplicant:data",
+    md5sums_file = ":wpasupplicant_md5sums",
+    # Matches trixie's upstream wpasupplicant 2:2.10-24 control Depends exactly
+    # (this build re-wraps that binary). Note the t64 (time_t transition) shlib
+    # names and that trixie dropped the lsb-base dependency.
+    depends = [
+        "libc6 (>= 2.34)",
+        "libdbus-1-3 (>= 1.10)",
+        "libnl-3-200 (>= 3.2.21)",
+        "libnl-genl-3-200 (>= 3.2.7)",
+        "libnl-route-3-200 (>= 3.4.0)",
+        "libpcsclite1 (>= 1.0.0)",
+        "libreadline8t64 (>= 6.0)",
+        "libssl3t64 (>= 3.0.0)",
+        "adduser",
+    ],
+    maintainer = "Debian wpasupplicant Maintainers <wpa@packages.debian.org>",
+    description = "client support for WPA and WPA2 (IEEE 802.11i)\n WPA and WPA2 are methods for securing wireless networks, the former\n using IEEE 802.1X, and the latter using IEEE 802.11i. This software\n provides key negotiation with the WPA Authenticator, and controls\n association with IEEE 802.11i networks.",
+    section = "net",
+    homepage = "https://w1.fi/wpa_supplicant/",
+    visibility = ["//visibility:public"],
+)
+
+# Re-export the upstream apt-extracted data tar under the canonical `_data`
+# label so callers (e.g. dockers/docker-macsec) can use the same
+# `<deb>_data` + `<deb>_statusd` pair as other sonic-built debs without needing
+# visibility into the @wpa_apt extension repo.
+alias(
+    name = "wpasupplicant_{}.deb_data".format(VERSION),
+    actual = "@wpa_apt//wpasupplicant:data",
+    visibility = ["//visibility:public"],
+)
