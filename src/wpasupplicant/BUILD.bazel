@@ -1,61 +1,674 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+load("@sonic_build_infra//shared_library:shared_library.bzl", "symlink_to_path")
 
 package(default_visibility = ["//visibility:public"])
 
+# =============================================================================
+# ifupdown / ifplugd integration symlinks (debian/wpasupplicant.links). The
+# Make .deb ships these as relative symlinks; distroless runs no maintainer
+# scripts, so they are materialised here and placed into the data tar via
+# sonic_deb content (SymlinkInfo -> mtree type=link). Unique output subdirs
+# avoid artifact-name collisions; the wildcard content key uses the basename.
+# =============================================================================
+symlink_to_path(
+    name = "link_if_pre_up",
+    output = "links/if-pre-up.d/wpasupplicant",
+    target_path = "../../wpa_supplicant/ifupdown.sh",
+)
+
+symlink_to_path(
+    name = "link_if_up",
+    output = "links/if-up.d/wpasupplicant",
+    target_path = "../../wpa_supplicant/ifupdown.sh",
+)
+
+symlink_to_path(
+    name = "link_if_down",
+    output = "links/if-down.d/wpasupplicant",
+    target_path = "../../wpa_supplicant/ifupdown.sh",
+)
+
+symlink_to_path(
+    name = "link_if_post_down",
+    output = "links/if-post-down.d/wpasupplicant",
+    target_path = "../../wpa_supplicant/ifupdown.sh",
+)
+
+symlink_to_path(
+    name = "link_ifplugd_action_wpa",
+    output = "links/ifplugd/action_wpa",
+    target_path = "../../wpa_supplicant/action_wpa.sh",
+)
+
 VERSION = "2.9.0-14"
 
-# Extract the upstream Debian control tar's md5sums file so sonic_deb can bake
-# it into the SONiC-renamed control tar. Without this the generated `_statusd`
-# target fails because dpkg_statusd.sh requires `./md5sums` in the control tar.
-genrule(
-    name = "wpasupplicant_md5sums",
-    srcs = ["@wpa_apt//wpasupplicant:control"],
-    outs = ["wpasupplicant.md5sums"],
-    cmd = "tar -xf $(SRCS) -O ./md5sums > $@",
+SRC = "sonic-wpa-supplicant"
+
+# =============================================================================
+# Approach B (source rebuild) — see MODULE.bazel for the full rationale.
+#
+# wpa_supplicant / wpa_cli / wpa_passphrase are rebuilt from the SONiC fork
+# (git submodule sonic-wpa-supplicant/) so wpa_supplicant carries the SONiC
+# `macsec_sonic` driver (CONFIG_DRIVER_MACSEC_SONIC=y). The object lists and
+# -D flags below were harvested verbatim from the upstream wpa_supplicant
+# Makefile via `make -n all` under debian/config/wpasupplicant/linux (the
+# `.config` used by src/wpasupplicant/sonic-wpa-supplicant/debian/rules
+# override_dh_auto_build). This guarantees the rebuilt binary compiles the
+# exact same translation units with the exact same feature macros as the Make
+# baseline (target/debs/trixie/wpasupplicant_2.9.0-14_amd64.deb).
+#
+# The macsec_sonic driver adds two objects — driver_macsec_sonic.c (C) and
+# sonic_operators.cpp (C++, includes <swss/...>) — and links libswsscommon +
+# libstdc++ (drivers.mak: DRV_LIBS += -lswsscommon -lstdc++). libswsscommon and
+# libnl come from the migrated @sonic-swss-common and @libnl3 modules; openssl,
+# dbus, pcsclite, readline, ncurses come from @wpa_deps (apt -dev packages).
+# =============================================================================
+
+# Feature macros, harvested from `make -n all` (CONFIG_* -> -D...). Identical
+# for every translation unit (wpa's Makefile puts them in the global CFLAGS).
+# NOTE on the two string-valued macros (shell-quoting in the Makefile recipe
+# collapses one layer of quotes):
+#   * -DLOG_HOSTAPD="$(CONFIG_DEBUG_SYSLOG_FACILITY)"  -> gcc sees the *token*
+#     LOG_DAEMON (the shell strips the quotes), so we pass -DLOG_HOSTAPD=LOG_DAEMON.
+#   * -DTLS_DEFAULT_CIPHERS=\"$(CONFIG_TLS_DEFAULT_CIPHERS)\" with
+#     CONFIG_TLS_DEFAULT_CIPHERS="DEFAULT@SECLEVEL=1" -> gcc sees the C *string*
+#     literal "DEFAULT@SECLEVEL=1", so we keep the embedded quotes.
+WPA_DEFINES = [
+    "-DEAPOL_TEST",
+    "-DCONFIG_HT_OVERRIDES",
+    "-DCONFIG_VHT_OVERRIDES",
+    "-DCONFIG_BACKEND_FILE",
+    "-DCONFIG_IEEE80211R",
+    "-DCONFIG_SAE",
+    "-DCONFIG_DPP",
+    "-DCONFIG_OWE",
+    "-DCONFIG_TDLS",
+    "-DCONFIG_PMKSA_CACHE_EXTERNAL",
+    "-DCONFIG_IBSS_RSN",
+    "-DCONFIG_NO_VLAN",
+    "-DCONFIG_HS20",
+    "-DCONFIG_INTERWORKING",
+    "-DCONFIG_DRIVER_WIRED",
+    "-DCONFIG_DRIVER_MACSEC_SONIC",
+    "-DCONFIG_DRIVER_MACSEC_LINUX",
+    "-DCONFIG_DRIVER_NL80211",
+    "-DCONFIG_DRIVER_NL80211_QCA",
+    "-DCONFIG_DRIVER_NONE",
+    "-DCONFIG_LIBNL3_ROUTE",
+    "-DCONFIG_DRIVER_WEXT",
+    "-DCONFIG_WIRELESS_EXTENSION",
+    "-DEAP_TLS",
+    "-DEAP_PEAP",
+    "-DEAP_TTLS",
+    "-DEAP_MD5",
+    "-DEAP_MSCHAPv2",
+    "-DEAP_GTC",
+    "-DEAP_OTP",
+    "-DEAP_SIM",
+    "-DEAP_LEAP",
+    "-DEAP_PSK",
+    "-DEAP_AKA",
+    "-DEAP_AKA_PRIME",
+    "-DEAP_FAST",
+    "-DEAP_PAX",
+    "-DEAP_SAKE",
+    "-DEAP_GPSK",
+    "-DEAP_GPSK_SHA256",
+    "-DEAP_PWD",
+    "-DEAP_EKE",
+    "-DCONFIG_WPS",
+    "-DEAP_WSC",
+    "-DCONFIG_WPS_NFC",
+    "-DCONFIG_WPS_OOB",
+    "-DCONFIG_WPS_ER",
+    "-DCONFIG_WPS_UPNP",
+    "-DCONFIG_WPS_REG_DISABLE_OPEN",
+    "-DEAP_IKEV2",
+    "-DEAP_TNC",
+    "-DCONFIG_MACSEC",
+    "-DIEEE8021X_EAPOL",
+    "-DCONFIG_AP",
+    "-DCONFIG_NO_RADIUS",
+    "-DCONFIG_NO_ACCOUNTING",
+    "-DEAP_SERVER",
+    "-DEAP_SERVER_IDENTITY",
+    "-DCONFIG_IEEE80211AC",
+    "-DNEED_AP_MLME",
+    "-DEAP_SERVER_WSC",
+    "-DCONFIG_ACS",
+    "-DPCSC_FUNCS",
+    "-DPKCS12_FUNCS",
+    "-DCONFIG_SMARTCARD",
+    "-DCONFIG_TLSV11",
+    "-DCONFIG_TLSV12",
+    "-DEAP_TLS_OPENSSL",
+    "-DTLS_DEFAULT_CIPHERS=\\\"DEFAULT@SECLEVEL=1\\\"",
+    "-DCONFIG_DES",
+    "-DCONFIG_SHA256",
+    "-DCONFIG_HMAC_SHA256_KDF",
+    "-DCONFIG_HMAC_SHA384_KDF",
+    "-DCONFIG_HMAC_SHA512_KDF",
+    "-DCONFIG_SHA384",
+    "-DCONFIG_SHA512",
+    "-DALL_DH_GROUPS",
+    "-DCONFIG_ECC",
+    "-DCONFIG_GETRANDOM",
+    "-DCONFIG_CTRL_IFACE",
+    "-DCONFIG_CTRL_IFACE_UNIX",
+    "-DCONFIG_CTRL_IFACE_DBUS_NEW",
+    "-DCONFIG_CTRL_IFACE_DBUS_INTRO",
+    "-DCONFIG_SME",
+    "-DCONFIG_DEBUG_SYSLOG",
+    "-DLOG_HOSTAPD=LOG_DAEMON",
+    "-DCONFIG_DEBUG_LINUX_TRACING",
+    "-DCONFIG_DEBUG_FILE",
+    "-DCONFIG_DELAYED_MIC_ERROR_REPORT",
+    "-DCONFIG_BGSCAN_SIMPLE",
+    "-DCONFIG_BGSCAN_LEARN",
+    "-DCONFIG_BGSCAN",
+    "-DCONFIG_AUTOSCAN_EXPONENTIAL",
+    "-DCONFIG_AUTOSCAN_PERIODIC",
+    "-DCONFIG_AUTOSCAN",
+    "-DCONFIG_GAS_SERVER",
+    "-DCONFIG_GAS",
+    "-DCONFIG_OFFCHANNEL",
+    "-DCONFIG_JSON",
+    "-DCONFIG_FST",
+]
+
+# -Werror is intentionally NOT propagated: the Make build adds it (via
+# CONFIG_EAPOL_TEST) together with trixie gcc-14's -Wno-* escape hatches, but
+# the hermetic toolchain here is a different gcc whose warning set differs.
+# Warnings-as-errors would break the build on benign new diagnostics without
+# changing the emitted code. We keep -Wall + the same -Wno-* set the Make
+# recipe uses (debian/rules DEB_CFLAGS_MAINT_APPEND) so behaviour matches.
+WPA_WARN_COPTS = [
+    "-Wall",
+    "-Wno-error",
+    "-Wno-deprecated-declarations",
+    "-Wno-use-after-free",
+    "-Wno-discarded-qualifiers",
+    "-Wno-array-bounds",
+    "-Wno-unused-parameter",
+    "-Wno-unused-variable",
+    "-Wno-unused-but-set-variable",
+    "-Wno-sign-compare",
+]
+
+WPA_COPTS = WPA_WARN_COPTS + WPA_DEFINES
+
+# wpa's own headers. `includes` mirrors the Make compile's search path: the
+# recipe runs from wpa_supplicant/ (=> "." on the quote path) with -I<abs>/src
+# and -I<abs>/src/utils. Same-directory quote includes resolve via gcc's
+# implicit current-file-dir search.
+cc_library(
+    name = "wpa_headers",
+    hdrs = glob([
+        SRC + "/src/**/*.h",
+        SRC + "/wpa_supplicant/**/*.h",
+    ]),
+    includes = [
+        SRC + "/src",
+        SRC + "/src/utils",
+        SRC + "/wpa_supplicant",
+    ],
+    visibility = ["//visibility:private"],
+)
+
+WPA_SUPPLICANT_SRCS = [
+    SRC + "/wpa_supplicant/config.c",
+    SRC + "/wpa_supplicant/notify.c",
+    SRC + "/wpa_supplicant/bss.c",
+    SRC + "/wpa_supplicant/eap_register.c",
+    SRC + "/src/utils/common.c",
+    SRC + "/src/utils/wpa_debug.c",
+    SRC + "/src/utils/wpabuf.c",
+    SRC + "/src/utils/bitfield.c",
+    SRC + "/src/utils/ip_addr.c",
+    SRC + "/src/utils/crc32.c",
+    SRC + "/wpa_supplicant/op_classes.c",
+    SRC + "/wpa_supplicant/rrm.c",
+    SRC + "/wpa_supplicant/robust_av.c",
+    SRC + "/wpa_supplicant/wmm_ac.c",
+    SRC + "/src/utils/os_unix.c",
+    SRC + "/src/utils/eloop.c",
+    SRC + "/wpa_supplicant/config_file.c",
+    SRC + "/src/rsn_supp/wpa_ft.c",
+    SRC + "/src/common/sae.c",
+    SRC + "/src/common/dpp.c",
+    SRC + "/src/common/dpp_auth.c",
+    SRC + "/src/common/dpp_backup.c",
+    SRC + "/src/common/dpp_crypto.c",
+    SRC + "/src/common/dpp_pkex.c",
+    SRC + "/src/common/dpp_reconfig.c",
+    SRC + "/src/common/dpp_tcp.c",
+    SRC + "/wpa_supplicant/dpp_supplicant.c",
+    SRC + "/src/rsn_supp/tdls.c",
+    SRC + "/src/rsn_supp/wpa.c",
+    SRC + "/src/rsn_supp/preauth.c",
+    SRC + "/src/rsn_supp/pmksa_cache.c",
+    SRC + "/src/rsn_supp/wpa_ie.c",
+    SRC + "/src/common/wpa_common.c",
+    SRC + "/wpa_supplicant/ibss_rsn.c",
+    SRC + "/wpa_supplicant/hs20_supplicant.c",
+    SRC + "/wpa_supplicant/interworking.c",
+    SRC + "/src/eap_peer/eap_tls.c",
+    SRC + "/src/eap_peer/eap_peap.c",
+    SRC + "/src/eap_common/eap_peap_common.c",
+    SRC + "/src/eap_peer/eap_ttls.c",
+    SRC + "/src/eap_peer/eap_md5.c",
+    SRC + "/src/eap_peer/eap_mschapv2.c",
+    SRC + "/src/eap_peer/mschapv2.c",
+    SRC + "/src/eap_peer/eap_gtc.c",
+    SRC + "/src/eap_peer/eap_otp.c",
+    SRC + "/src/eap_peer/eap_sim.c",
+    SRC + "/src/eap_peer/eap_leap.c",
+    SRC + "/src/eap_peer/eap_psk.c",
+    SRC + "/src/eap_common/eap_psk_common.c",
+    SRC + "/src/eap_peer/eap_aka.c",
+    SRC + "/src/eap_common/eap_sim_common.c",
+    SRC + "/src/eap_peer/eap_fast.c",
+    SRC + "/src/eap_peer/eap_fast_pac.c",
+    SRC + "/src/eap_common/eap_fast_common.c",
+    SRC + "/src/eap_peer/eap_pax.c",
+    SRC + "/src/eap_common/eap_pax_common.c",
+    SRC + "/src/eap_peer/eap_sake.c",
+    SRC + "/src/eap_common/eap_sake_common.c",
+    SRC + "/src/eap_peer/eap_gpsk.c",
+    SRC + "/src/eap_common/eap_gpsk_common.c",
+    SRC + "/src/eap_peer/eap_pwd.c",
+    SRC + "/src/eap_common/eap_pwd_common.c",
+    SRC + "/src/eap_peer/eap_eke.c",
+    SRC + "/src/eap_common/eap_eke_common.c",
+    SRC + "/wpa_supplicant/wps_supplicant.c",
+    SRC + "/src/utils/uuid.c",
+    SRC + "/src/eap_peer/eap_wsc.c",
+    SRC + "/src/eap_common/eap_wsc_common.c",
+    SRC + "/src/wps/wps.c",
+    SRC + "/src/wps/wps_common.c",
+    SRC + "/src/wps/wps_attr_parse.c",
+    SRC + "/src/wps/wps_attr_build.c",
+    SRC + "/src/wps/wps_attr_process.c",
+    SRC + "/src/wps/wps_dev_attr.c",
+    SRC + "/src/wps/wps_enrollee.c",
+    SRC + "/src/wps/wps_registrar.c",
+    SRC + "/src/wps/ndef.c",
+    SRC + "/src/wps/wps_er.c",
+    SRC + "/src/wps/wps_er_ssdp.c",
+    SRC + "/src/wps/wps_upnp.c",
+    SRC + "/src/wps/wps_upnp_ssdp.c",
+    SRC + "/src/wps/wps_upnp_web.c",
+    SRC + "/src/wps/wps_upnp_event.c",
+    SRC + "/src/wps/wps_upnp_ap.c",
+    SRC + "/src/wps/upnp_xml.c",
+    SRC + "/src/wps/httpread.c",
+    SRC + "/src/wps/http_client.c",
+    SRC + "/src/wps/http_server.c",
+    SRC + "/src/eap_peer/eap_ikev2.c",
+    SRC + "/src/eap_peer/ikev2.c",
+    SRC + "/src/eap_common/eap_ikev2_common.c",
+    SRC + "/src/eap_common/ikev2_common.c",
+    SRC + "/src/eap_peer/eap_tnc.c",
+    SRC + "/src/eap_peer/tncc.c",
+    SRC + "/wpa_supplicant/wpas_kay.c",
+    SRC + "/src/pae/ieee802_1x_cp.c",
+    SRC + "/src/pae/ieee802_1x_kay.c",
+    SRC + "/src/pae/ieee802_1x_key.c",
+    SRC + "/src/pae/ieee802_1x_secy_ops.c",
+    SRC + "/src/ap/wpa_auth_kay.c",
+    SRC + "/src/eapol_supp/eapol_supp_sm.c",
+    SRC + "/src/eap_peer/eap.c",
+    SRC + "/src/eap_peer/eap_methods.c",
+    SRC + "/wpa_supplicant/ap.c",
+    SRC + "/src/ap/hostapd.c",
+    SRC + "/src/ap/wpa_auth_glue.c",
+    SRC + "/src/ap/utils.c",
+    SRC + "/src/ap/authsrv.c",
+    SRC + "/src/ap/ap_config.c",
+    SRC + "/src/ap/sta_info.c",
+    SRC + "/src/ap/tkip_countermeasures.c",
+    SRC + "/src/ap/ap_mlme.c",
+    SRC + "/src/ap/ieee802_1x.c",
+    SRC + "/src/eapol_auth/eapol_auth_sm.c",
+    SRC + "/src/ap/ieee802_11_auth.c",
+    SRC + "/src/ap/ieee802_11_shared.c",
+    SRC + "/src/ap/drv_callbacks.c",
+    SRC + "/src/ap/ap_drv_ops.c",
+    SRC + "/src/ap/beacon.c",
+    SRC + "/src/ap/bss_load.c",
+    SRC + "/src/ap/eap_user_db.c",
+    SRC + "/src/ap/neighbor_db.c",
+    SRC + "/src/ap/rrm.c",
+    SRC + "/src/ap/ieee802_11_ht.c",
+    SRC + "/src/ap/ieee802_11_vht.c",
+    SRC + "/src/ap/ctrl_iface_ap.c",
+    SRC + "/src/eap_server/eap_server.c",
+    SRC + "/src/eap_server/eap_server_identity.c",
+    SRC + "/src/eap_server/eap_server_methods.c",
+    SRC + "/src/ap/wmm.c",
+    SRC + "/src/ap/ap_list.c",
+    SRC + "/src/ap/ieee802_11.c",
+    SRC + "/src/ap/hw_features.c",
+    SRC + "/src/ap/dfs.c",
+    SRC + "/src/ap/wps_hostapd.c",
+    SRC + "/src/eap_server/eap_server_wsc.c",
+    SRC + "/src/ap/dpp_hostapd.c",
+    SRC + "/src/ap/gas_query_ap.c",
+    SRC + "/src/ap/gas_serv.c",
+    SRC + "/src/ap/hs20.c",
+    SRC + "/src/ap/wpa_auth.c",
+    SRC + "/src/ap/wpa_auth_ie.c",
+    SRC + "/src/ap/pmksa_cache_auth.c",
+    SRC + "/src/ap/acs.c",
+    SRC + "/src/utils/pcsc_funcs.c",
+    SRC + "/src/common/dragonfly.c",
+    SRC + "/src/crypto/ms_funcs.c",
+    SRC + "/src/eap_common/chap.c",
+    SRC + "/src/eap_peer/eap_tls_common.c",
+    SRC + "/src/crypto/tls_openssl.c",
+    SRC + "/src/crypto/tls_openssl_ocsp.c",
+    SRC + "/src/crypto/crypto_openssl.c",
+    SRC + "/src/crypto/fips_prf_openssl.c",
+    SRC + "/src/crypto/aes-eax.c",
+    SRC + "/src/crypto/aes-siv.c",
+    SRC + "/src/crypto/aes-ctr.c",
+    SRC + "/src/crypto/aes-encblock.c",
+    SRC + "/src/crypto/sha256-kdf.c",
+    SRC + "/src/crypto/sha384-kdf.c",
+    SRC + "/src/crypto/sha512-kdf.c",
+    SRC + "/src/crypto/sha256-prf.c",
+    SRC + "/src/crypto/sha256-tlsprf.c",
+    SRC + "/src/crypto/sha384-prf.c",
+    SRC + "/src/crypto/sha512-prf.c",
+    SRC + "/src/tls/asn1.c",
+    SRC + "/src/crypto/dh_groups.c",
+    SRC + "/src/crypto/random.c",
+    SRC + "/src/common/ctrl_iface_common.c",
+    SRC + "/wpa_supplicant/ctrl_iface.c",
+    SRC + "/wpa_supplicant/ctrl_iface_unix.c",
+    SRC + "/wpa_supplicant/dbus/dbus_dict_helpers.c",
+    SRC + "/wpa_supplicant/dbus/dbus_new_helpers.c",
+    SRC + "/wpa_supplicant/dbus/dbus_new.c",
+    SRC + "/wpa_supplicant/dbus/dbus_new_handlers.c",
+    SRC + "/wpa_supplicant/dbus/dbus_common.c",
+    SRC + "/wpa_supplicant/dbus/dbus_new_handlers_wps.c",
+    SRC + "/wpa_supplicant/dbus/dbus_new_introspect.c",
+    SRC + "/src/utils/base64.c",
+    SRC + "/wpa_supplicant/sme.c",
+    SRC + "/src/common/ieee802_11_common.c",
+    SRC + "/src/common/hw_features_common.c",
+    SRC + "/src/eap_common/eap_common.c",
+    SRC + "/src/crypto/sha1-prf.c",
+    SRC + "/src/crypto/sha1-tprf.c",
+    SRC + "/src/crypto/sha1-tlsprf.c",
+    SRC + "/wpa_supplicant/bgscan_simple.c",
+    SRC + "/wpa_supplicant/bgscan_learn.c",
+    SRC + "/wpa_supplicant/bgscan.c",
+    SRC + "/wpa_supplicant/autoscan_exponential.c",
+    SRC + "/wpa_supplicant/autoscan_periodic.c",
+    SRC + "/wpa_supplicant/autoscan.c",
+    SRC + "/src/common/gas_server.c",
+    SRC + "/src/common/gas.c",
+    SRC + "/wpa_supplicant/gas_query.c",
+    SRC + "/wpa_supplicant/offchannel.c",
+    SRC + "/src/utils/json.c",
+    SRC + "/src/drivers/driver_common.c",
+    SRC + "/wpa_supplicant/wpa_supplicant.c",
+    SRC + "/wpa_supplicant/events.c",
+    SRC + "/wpa_supplicant/blacklist.c",
+    SRC + "/wpa_supplicant/wpas_glue.c",
+    SRC + "/wpa_supplicant/scan.c",
+    SRC + "/wpa_supplicant/main.c",
+    SRC + "/src/drivers/driver_wired.c",
+    SRC + "/src/drivers/driver_macsec_sonic.c",
+    SRC + "/src/drivers/sonic_operators.cpp",
+    SRC + "/src/drivers/driver_macsec_linux.c",
+    SRC + "/src/drivers/driver_wired_common.c",
+    SRC + "/src/drivers/driver_nl80211.c",
+    SRC + "/src/drivers/driver_nl80211_capa.c",
+    SRC + "/src/drivers/driver_nl80211_event.c",
+    SRC + "/src/drivers/driver_nl80211_monitor.c",
+    SRC + "/src/drivers/driver_nl80211_scan.c",
+    SRC + "/src/drivers/driver_none.c",
+    SRC + "/src/drivers/netlink.c",
+    SRC + "/src/drivers/rfkill.c",
+    SRC + "/src/utils/radiotap.c",
+    SRC + "/src/drivers/linux_ioctl.c",
+    SRC + "/src/drivers/driver_wext.c",
+    SRC + "/src/drivers/drivers.c",
+    SRC + "/src/l2_packet/l2_packet_linux.c",
+    SRC + "/src/fst/fst.c",
+    SRC + "/src/fst/fst_session.c",
+    SRC + "/src/fst/fst_iface.c",
+    SRC + "/src/fst/fst_group.c",
+    SRC + "/src/fst/fst_ctrl_aux.c",
+    SRC + "/src/fst/fst_ctrl_iface.c",
+]
+
+# wpa_supplicant — the whole point of Approach B: built WITH macsec_sonic
+# (sonic_operators.cpp + driver_macsec_sonic.c) linking libswsscommon.
+cc_binary(
+    name = "wpa_supplicant",
+    srcs = WPA_SUPPLICANT_SRCS,
+    copts = WPA_COPTS,
+    linkopts = [
+        "-Wl,--as-needed",
+        "-lrt",
+        "-lm",
+    ],
+    dynamic_deps = [
+        "@sonic-swss-common//:swsscommon_shared",
+        "@libnl3//:libnl_3_shared",
+        "@libnl3//:libnl_genl_3_shared",
+        "@libnl3//:libnl_route_3_shared",
+        "@libnl3//:libnl_nf_3_shared",
+        "@libyang3//:yang_shared",
+    ],
+    deps = [
+        ":wpa_headers",
+        "@sonic-swss-common//:swsscommon",
+        "@libnl3//:libnl_3",
+        "@libnl3//:libnl_genl_3",
+        "@libnl3//:libnl_route_3",
+        "@wpa_deps//libssl-dev:libssl",
+        "@wpa_deps//libdbus-1-dev:libdbus-1",
+        # Use the :pcsclite cc_import (libpcsclite.so.1 + headers) only. The
+        # aggregate :libpcsclite cc_library also deps :pcscspy, which over-links
+        # libpcscspy.so.0 (an extra DT_NEEDED absent from the Make baseline and
+        # not shipped in the image). Make links only libpcsclite via pkg-config.
+        "@wpa_deps//libpcsclite-dev:pcsclite",
+    ],
+)
+
+cc_binary(
+    name = "wpa_cli",
+    srcs = [
+        SRC + "/wpa_supplicant/wpa_cli.c",
+        SRC + "/src/common/wpa_ctrl.c",
+        SRC + "/src/utils/wpa_debug.c",
+        SRC + "/src/utils/common.c",
+        SRC + "/src/common/cli.c",
+        SRC + "/src/utils/os_unix.c",
+        SRC + "/src/utils/eloop.c",
+        SRC + "/src/utils/edit_readline.c",
+    ],
+    copts = WPA_COPTS,
+    linkopts = [
+        "-Wl,--as-needed",
+        "-lrt",
+    ],
+    deps = [
+        ":wpa_headers",
+        "@wpa_deps//libreadline-dev:libreadline",
+        # readline links libtinfo (terminfo) — use the clean :tinfo cc_import.
+        # The aggregate :libncurses target is broken in this rules_distroless
+        # version (references undefined :curses / :termcap virtual provides).
+        "@wpa_deps//libncurses-dev:tinfo",
+    ],
+)
+
+cc_binary(
+    name = "wpa_passphrase",
+    srcs = [
+        SRC + "/wpa_supplicant/wpa_passphrase.c",
+        SRC + "/src/utils/common.c",
+        SRC + "/src/utils/wpa_debug.c",
+        SRC + "/src/utils/wpabuf.c",
+        SRC + "/src/utils/os_unix.c",
+        SRC + "/src/crypto/crypto_openssl.c",
+        SRC + "/src/crypto/sha1-prf.c",
+        SRC + "/src/crypto/sha1-tprf.c",
+        SRC + "/src/crypto/sha1-tlsprf.c",
+        SRC + "/src/crypto/sha256-prf.c",
+        SRC + "/src/crypto/sha256-tlsprf.c",
+    ],
+    copts = WPA_COPTS,
+    linkopts = [
+        "-Wl,--as-needed",
+        "-lrt",
+    ],
+    deps = [
+        ":wpa_headers",
+        "@wpa_deps//libssl-dev:libssl",
+    ],
 )
 
 # =============================================================================
-# wpasupplicant — upstream Debian trixie package re-wrapped as a SONiC .deb.
-# See MODULE.bazel for the full Approach-A rationale and trade-offs (notably:
-# this build does NOT include the SONiC `macsec_sonic` driver — same decision
-# as the reference project sonic-bazel/src/wpasupplicant).
+# Data files. systemd/dbus service files are generated from *.in templates by
+# the upstream Makefile via `sed -e 's|@BINDIR@|/sbin|g'` (see
+# wpa_supplicant/Makefile %.service / %@.service rules); BINDIR=/sbin comes from
+# debian/rules. We replicate that sed substitution here.
+# =============================================================================
+[
+    genrule(
+        name = "gen_" + out.replace("@", "_at_").replace(".", "_"),
+        srcs = [SRC + "/wpa_supplicant/systemd/" + tin],
+        outs = [out],
+        cmd = "sed -e 's|@BINDIR@|/sbin|g' $< > $@",
+    )
+    for (tin, out) in [
+        ("wpa_supplicant.service.in", "wpa_supplicant.service"),
+        ("wpa_supplicant.service.arg.in", "wpa_supplicant@.service"),
+        ("wpa_supplicant-nl80211.service.arg.in", "wpa_supplicant-nl80211@.service"),
+        ("wpa_supplicant-wired.service.arg.in", "wpa_supplicant-wired@.service"),
+    ]
+]
+
+genrule(
+    name = "gen_fi_service",
+    srcs = [SRC + "/wpa_supplicant/dbus/fi.w1.wpa_supplicant1.service.in"],
+    outs = ["fi.w1.wpa_supplicant1.service"],
+    cmd = "sed -e 's|@BINDIR@|/sbin|g' $< > $@",
+)
+
+# The dbus system.d policy ships under a different basename than its source
+# (debian/rules override_dh_install installs dbus-wpa_supplicant.conf as
+# etc/dbus-1/system.d/wpa_supplicant.conf). sonic_deb can't rename, so copy.
+genrule(
+    name = "gen_dbus_conf",
+    srcs = [SRC + "/wpa_supplicant/dbus/dbus-wpa_supplicant.conf"],
+    outs = ["wpa_supplicant.conf"],
+    cmd = "cp $< $@",
+)
+
+# Debian changelog, gzipped -9n for reproducibility (dh_installchangelogs).
+genrule(
+    name = "gen_changelog_deb",
+    srcs = [SRC + "/debian/changelog"],
+    outs = ["changelog.Debian.gz"],
+    cmd = "gzip -9nc $< > $@",
+)
+
+filegroup(
+    name = "systemd_services",
+    srcs = [
+        ":wpa_supplicant.service",
+        ":wpa_supplicant@.service",
+        ":wpa_supplicant-nl80211@.service",
+        ":wpa_supplicant-wired@.service",
+    ],
+)
+
+# =============================================================================
+# wpasupplicant .deb — layout mirrors the Make baseline
+# (target/debs/trixie/wpasupplicant_2.9.0-14_amd64.deb): binaries in /sbin +
+# /usr/bin, ifupdown/dbus/systemd/NetworkManager/pm-utils data under /etc,
+# /lib/systemd, /usr/lib, /usr/share. Version keeps the SONiC epoch (2:) — the
+# .deb *filename* drops the epoch (wpasupplicant_2.9.0-14_<arch>.deb) exactly as
+# the Make build does.
 # =============================================================================
 sonic_deb(
     name = "wpasupplicant_{}.deb".format(VERSION),
     package = "wpasupplicant",
-    version = VERSION,
-    # `content` is unused when `data` (a pre-built data tar) is provided;
-    # sonic_deb still requires it positionally.
-    content = {},
-    data = "@wpa_apt//wpasupplicant:data",
-    md5sums_file = ":wpasupplicant_md5sums",
-    # Matches trixie's upstream wpasupplicant 2:2.10-24 control Depends exactly
-    # (this build re-wraps that binary). Note the t64 (time_t transition) shlib
-    # names and that trixie dropped the lsb-base dependency.
+    version = "2:" + VERSION,
+    architecture = select({
+        "@platforms//cpu:x86_64": "amd64",
+        "@platforms//cpu:aarch64": "arm64",
+    }),
+    content = {
+        "/sbin:*:0755": [
+            ":wpa_supplicant",
+            ":wpa_cli",
+            SRC + "/debian/ifupdown/wpa_action",
+        ],
+        "/usr/bin:*:0755": [":wpa_passphrase"],
+        "/etc/dbus-1/system.d:*:0644": [":gen_dbus_conf"],
+        "/etc/wpa_supplicant:*:0755": [
+            SRC + "/debian/ifupdown/action_wpa.sh",
+            SRC + "/debian/ifupdown/wpasupplicant/ifupdown.sh",
+        ],
+        "/etc/wpa_supplicant:*:0644": [
+            SRC + "/debian/ifupdown/functions.sh",
+        ],
+        "/lib/systemd/system:*:0644": [":systemd_services"],
+        "/usr/share/dbus-1/system-services:*:0644": [":gen_fi_service"],
+        "/usr/lib/NetworkManager/conf.d:*:0644": [
+            SRC + "/debian/NetworkManager/no-mac-addr-change.conf",
+        ],
+        "/usr/lib/pm-utils/sleep.d:*:0755": [
+            SRC + "/wpa_supplicant/examples/60_wpa_supplicant",
+        ],
+        "/usr/share/doc/wpasupplicant:*:0644": [
+            SRC + "/debian/copyright",
+            ":gen_changelog_deb",
+        ],
+        # ifupdown / ifplugd integration symlinks (debian/wpasupplicant.links).
+        "/etc/network/if-pre-up.d:*:0777": [":link_if_pre_up"],
+        "/etc/network/if-up.d:*:0777": [":link_if_up"],
+        "/etc/network/if-down.d:*:0777": [":link_if_down"],
+        "/etc/network/if-post-down.d:*:0777": [":link_if_post_down"],
+        "/etc/ifplugd/action.d:*:0777": [":link_ifplugd_action_wpa"],
+    },
     depends = [
         "libc6 (>= 2.34)",
         "libdbus-1-3 (>= 1.10)",
-        "libnl-3-200 (>= 3.2.21)",
-        "libnl-genl-3-200 (>= 3.2.7)",
-        "libnl-route-3-200 (>= 3.4.0)",
+        "libgcc-s1 (>= 3.0)",
+        "libnl-3-200 (>= 3.7.0-0.2+b1sonic1)",
+        "libnl-genl-3-200 (>= 3.7.0-0.2+b1sonic1)",
+        "libnl-route-3-200 (>= 3.7.0-0.2+b1sonic1)",
         "libpcsclite1 (>= 1.0.0)",
         "libreadline8t64 (>= 6.0)",
         "libssl3t64 (>= 3.0.0)",
+        "libstdc++6 (>= 13.1)",
+        "libswsscommon (>= 1.0.0)",
+        "lsb-base",
         "adduser",
     ],
+    suggests = [
+        "wpagui",
+        "libengine-pkcs11-openssl",
+    ],
+    breaks = [
+        "initscripts (<< 2.88dsf-13.3)",
+    ],
+    multi_arch = "foreign",
     maintainer = "Debian wpasupplicant Maintainers <wpa@packages.debian.org>",
     description = "client support for WPA and WPA2 (IEEE 802.11i)\n WPA and WPA2 are methods for securing wireless networks, the former\n using IEEE 802.1X, and the latter using IEEE 802.11i. This software\n provides key negotiation with the WPA Authenticator, and controls\n association with IEEE 802.11i networks.",
     section = "net",
+    priority = "optional",
     homepage = "https://w1.fi/wpa_supplicant/",
-    visibility = ["//visibility:public"],
-)
-
-# Re-export the upstream apt-extracted data tar under the canonical `_data`
-# label so callers (e.g. dockers/docker-macsec) can use the same
-# `<deb>_data` + `<deb>_statusd` pair as other sonic-built debs without needing
-# visibility into the @wpa_apt extension repo.
-alias(
-    name = "wpasupplicant_{}.deb_data".format(VERSION),
-    actual = "@wpa_apt//wpasupplicant:data",
+    gen_dbg = True,
     visibility = ["//visibility:public"],
 )

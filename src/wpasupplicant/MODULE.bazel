@@ -3,34 +3,43 @@ module(
     version = "2.9.0-14",
 )
 
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
 bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
 
+# Approach B (source rebuild). The SONiC fork of wpa_supplicant 2.9.0-14
+# (git submodule sonic-wpa-supplicant/) is rebuilt from source so the produced
+# wpasupplicant_2.9.0-14.deb ships a wpa_supplicant binary compiled WITH the
+# SONiC `macsec_sonic` driver (CONFIG_DRIVER_MACSEC_SONIC=y in
+# debian/config/wpasupplicant/linux). That driver
+# (src/drivers/driver_macsec_sonic.c + src/drivers/sonic_operators.cpp) links
+# libswsscommon, so the migrated @sonic-swss-common//:swsscommon C++ library is
+# a build dependency. This replaces the earlier Approach A (apt-repackage of
+# trixie's stock 2.10 wpa_supplicant, which dropped the driver entirely).
+#
+# The object/flag set below (see BUILD.bazel) was harvested from the upstream
+# wpa_supplicant/Makefile `make -n all` under the SONiC `.config`, so the
+# rebuilt binary is functionally equivalent to the Make baseline.
+bazel_dep(name = "libnl3", version = "3.7.0")
+bazel_dep(name = "sonic-swss-common", version = "1.0.0")
+
+# libswsscommon.so transitively links libnl-nf-3.so.200 and libyang.so.3; those
+# shared libs must be on the linker's rpath-link path when we link
+# wpa_supplicant against libswsscommon. libnl-nf-3 comes from @libnl3 (already
+# above); libyang3 is pulled here. (--as-needed keeps wpa_supplicant itself from
+# gaining a direct DT_NEEDED on libyang — it only satisfies libswsscommon's
+# own references, mirroring the Make baseline's Depends.)
+bazel_dep(name = "libyang3", version = "3.12.2")
+
 # =============================================================================
-# wpasupplicant — upstream Debian trixie package re-wrapped as a SONiC .deb.
-#
-# The legacy SONiC build runs `dpkg-buildpackage` inside
-# src/wpasupplicant/sonic-wpa-supplicant/ (a SONiC fork of wpa 2.9.0-14) to
-# produce wpasupplicant_2.9.0-14_<arch>.deb. The fork's only functional delta
-# over upstream is the `macsec_sonic` wpa_supplicant driver
-# (src/drivers/driver_macsec_sonic.c + sonic_operators.{cpp,h}, enabled via
-# debian/config/wpasupplicant/linux: CONFIG_DRIVER_MACSEC_SONIC=y), which links
-# libswsscommon.
-#
-# Approach A (apt-repackage) re-wraps the trixie apt-extracted data tar into a
-# SONiC-named .deb so docker-macsec's dpkg-install path keeps working without
-# invoking dpkg-buildpackage in the Bazel sandbox. This is the same decision
-# taken by dzf's src/socat and by the reference project
-# sonic-bazel/src/wpasupplicant (whose docker-macsec consumes exactly this
-# apt-repackaged _data + _statusd pair).
-#
-# Trade-offs vs. legacy (see port_plan / diff docs):
-#   - The produced .deb does NOT include the `macsec_sonic` driver (upstream
-#     trixie wpa_supplicant is built without it). Rebuilding with the driver
-#     would require Approach B + a Bazel-migrated libswsscommon
-#     (src/sonic-swss-common), which is out of scope for this batch.
-#   - Version skew: the .deb keeps the SONiC-pinned name 2.9.0-14 while the
-#     data tar comes from trixie's current wpasupplicant.
+# Build-only system dependencies (apt). trixie + PUBLIC snapshot.debian.org,
+# dual-arch to keep the amd64/arm64 sysroots isolated (peer convention:
+# src/lldpd/MODULE.bazel). These provide the -dev headers + import libraries
+# for the openssl / dbus / pcsclite / readline / ncurses that the wpa
+# Makefile links (TLS=openssl, CTRL_IFACE_DBUS_NEW, PCSC, READLINE). libnl and
+# libswsscommon come from the migrated bazel_dep modules above, NOT apt.
 # =============================================================================
 apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
 apt.sources_list(
@@ -49,15 +58,19 @@ apt.sources_list(
     uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
 )
 apt.install(
-    dependency_set = "wpa_apt",
-    packages = ["wpasupplicant"],
-    suites = [
-        "trixie",
-        "trixie-updates",
-        "trixie-security",
+    dependency_set = "wpa_deps",
+    packages = [
+        "libssl-dev:amd64",
+        "libssl-dev:arm64",
+        "libdbus-1-dev:amd64",
+        "libdbus-1-dev:arm64",
+        "libpcsclite-dev:amd64",
+        "libpcsclite-dev:arm64",
+        "libreadline-dev:amd64",
+        "libreadline-dev:arm64",
+        "libncurses-dev:amd64",
+        "libncurses-dev:arm64",
     ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
 )
-apt.lock(
-    into = "wpa_packages.lock",
-)
-use_repo(apt, "wpa_apt")
+use_repo(apt, "wpa_deps")
