@@ -197,7 +197,29 @@ WPA_WARN_COPTS = [
     "-Wno-sign-compare",
 ]
 
-WPA_COPTS = WPA_WARN_COPTS + WPA_DEFINES
+# Debian hardening flags (debian/rules: DEB_BUILD_MAINT_OPTIONS=hardening=+all).
+# The sonic hermetic toolchain (-c opt) already supplies -O2 and -DNDEBUG and
+# attempts -D_FORTIFY_SOURCE=1. Two hardening aspects are NOT reproducible from
+# this module and remain toolchain/opt-mode properties shared by ALL sonic
+# Bazel binaries (e.g. libswsscommon.so.0 behaves identically):
+#   - FORTIFY (__*_chk): the sysroot glibc headers emit no fortified calls even
+#     with the flag -> would need a sonic-build-infra fix (out of scope).
+#   - assert (__assert_fail): opt mode forces -DNDEBUG after user copts.
+# What IS fixable here and done below: the toolchain does not add stack-protector,
+# so add it explicitly -> restores __stack_chk_fail to match the Make baseline.
+WPA_HARDEN_COPTS = [
+    "-fstack-protector-strong",
+    "-Wformat",
+    "-Wformat-security",
+]
+
+WPA_COPTS = WPA_WARN_COPTS + WPA_HARDEN_COPTS + WPA_DEFINES
+
+# Link-time hardening (dpkg-buildflags LDFLAGS: relro + immediate binding).
+WPA_HARDEN_LINKOPTS = [
+    "-Wl,-z,relro",
+    "-Wl,-z,now",
+]
 
 # wpa's own headers. `includes` mirrors the Make compile's search path: the
 # recipe runs from wpa_supplicant/ (=> "." on the quote path) with -I<abs>/src
@@ -455,6 +477,8 @@ cc_binary(
     copts = WPA_COPTS,
     linkopts = [
         "-Wl,--as-needed",
+        "-Wl,-z,relro",
+        "-Wl,-z,now",
         "-lrt",
         "-lm",
     ],
@@ -497,6 +521,8 @@ cc_binary(
     copts = WPA_COPTS,
     linkopts = [
         "-Wl,--as-needed",
+        "-Wl,-z,relro",
+        "-Wl,-z,now",
         "-lrt",
     ],
     deps = [
@@ -527,11 +553,16 @@ cc_binary(
     copts = WPA_COPTS,
     linkopts = [
         "-Wl,--as-needed",
+        "-Wl,-z,relro",
+        "-Wl,-z,now",
         "-lrt",
     ],
     deps = [
         ":wpa_headers",
-        "@wpa_deps//libssl-dev:libssl",
+        # wpa_passphrase only needs libcrypto (PBKDF2/SHA via crypto_openssl.c),
+        # not libssl (no TLS). The aggregate :libssl also links libssl.so (+ its
+        # z/zstd transitive), over-linking vs the Make baseline. Use :crypto.
+        "@wpa_deps//libssl-dev:crypto",
     ],
 )
 
