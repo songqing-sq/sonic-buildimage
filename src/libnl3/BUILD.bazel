@@ -308,6 +308,22 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+# _data / _statusd subtargets — consumed by the platform/vs docker-syncd-vs /
+# docker-gbsyncd-vs OCI image flatten() layers (Dockerfile.j2 dpkg -i of the
+# SONiC-built libnl-3-dev; part of docker_syncd_vs_debs). The DASH-SAI build
+# step keeps the -dev headers in the runtime image, matching the Make image.
+alias(
+    name = "libnl-3-dev_3.7.0-0.2+b1sonic1.deb_data",
+    actual = "@libnl3_src//:libnl-3-dev_3.7.0-0.2+b1sonic1.deb_data",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-3-dev_3.7.0-0.2+b1sonic1.deb_statusd",
+    actual = "@libnl3_src//:libnl-3-dev_3.7.0-0.2+b1sonic1.deb_statusd",
+    visibility = ["//visibility:public"],
+)
+
 alias(
     name = "libnl-genl-3-200_3.7.0-0.2+b1sonic1.deb",
     actual = "@libnl3_src//:libnl-genl-3-200_3.7.0-0.2+b1sonic1.deb",
@@ -356,6 +372,21 @@ alias(
 alias(
     name = "libnl-route-3-dev_3.7.0-0.2+b1sonic1.deb",
     actual = "@libnl3_src//:libnl-route-3-dev_3.7.0-0.2+b1sonic1.deb",
+    visibility = ["//visibility:public"],
+)
+
+# _data / _statusd subtargets — consumed by the platform/vs docker-syncd-vs /
+# docker-gbsyncd-vs OCI image flatten() layers (Dockerfile.j2 dpkg -i of the
+# SONiC-built libnl-route-3-dev; part of docker_syncd_vs_debs).
+alias(
+    name = "libnl-route-3-dev_3.7.0-0.2+b1sonic1.deb_data",
+    actual = "@libnl3_src//:libnl-route-3-dev_3.7.0-0.2+b1sonic1.deb_data",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "libnl-route-3-dev_3.7.0-0.2+b1sonic1.deb_statusd",
+    actual = "@libnl3_src//:libnl-route-3-dev_3.7.0-0.2+b1sonic1.deb_statusd",
     visibility = ["//visibility:public"],
 )
 
