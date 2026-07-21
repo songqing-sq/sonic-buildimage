@@ -371,6 +371,7 @@ oci_image(
     tars = [
         ":apt_layer",
         ":sonic_pkgs",
+        "@p4lang//:pi_runtime_layer",
         ":files",
     ],
     visibility = ["//visibility:public"],
