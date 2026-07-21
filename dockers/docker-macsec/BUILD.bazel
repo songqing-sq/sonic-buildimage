@@ -51,6 +51,28 @@ flatten(
 )
 
 # Dockerfile.j2 COPY directives (rules/docker-macsec.mk _FILES + cli/ tree).
+# wpasupplicant postinst side-effects (distroless runs no maintainer scripts,
+# so replicate per docker-base/docker-database convention). The Make image runs
+# `dpkg -i wpasupplicant.deb` whose postinst calls `deb-systemd-helper enable
+# wpa_supplicant.service`, creating two enablement symlinks (both -> the unit at
+# /lib/systemd/system/wpa_supplicant.service) plus deb-systemd-helper bookkeeping
+# files. These are inert under the container's supervisord init (systemd is not
+# the init and macsecmgrd launches /sbin/wpa_supplicant directly), but are
+# replicated here for Make image parity.
+genrule(
+    name = "wpa_dsh_files",
+    outs = [
+        "wpa_supplicant.service.dsh-also",
+        "dsh_dbus_fi_w1",
+        "dsh_multiuser_wpa_supplicant.service",
+    ],
+    cmd = r"""
+printf '/etc/systemd/system/dbus-fi.w1.wpa_supplicant1.service\n/etc/systemd/system/multi-user.target.wants/wpa_supplicant.service\n' > $(location wpa_supplicant.service.dsh-also)
+: > $(location dsh_dbus_fi_w1)
+: > $(location dsh_multiuser_wpa_supplicant.service)
+""",
+)
+
 tar(
     name = "files",
     srcs = [
@@ -60,6 +82,9 @@ tar(
         "cli/clear/plugins/clear_macsec_counter.py",
         "cli/config/plugins/macsec.py",
         "cli/show/plugins/show_macsec.py",
+        "wpa_supplicant.service.dsh-also",
+        "dsh_dbus_fi_w1",
+        "dsh_multiuser_wpa_supplicant.service",
     ],
     mtree = [
         "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location :supervisord.conf)",
@@ -68,6 +93,13 @@ tar(
         "./cli/clear/plugins/clear_macsec_counter.py uid=0 gid=0 mode=0644 type=file content=$(location :cli/clear/plugins/clear_macsec_counter.py)",
         "./cli/config/plugins/macsec.py uid=0 gid=0 mode=0644 type=file content=$(location :cli/config/plugins/macsec.py)",
         "./cli/show/plugins/show_macsec.py uid=0 gid=0 mode=0644 type=file content=$(location :cli/show/plugins/show_macsec.py)",
+        # wpasupplicant postinst: deb-systemd-helper enable wpa_supplicant.service.
+        "./etc/systemd/system/multi-user.target.wants/wpa_supplicant.service type=link link=/lib/systemd/system/wpa_supplicant.service",
+        "./etc/systemd/system/dbus-fi.w1.wpa_supplicant1.service type=link link=/lib/systemd/system/wpa_supplicant.service",
+        # deb-systemd-helper bookkeeping (empty state files + .dsh-also listing).
+        "./var/lib/systemd/deb-systemd-helper-enabled/wpa_supplicant.service.dsh-also uid=0 gid=0 mode=0644 type=file content=$(location wpa_supplicant.service.dsh-also)",
+        "./var/lib/systemd/deb-systemd-helper-enabled/dbus-fi.w1.wpa_supplicant1.service uid=0 gid=0 mode=0644 type=file content=$(location dsh_dbus_fi_w1)",
+        "./var/lib/systemd/deb-systemd-helper-enabled/multi-user.target.wants/wpa_supplicant.service uid=0 gid=0 mode=0644 type=file content=$(location dsh_multiuser_wpa_supplicant.service)",
     ],
 )
 
