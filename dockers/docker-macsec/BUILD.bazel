@@ -1,0 +1,97 @@
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+package(default_visibility = ["//visibility:public"])
+
+# =============================================================================
+# docker-macsec — MACsec agent container.
+#
+# base = docker-swss-layer-trixie. Verified against the Make docker-macsec image
+# package delta vs that base: the ONLY additions are `wpasupplicant` and its
+# runtime .so dep `libpcsclite1`; the file delta is those two debs' contents plus
+# 6 locally-COPY'd files (supervisord.conf, critical_processes,
+# etc/wpa_supplicant.conf, 3 cli plugins).
+#
+# NOT included (differs from the sonic-bazel bookworm reference, which over-packs
+# — this project follows the Make image as ground truth):
+#   - No python_layer / sonic-utilities. rules/docker-macsec.mk declares
+#     _INSTALL_PYTHON_WHEELS = SONIC_UTILITIES_PY3, but Dockerfile.j2 never calls
+#     install_python_wheels, so the Make image contains ZERO sonic-utilities /
+#     pip content (measured python dist-packages delta = 0).
+#   - No supervisor-proc-exit-listener COPY. The swss-layer base already ships it
+#     (the -rs variant referenced by supervisord.conf), so it is not re-copied.
+#   - python3-swsscommon / libyang3-py3 (_INSTALL_DEBS) are already in the base
+#     (package delta = 0), so not re-layered.
+# =============================================================================
+
+# wpasupplicant .deb (rules/docker-macsec.mk _DEPENDS; Dockerfile.j2 dpkg -i).
+# `_data` = file contents, `_statusd` = distroless dpkg status.d stub so
+# `dpkg -l` lists the package. wpasupplicant is an Approach-A apt-repackage of
+# trixie upstream (does NOT include the SONiC macsec_sonic driver — see
+# src/wpasupplicant and its verification report).
+flatten(
+    name = "sonic_pkgs",
+    deduplicate = True,
+    tars = [
+        "@wpasupplicant//:wpasupplicant_2.9.0-14.deb_data",
+        "@wpasupplicant//:wpasupplicant_2.9.0-14.deb_statusd",
+    ],
+)
+
+# wpasupplicant's runtime .so dependency, added on top of the base. flatten()
+# does NOT resolve Depends, so libpcsclite1 is listed explicitly (registered in
+# the shared @trixie pool in dockers/docker-base-trixie/base_trixie.MODULE.bazel).
+flatten(
+    name = "apt_layer",
+    deduplicate = True,
+    tars = [
+        "@trixie//libpcsclite1:data",
+    ],
+)
+
+# Dockerfile.j2 COPY directives (rules/docker-macsec.mk _FILES + cli/ tree).
+tar(
+    name = "files",
+    srcs = [
+        "supervisord.conf",
+        "critical_processes",
+        "etc/wpa_supplicant.conf",
+        "cli/clear/plugins/clear_macsec_counter.py",
+        "cli/config/plugins/macsec.py",
+        "cli/show/plugins/show_macsec.py",
+    ],
+    mtree = [
+        "./etc/supervisor/conf.d/supervisord.conf uid=0 gid=0 mode=0644 type=file content=$(location :supervisord.conf)",
+        "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location :critical_processes)",
+        "./etc/wpa_supplicant.conf uid=0 gid=0 mode=0644 type=file content=$(location :etc/wpa_supplicant.conf)",
+        "./cli/clear/plugins/clear_macsec_counter.py uid=0 gid=0 mode=0644 type=file content=$(location :cli/clear/plugins/clear_macsec_counter.py)",
+        "./cli/config/plugins/macsec.py uid=0 gid=0 mode=0644 type=file content=$(location :cli/config/plugins/macsec.py)",
+        "./cli/show/plugins/show_macsec.py uid=0 gid=0 mode=0644 type=file content=$(location :cli/show/plugins/show_macsec.py)",
+    ],
+)
+
+# Make docker-macsec final image config (Dockerfile.j2):
+# Entrypoint=["/usr/local/bin/supervisord"], Env adds DEBIAN_FRONTEND
+# (PATH inherited from base).
+oci_image(
+    name = "docker-macsec",
+    base = "//dockers/docker-swss-layer-trixie:docker-swss-layer-trixie",
+    entrypoint = ["/usr/local/bin/supervisord"],
+    env = {
+        "DEBIAN_FRONTEND": "noninteractive",
+    },
+    workdir = "/",
+    tars = [
+        ":sonic_pkgs",
+        ":apt_layer",
+        ":files",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = "docker-macsec",
+    repo_tags = ["docker-macsec:latest"],
+)

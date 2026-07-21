@@ -464,6 +464,17 @@ apt.install(
         "libjson-c5",
         "libnetsnmptrapd40t64",
         "libmariadb3",
+
+        # -------- docker-macsec runtime apt deps --------
+        # rules/docker-macsec.mk installs the wpasupplicant .deb, whose runtime
+        # Depends include libpcsclite1 (PC/SC lite, provides
+        # /lib/*/libpcsclite.so.1). It is NOT in the swss-layer base rootfs and
+        # flatten() does not resolve Depends, so docker-macsec/BUILD.bazel lists
+        # it explicitly. Verified against the Make docker-macsec image package
+        # delta vs docker-swss-layer-trixie base (adds: wpasupplicant,
+        # libpcsclite1). Registering the name here only makes @trixie//libpcsclite1
+        # addressable; it does NOT add it to any other image.
+        "libpcsclite1",
     ],
     suites = [
         "trixie",
