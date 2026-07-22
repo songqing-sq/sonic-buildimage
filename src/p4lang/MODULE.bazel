@@ -9,3 +9,10 @@ module(
     name = "p4lang",
     version = "0.1.1",
 )
+
+# rules_cc: cc_import facades for libpiprotobuf/libpiprotogrpc (extracted from the
+# p4lang-pi .deb) so @sonic-sairedis syncd_dash can link them. tar.bzl: the
+# pi_runtime_layer image tar shipping those .so into the docker images.
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "tar.bzl", version = "0.8.1")
+
