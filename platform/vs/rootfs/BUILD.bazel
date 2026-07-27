@@ -1,0 +1,151 @@
+# platform/vs/rootfs — boot artifacts for the Bazel sonic-vs.bin (Phase 3).
+#
+# Ground truth (Make): target/sonic-vs.bin payload = boot/{vmlinuz,initrd.img,
+# System.map,config}-6.12.41+deb13-sonic-amd64 + platform.tar.gz{firsttime,
+# x86_64-kvm_x86_64-r0/ -> common/sonic-platform-vs deb, grub/*.deb}.
+# fsroot-vs /etc/initramfs-tools: MODULES=most, the SONiC hooks and the
+# union-mount/varlog/swi2bin + fsck-rootfs/... boot scripts.
+#
+# The initrd is built with the STRUCTURAL sonic_rules/initramfs rule (hermetic
+# cpio assembly: initramfs-tools framework + static busybox + userspace apt
+# closure + MODULES=most kernel-module closure via sealed depmod). The
+# initramfs_real (unmodified mkinitramfs under unshare+chroot) variant cannot
+# run on hosts with unprivileged userns disabled (this build host). Known
+# deviation from Make: COMPRESS=gzip instead of zstd (kernel has both
+# CONFIG_RD_GZIP/ZSTD; boot-equivalent).
+#
+# NOTE: sonic-platform-vs is NOT installed in fsroot — Make ships it inside
+# platform.tar.gz and installs it at first boot; sonic-device-data ships via
+# //platform/common/rootfs:sonic_debs_layer.
+
+load("@sonic_build_infra//initramfs:defs.bzl", "initramfs")
+
+package(default_visibility = ["//visibility:public"])
+
+KVERSION = "6.12.41+deb13-sonic-amd64"
+
+# Static busybox binary for the initrd shell (exec'd at build time to list
+# applets, so it must be static). trixie busybox-static installs
+# ./usr/bin/busybox (merged-usr).
+genrule(
+    name = "busybox_static",
+    srcs = ["@trixie//busybox-static:data"],
+    outs = ["busybox"],
+    cmd = "tar -xOf $$(echo $(locations @trixie//busybox-static:data) | tr ' ' '\\n' | head -1) ./usr/bin/busybox > $@ && chmod +x $@",
+)
+
+# Boot userspace closure: the binaries the SONiC init-premount/init-bottom
+# scripts and (skipped) hooks would need at runtime — e2fsprogs (mke2fs/
+# e2fsck/resize2fs), acl (setfacl), util-linux (losetup/blkid), kmod
+# (modprobe), zstd (pzstd for docker_inram), file. Each @trixie//<pkg> pulls
+# its shared-lib dep closure.
+_USERSPACE = [
+    "@trixie//e2fsprogs",
+    "@trixie//acl",
+    "@trixie//util-linux",
+    "@trixie//kmod",
+    "@trixie//zstd",
+    "@trixie//file",
+    "@trixie//libmagic1t64",
+    "@trixie//libmagic-mgc",
+]
+
+initramfs(
+    name = "initrd",
+    busybox = ":busybox_static",
+    depmod = "@sonic_build_infra//kernel_host_tools:depmod",
+    initramfs_tools_data = "//platform/common/rootfs:sonic_deb_initramfs-tools-core",
+    kversion = KVERSION,
+    modules = [
+        # files/initramfs-tools/modules (build_debian.sh appends to
+        # /etc/initramfs-tools/modules) — the SONiC boot-critical set.
+        "squashfs",
+        "overlay",
+        "vfat",
+        "nls_ascii",
+        "nls_cp437",
+        "nls_utf8",
+        "nvme",
+        "zstd",
+        "efivarfs",
+        # loop/virtio for the vs KVM boot path (loop-mounted squashfs root).
+        "loop",
+        "virtio_blk",
+        "virtio_pci",
+        "virtio_net",
+        "ext4",
+    ],
+    modules_tree = "//platform/vs/kernel:modules_install",
+    out = "initrd.img-" + KVERSION,
+    scripts = {
+        # fsroot-vs /etc/initramfs-tools truth -> cpio scripts/ layout.
+        "//files/initramfs-tools:union-mount": "scripts/init-bottom/union-mount",
+        "//files/initramfs-tools:varlog": "scripts/init-bottom/varlog",
+        "//files/initramfs-tools:swi2bin": "scripts/init-bottom/swi2bin",
+        "//files/initramfs-tools:fsck-rootfs": "scripts/init-premount/fsck-rootfs",
+        "//files/initramfs-tools:resize-rootfs": "scripts/init-premount/resize-rootfs",
+        "//files/initramfs-tools:ssd-upgrade": "scripts/init-premount/ssd-upgrade",
+        "//files/initramfs-tools:arista-convertfs": "scripts/init-premount/arista-convertfs",
+        "//files/initramfs-tools:arista-hook": "scripts/init-premount/arista-hook",
+        "//files/initramfs-tools:arista-net": "scripts/init-premount/arista-net",
+        "//files/initramfs-tools:arista-wait-blockdev": "scripts/init-premount/arista-wait-blockdev",
+    },
+    tags = ["manual"],
+    userspace_layers = _USERSPACE,
+)
+
+# -----------------------------------------------------------------------------
+# platform.tar.gz — mirror of the Make payload member:
+#   ./firsttime                                (empty marker)
+#   ./common/sonic-platform-vs_1.0_amd64.deb   (the platform deb)
+#   ./x86_64-kvm_x86_64-r0/... -> symlink into common/
+#   ./grub/grub-pc-bin*.deb grub-efi-amd64-bin*.deb
+# The debs are Make artifacts bridged from target/debs/trixie (same pattern
+# as the kernel bridge).
+# -----------------------------------------------------------------------------
+_PLATFORM_DEBS = [
+    "sonic-platform-vs_1.0_amd64.deb",
+    "grub-pc-bin_2.06-13+deb13u1_amd64.deb",
+    "grub-efi-amd64-bin_2.06-13+deb13u1_amd64.deb",
+]
+
+genrule(
+    name = "platform_debs",
+    srcs = ["//platform/vs/kernel:BUILD.bazel"],
+    outs = ["debs/" + d for d in _PLATFORM_DEBS],
+    cmd = ("set -e; " +
+           "WS=$$(dirname $$(dirname $$(dirname $$(dirname $$(readlink -f $(location //platform/vs/kernel:BUILD.bazel)))))); " +
+           "".join([
+               ("if [ ! -f $$WS/target/debs/trixie/{d} ]; then " +
+                "echo 'ERROR: target/debs/trixie/{d} missing — run the Make build first' >&2; exit 1; fi; " +
+                "cp $$WS/target/debs/trixie/{d} $(location debs/{d}); ").format(d = d)
+               for d in _PLATFORM_DEBS
+           ])),
+    local = True,
+    message = "SONiC platform debs (Make bridge)",
+    tags = [
+        "no-sandbox",
+        "manual",
+    ],
+)
+
+genrule(
+    name = "platform_tar",
+    srcs = [":platform_debs"],
+    outs = ["platform.tar.gz"],
+    cmd = """set -eu
+d=$$(mktemp -d)
+touch $$d/firsttime
+mkdir -p $$d/common $$d/x86_64-kvm_x86_64-r0 $$d/grub
+for f in $(locations :platform_debs); do
+    case $$f in
+        *sonic-platform-vs*) cp $$f $$d/common/ ;;
+        *grub*) cp $$f $$d/grub/ ;;
+    esac
+done
+ln -s ../common/sonic-platform-vs_1.0_amd64.deb $$d/x86_64-kvm_x86_64-r0/sonic-platform-vs_1.0_amd64.deb
+tar -czf $@ --owner=0 --group=0 --numeric-owner -C $$d .
+rm -rf $$d
+""",
+    tags = ["manual"],
+)

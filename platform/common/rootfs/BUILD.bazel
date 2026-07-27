@@ -1,0 +1,196 @@
+load("@rules_deb//apt:defs.bzl", "dpkg_status")
+load("@rules_deb//distroless:defs.bzl", "flatten")
+load("@tar.bzl", "tar")
+load("//platform/common/rootfs:host_packages.bzl", "HOST_PACKAGES")
+load("//platform/common/rootfs:sonic_host_debs.bzl", "SONIC_HOST_DEBS")
+
+# =============================================================================
+# Host (vs) rootfs layers for the Bazel-built sonic-vs.bin.
+#
+# Ground truth: the Make build's fsroot-vs/ tree (built by build_debian.sh +
+# files/build_templates/sonic_debian_extension.j2). Every layer's content is
+# derived from what Make actually laid into fsroot-vs, NOT re-imagined.
+#
+# Layer order (consumed by sonic_onie_image via sonic_squashfs; later layers
+# overwrite earlier ones):
+#   base_layer          Debian closure (431 pkgs = fsroot dpkg status minus
+#                       SONiC debs minus docker-ce family) + dpkg status
+#   docker_engine_layer docker-ce/docker-ce-cli/containerd.io (download.docker.com)
+#   sonic_debs_layer    the 57 SONiC-built host debs from target/debs/trixie
+#   passwd/group/shadow exact fsroot-vs /etc identities
+#   host_config_layer   hostname/hosts/fstab + docker drop-ins
+#   ...                 (scripts/templates/etc/version/systemd layers follow)
+# =============================================================================
+
+# /var/lib/dpkg/status for every Debian package in the closure, so dpkg -l /
+# apt work on the booted host (parity with the Make chroot install).
+dpkg_status(
+    name = "dpkg_status",
+    controls = ["@trixie//{}:control".format(p) for p in HOST_PACKAGES],
+)
+
+# vim + apt-transport-https: bridged as http_file debs (see MODULE.bazel —
+# trixie virtual providers shadow the real packages in the apt resolver).
+[
+    genrule(
+        name = "bridged_deb_" + n,
+        srcs = [lbl],
+        outs = ["bridged_deb_" + n + ".tar"],
+        cmd = "dpkg-deb --fsys-tarfile $(location {lbl}) > $@".format(lbl = lbl),
+    )
+    for n, lbl in {
+        "vim": "@vim_deb//file",
+        "apt_transport_https": "@apt_transport_https_deb//file",
+    }.items()
+]
+
+# The Debian host package closure. HOST_PACKAGES is already the FULL closure
+# (taken verbatim from fsroot-vs dpkg status), so `:data` tars (own package
+# contents, no transitive re-resolution) reproduce the exact Make file set and
+# avoid the rules_distroless Arch:all mixed-arch leak of the bare labels.
+flatten(
+    name = "base_layer",
+    deduplicate = True,
+    tars = ["@trixie//{}:data".format(p) for p in HOST_PACKAGES] + [
+        ":bridged_deb_vim",
+        ":bridged_deb_apt_transport_https",
+        ":dpkg_status",
+    ],
+    visibility = ["//platform:__subpackages__"],
+)
+
+# -----------------------------------------------------------------------------
+# Docker engine: build_debian.sh installs docker-ce/docker-ce-cli/containerd.io
+# from download.docker.com (bridged as pinned http_file debs in MODULE.bazel;
+# versions match fsroot-vs dpkg status). Their Debian deps (iptables, nftables,
+# libseccomp2, libsystemd0, ...) are already in HOST_PACKAGES.
+# Extract each deb's data.tar into a plain tar for the flatten pipeline.
+# -----------------------------------------------------------------------------
+[
+    genrule(
+        name = "docker_deb_" + n,
+        srcs = [lbl],
+        outs = ["docker_deb_" + n + ".tar"],
+        cmd = ("d=$$(mktemp -d); dpkg-deb --fsys-tarfile $(location {lbl}) > $@.tmp; " +
+               "mv $@.tmp $@; rm -rf $$d").format(lbl = lbl),
+    )
+    for n, lbl in {
+        "ce": "@docker_ce_deb//file",
+        "ce_cli": "@docker_ce_cli_deb//file",
+        "containerd": "@containerd_io_deb//file",
+    }.items()
+]
+
+flatten(
+    name = "docker_engine_layer",
+    deduplicate = True,
+    tars = [
+        ":docker_deb_ce",
+        ":docker_deb_ce_cli",
+        ":docker_deb_containerd",
+    ],
+    visibility = ["//platform:__subpackages__"],
+)
+
+# -----------------------------------------------------------------------------
+# SONiC-built host debs (audisp-tacplus ... systemd-sonic-generator): the 57
+# packages Make installs into the host fs from target/debs/trixie
+# (one-image.mk INSTALLS + build_debian.sh FIPS/openssh/python overrides).
+# Bridged from the Make output tree like //platform/vs/kernel — the deb is the
+# Make artifact itself, so content equivalence is by construction. Runs
+# `make <deb>` only if the deb is absent (local, non-hermetic bridge; the
+# hermetic per-package sonic_deb migrations replace these one by one).
+# -----------------------------------------------------------------------------
+exports_files(["BUILD.bazel"])
+
+[
+    genrule(
+        name = "sonic_deb_" + pkg.replace(".", "_").replace("+", "_"),
+        srcs = ["BUILD.bazel"],
+        outs = ["sonic_debs/" + deb + ".tar"],
+        cmd = ("set -e; " +
+               "WS=$$(dirname $$(dirname $$(dirname $$(dirname $$(readlink -f $(location BUILD.bazel)))))); " +
+               "DEB=$$WS/target/debs/trixie/{deb}; " +
+               "if [ ! -f $$DEB ]; then " +
+               "  echo 'ERROR: '$$DEB' missing — run the Make build first (make target/debs/trixie/{deb})' >&2; exit 1; " +
+               "fi; " +
+               "dpkg-deb --fsys-tarfile $$DEB > $@").format(deb = deb),
+        local = True,
+        message = "SONiC host deb (Make bridge) -> " + deb,
+        tags = [
+            "no-sandbox",
+            "manual",
+        ],
+        visibility = ["//platform:__subpackages__"],
+    )
+    for pkg, deb in SONIC_HOST_DEBS.items()
+]
+
+flatten(
+    name = "sonic_debs_layer",
+    deduplicate = True,
+    tars = [
+        ":sonic_deb_" + pkg.replace(".", "_").replace("+", "_")
+        for pkg in SONIC_HOST_DEBS
+    ],
+    tags = ["manual"],
+    visibility = ["//platform:__subpackages__"],
+)
+
+# -----------------------------------------------------------------------------
+# Identity: /etc/passwd, /etc/group, /etc/shadow copied from the Make
+# fsroot-vs truth (all the users build_debian.sh + maintainer scripts created:
+# admin/uid 1000 in sudo+docker+redis groups, messagebus, sshd, _chrony, tss,
+# nslcd, ...). shadow is regenerated: system users locked with '*', admin
+# carries the SHA-512 hash of rules/config DEFAULT_PASSWORD (YourPaSsWoRd).
+# -----------------------------------------------------------------------------
+tar(
+    name = "passwd",
+    srcs = ["files/passwd"],
+    mtree = [
+        "./etc/passwd uid=0 gid=0 mode=0644 type=file content=$(location files/passwd)",
+    ],
+    visibility = ["//platform:__subpackages__"],
+)
+
+tar(
+    name = "group",
+    srcs = ["files/group"],
+    mtree = [
+        "./etc/group uid=0 gid=0 mode=0644 type=file content=$(location files/group)",
+    ],
+    visibility = ["//platform:__subpackages__"],
+)
+
+tar(
+    name = "shadow_layer",
+    srcs = ["files/shadow"],
+    mtree = [
+        "./etc/shadow uid=0 gid=42 mode=0600 type=file content=$(location files/shadow)",
+    ],
+    visibility = ["//platform:__subpackages__"],
+)
+
+# -----------------------------------------------------------------------------
+# Host identity/mount config (build_debian.sh writes these directly) + the
+# docker daemon drop-ins:
+#   /etc/systemd/system/docker.service.d/docker.service.conf (build_debian.sh:290)
+#   DOCKER_OPTS append to /etc/default/docker (sonic_debian_extension.j2:69)
+#     — shipped as a one-line override file content matching fsroot-vs tail.
+# -----------------------------------------------------------------------------
+tar(
+    name = "host_config_layer",
+    srcs = [
+        "files/hostname",
+        "files/hosts",
+        "files/fstab",
+        "//files/docker:docker.service.conf",
+    ],
+    mtree = [
+        "./etc/hostname uid=0 gid=0 mode=0644 type=file content=$(location files/hostname)",
+        "./etc/hosts uid=0 gid=0 mode=0644 type=file content=$(location files/hosts)",
+        "./etc/fstab uid=0 gid=0 mode=0644 type=file content=$(location files/fstab)",
+        "./etc/systemd/system/docker.service.d/docker.service.conf uid=0 gid=0 mode=0644 type=file content=$(location //files/docker:docker.service.conf)",
+    ],
+    visibility = ["//platform:__subpackages__"],
+)

@@ -1,0 +1,4 @@
+exports_files(
+    ["docker.service.conf"],
+    visibility = ["//visibility:public"],
+)

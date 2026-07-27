@@ -17,6 +17,7 @@
 # KVERSION must match src/sonic-linux-kernel (Make's KVERSION). When the
 # kernel is bumped, update it here (single source below).
 
+load("@bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load(":deb_modules_tree.bzl", "deb_modules_tree")
 
 package(default_visibility = ["//visibility:public"])
@@ -89,6 +90,14 @@ filegroup(
     ],
 )
 
+# boot/-rooted TREE artifact (vmlinuz/System.map/config under boot/) — the
+# shape installer_payload's `boot_files` attr consumes (`cp -RL <tree>/.`).
+copy_to_directory(
+    name = "boot_tree",
+    srcs = [":boot_files"],
+    root_paths = ["platform/vs/kernel"],
+)
+
 # --- Modules tree ------------------------------------------------------------
 # Tree artifact (declare_directory) rooted at lib/modules/<KVERSION>/ — the
 # `make modules_install` PREFIX shape that sonic_rules/initramfs expects for
@@ -98,4 +107,14 @@ deb_modules_tree(
     name = "modules_install",
     deb = ":linux_image_deb",
     kversion = KVERSION,
+)
+
+# Same tree but rooted at the CONTENTS of lib/modules/<KVERSION>/ — the shape
+# initramfs_real's builder expects for its modules_tree input.
+deb_modules_tree(
+    name = "modules_flat",
+    deb = ":linux_image_deb",
+    flat = True,
+    kversion = KVERSION,
+    out_dir = "modules_flat_dir",
 )

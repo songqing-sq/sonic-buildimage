@@ -1,0 +1,7 @@
+exports_files(
+    [
+        "sharch_body.sh",
+        "install.sh",
+    ],
+    visibility = ["//visibility:public"],
+)

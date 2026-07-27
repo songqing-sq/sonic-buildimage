@@ -1,0 +1,35 @@
+load("@sonic_build_infra//config:arch.bzl", "DEBIAN_ARCH")
+load("@sonic_build_infra//onie_installer:image.bzl", "sonic_onie_image")
+load("//platform/vs:docker_set.bzl", "VS_DOCKERS")
+
+# The Bazel-assembled sonic-vs.bin ONIE installer (Phase 5 of the vs.bin
+# migration). Content baseline = the Make-built target/sonic-vs.bin
+# (machine=vs, platform=x86_64-vs-r0, ONIE_IMAGE_PART_SIZE=32768 from
+# platform/vs/onie.mk defaults, VAR_LOG_SIZE=4096).
+sonic_onie_image(
+    name = "sonic-vs-bin",
+    arch = DEBIAN_ARCH,
+    boot_files = "//platform/vs/kernel:boot_tree",
+    dockers = VS_DOCKERS,
+    image_version = "bazel-dev",
+    initrd = "//platform/vs/rootfs:initrd",
+    install_sh_template = "//installer:install.sh",
+    machine = "vs",
+    onie_conf = "//:onie-image.conf",
+    onie_conf_arch = "//:onie-image-arm64.conf",
+    onie_image_part_size = "32768",
+    platform = "x86_64-vs-r0",
+    platform_tar = "//platform/vs/rootfs:platform_tar",
+    rootfs_layers = [
+        "//platform/common/rootfs:base_layer",
+        "//platform/common/rootfs:docker_engine_layer",
+        "//platform/common/rootfs:sonic_debs_layer",
+        "//platform/common/rootfs:passwd",
+        "//platform/common/rootfs:group",
+        "//platform/common/rootfs:shadow_layer",
+        "//platform/common/rootfs:host_config_layer",
+    ],
+    sharch_body = "//installer:sharch_body.sh",
+    var_log_file_size = "4096",
+    visibility = ["//visibility:public"],
+)

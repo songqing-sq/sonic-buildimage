@@ -182,8 +182,11 @@ tar(
     name = "rootdirslinks",
     mtree = [
         "./bin/sh type=link link=/bin/bash",
-        "./var/log/supervisor type=dir",
-        "./etc/supervisor/conf.d type=dir",
+        # Explicit mode: mtree type=dir defaults to mode 0 (d---------), which
+        # the daemonless overlay2 store pack cannot descend into as non-root.
+        # Make's `mkdir -p` creates these 0755.
+        "./var/log/supervisor uid=0 gid=0 mode=0755 type=dir",
+        "./etc/supervisor/conf.d uid=0 gid=0 mode=0755 type=dir",
         "./usr/bin/vim type=link link=/usr/bin/vim.tiny",
         # The pip-installed supervisord entry-point uses a shell shebang that
         # resolves `python3` as a sibling of the script under /usr/local/bin

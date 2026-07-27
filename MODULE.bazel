@@ -818,6 +818,60 @@ http_file(
     urls = [_OTEL_URL_PREFIX + "/otelcol-contrib_" + _OTEL_VERSION + "_linux_arm64.deb"],
 )
 
+# ---------------------------------------------------------------------------
+# Docker engine debs for the host (vs) rootfs. build_debian.sh installs
+# docker-ce=${DOCKER_VERSION} docker-ce-cli=${DOCKER_VERSION}
+# containerd.io=${CONTAINERD_IO_VERSION} from download.docker.com (NOT the
+# Debian snapshot), so they are bridged here as pinned http_file debs matching
+# the exact versions recorded in the Make fsroot-vs dpkg status
+# (5:28.5.2-1~debian.13~trixie / 1.7.28-2~debian.13~trixie).
+# platform/common/rootfs extracts them into the docker_engine_layer.
+# ---------------------------------------------------------------------------
+_DOCKER_DEB_URL = "https://download.docker.com/linux/debian/dists/trixie/pool/stable/amd64/"
+
+http_file(
+    name = "docker_ce_deb",
+    downloaded_file_path = "docker-ce_28.5.2-1~debian.13~trixie_amd64.deb",
+    sha256 = "10f6fba7cfe2309cfb3a14033218339c6f0687247903806e6298943fca0ca740",
+    urls = [_DOCKER_DEB_URL + "docker-ce_28.5.2-1~debian.13~trixie_amd64.deb"],
+)
+
+http_file(
+    name = "docker_ce_cli_deb",
+    downloaded_file_path = "docker-ce-cli_28.5.2-1~debian.13~trixie_amd64.deb",
+    sha256 = "dde4a0613e538847ed8558dbd937accd31fb76fca9c115e42442b812b7d13c0a",
+    urls = [_DOCKER_DEB_URL + "docker-ce-cli_28.5.2-1~debian.13~trixie_amd64.deb"],
+)
+
+http_file(
+    name = "containerd_io_deb",
+    downloaded_file_path = "containerd.io_1.7.28-2~debian.13~trixie_amd64.deb",
+    sha256 = "18fad97fa08cb1e5f1f76f3dfd9a571e83f11e135f13ef77b83f2aa35397a619",
+    urls = [_DOCKER_DEB_URL + "containerd.io_1.7.28-2~debian.13~trixie_amd64.deb"],
+)
+
+# vim + apt-transport-https cannot come from the @trixie apt pool: trixie has
+# versioned virtual providers (vim-motif/vim-nox `Provides: vim (= 2:9.1.1230-2)`,
+# apt `Provides: apt-transport-https (= 3.0.3)`) and the rules_distroless
+# resolver prefers virtual providers, so any request — even version-pinned —
+# resolves to the provider instead of the real package. Bridge the real debs
+# from the same snapshot the pool uses; versions match fsroot-vs dpkg status.
+_SNAPSHOT_POOL = "https://snapshot.debian.org/archive/debian/20260409T202916Z/"
+
+http_file(
+    name = "vim_deb",
+    downloaded_file_path = "vim_9.1.1230-2_amd64.deb",
+    sha256 = "7050d710bbcd5dee68865d90fd95a9aa865bf16d9a3874c5bb6a4f1d69231cfe",
+    urls = [_SNAPSHOT_POOL + "pool/main/v/vim/vim_9.1.1230-2_amd64.deb"],
+)
+
+http_file(
+    name = "apt_transport_https_deb",
+    downloaded_file_path = "apt-transport-https_3.0.3_all.deb",
+    sha256 = "b160504c20da5557ad6d5dd691f2ea486874e50539af2e5f389b5cbb047837e7",
+    urls = [_SNAPSHOT_POOL + "pool/main/a/apt/apt-transport-https_3.0.3_all.deb"],
+)
+
 # NOTE: docker-base-trixie's apt sources_list must be the LAST-registered
 # so rules_distroless's `sources[suite] = ...` overwrite keeps our
 # snapshot.debian.org URIs (which retain older versions) instead of being
