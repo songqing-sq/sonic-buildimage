@@ -977,9 +977,20 @@ genrule(
     name = "kernel_modules_layer",
     srcs = ["//platform/vs/kernel:modules_install"],
     outs = ["kernel_modules_layer.tar"],
-    cmd = ("tar -cf $@ --owner=0 --group=0 --numeric-owner " +
-           "--transform='s,^modules/,usr/lib/modules/,' " +
-           "-C $(location //platform/vs/kernel:modules_install)/lib modules"),
+    # The deb ships the .ko tree but NOT modules.dep/.alias/.symbols (its
+    # postinst runs depmod). Reproduce that: copy the tree writable, run the
+    # sealed depmod (kmod multicall, invoked through an argv0-named symlink),
+    # then pack under usr/lib/modules (merged-usr, matching the deb).
+    cmd = ("set -e; " +
+           "S=$(location //platform/vs/kernel:modules_install); " +
+           "W=$$(mktemp -d); B=$$(mktemp -d); " +
+           "cp -a $$S/lib $$W/lib; chmod -R u+w $$W; " +
+           "ln -s $$(readlink -f $(location @sonic_build_infra//kernel_host_tools:depmod)) $$B/depmod; " +
+           "$$B/depmod -b $$W 6.12.41+deb13-sonic-amd64; " +
+           "tar -cf $@ --owner=0 --group=0 --numeric-owner " +
+           "--transform='s,^lib/,usr/lib/,' -C $$W lib; " +
+           "chmod -R u+w $$W $$B; rm -rf $$W $$B"),
+    tools = ["@sonic_build_infra//kernel_host_tools:depmod"],
     visibility = ["//platform:__subpackages__"],
 )
 
