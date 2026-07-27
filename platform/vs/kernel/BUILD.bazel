@@ -1,0 +1,101 @@
+# Kernel deb bridge for the Bazel sonic-vs image (Phase 1 of the vs.bin
+# migration).
+#
+# The vs image needs the SONiC kernel's boot files (vmlinuz / System.map /
+# config) and the modules tree (for the initramfs closure). The kernel is not
+# yet source-built in Bazel here (sonic_rules/kernel has the sonic_kernel
+# macro, but instantiating the full Debian kernel pipeline is a separate,
+# later phase). Until then we bridge the Make-built linux-image deb — which
+# IS the Make baseline the migrated image must match — the same way
+# src/p4lang bridges its debs:
+#   * a local/no-sandbox genrule derives the real workspace root at runtime
+#     (no hardcoded machine paths) and runs SONiC `make` for the deb (a no-op
+#     when target/debs already has it),
+#   * extraction genrules then pull the boot files and the modules tree out
+#     of the deb hermetically (dpkg-deb -x into declared outputs).
+#
+# KVERSION must match src/sonic-linux-kernel (Make's KVERSION). When the
+# kernel is bumped, update it here (single source below).
+
+load(":deb_modules_tree.bzl", "deb_modules_tree")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["BUILD.bazel"])
+
+KVERSION = "6.12.41+deb13-sonic-amd64"
+
+_DEB = "linux-image-{}-unsigned_6.12.41-1_amd64.deb".format(KVERSION)
+
+_DEBDIR = "target/debs/trixie"
+
+# --- Make bridge: obtain the linux-image deb (no-op if already built) -------
+genrule(
+    name = "linux_image_deb",
+    srcs = ["BUILD.bazel"],
+    outs = [_DEB],
+    cmd = ("set -e; " +
+           "WS=$$(dirname $$(dirname $$(dirname $$(dirname $$(readlink -f $(location BUILD.bazel)))))); " +
+           "if [ ! -f $$WS/{dir}/{deb} ]; then make -C $$WS {dir}/{deb} 1>&2; fi; " +
+           "cp $$WS/{dir}/{deb} $@").format(dir = _DEBDIR, deb = _DEB),
+    local = True,
+    message = "SONiC make (local) -> " + _DEB,
+    tags = [
+        "no-sandbox",
+        "requires-network",
+        "manual",
+    ],
+)
+
+# --- Boot files --------------------------------------------------------------
+# Extracted hermetically from the deb (sandboxed; dpkg-deb only reads the deb).
+genrule(
+    name = "boot_files_extract",
+    srcs = [":linux_image_deb"],
+    outs = [
+        "boot/vmlinuz-" + KVERSION,
+        "boot/System.map-" + KVERSION,
+        "boot/config-" + KVERSION,
+    ],
+    cmd = ("set -e; d=$$(mktemp -d); " +
+           "dpkg-deb -x $(location :linux_image_deb) $$d; " +
+           "cp $$d/boot/vmlinuz-{k} $(location boot/vmlinuz-{k}); " +
+           "cp $$d/boot/System.map-{k} $(location boot/System.map-{k}); " +
+           "cp $$d/boot/config-{k} $(location boot/config-{k}); " +
+           "rm -rf $$d").format(k = KVERSION),
+)
+
+filegroup(
+    name = "vmlinuz",
+    srcs = ["boot/vmlinuz-" + KVERSION],
+)
+
+filegroup(
+    name = "system_map",
+    srcs = ["boot/System.map-" + KVERSION],
+)
+
+filegroup(
+    name = "kernel_config",
+    srcs = ["boot/config-" + KVERSION],
+)
+
+filegroup(
+    name = "boot_files",
+    srcs = [
+        "boot/vmlinuz-" + KVERSION,
+        "boot/System.map-" + KVERSION,
+        "boot/config-" + KVERSION,
+    ],
+)
+
+# --- Modules tree ------------------------------------------------------------
+# Tree artifact (declare_directory) rooted at lib/modules/<KVERSION>/ — the
+# `make modules_install` PREFIX shape that sonic_rules/initramfs expects for
+# its hermetic depmod closure. The deb ships modules under usr/lib/modules on
+# merged-usr trixie; the rule normalizes to lib/modules/.
+deb_modules_tree(
+    name = "modules_install",
+    deb = ":linux_image_deb",
+    kversion = KVERSION,
+)
