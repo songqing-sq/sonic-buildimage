@@ -8,13 +8,12 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files(["uv.lock"])
 exports_files(glob(["yang-models/*.yang"]))
-exports_files(glob(["cvlyang-models/*.yang"]))
 
-filegroup(
-    name = "cvlyang_models_files",
-    srcs = glob(["cvlyang-models/*.yang"]),
-    visibility = ["//visibility:public"],
-)
+# NOTE: no reference to the source-tree cvlyang-models/ directory here. That
+# directory is a side-effect of Make's setup.py (my_build_py) run in-tree,
+# gitignored and absent on a fresh clone (empty glob = loading error on
+# Bazel 8), and can be stale. The cvl-flavored set is fully generated below
+# (gen/cvlyang-models/); see :cvlyang_models_files.
 
 filegroup(
     name = "all_yang_models",
@@ -227,15 +226,28 @@ py_venv_binary(
 # Static yang files need to land in BOTH yang-models/ (via the source file
 # itself) and cvlyang-models/ (which Make's setup.py builds by shutil.copyfile
 # in my_build_py). py_wheel.data_files keys are unique label paths, so we
-# generate a second labeled copy for the cvl side.
+# generate a second labeled copy for the cvl side. Outputs share the
+# gen/cvlyang-models/ directory with the rendered templates (lists are
+# disjoint) so :cvlyang_models_files spans exactly one directory -- consumers
+# (sonic-mgmt-common codegen) derive the model dir from any one file.
 [
     copy_file(
         name = "cvl_copy_" + f.replace(".yang", ""),
         src = "yang-models/" + f,
-        out = "gen/cvlyang-models-static/" + f,
+        out = "gen/cvlyang-models/" + f,
     )
     for f in STATIC_YANG_FILES
 ]
+
+# Complete cvl-flavored model set (4 rendered + 142 copied = 146), all under
+# gen/cvlyang-models/. Replaces the old glob of the Make-generated source-tree
+# cvlyang-models/ directory (non-hermetic, stale: it lacked the 4 rendered
+# templates, breaking yang_build_tree's sonic-types.yang import).
+filegroup(
+    name = "cvlyang_models_files",
+    srcs = [":gen/cvlyang-models/" + f for f in TEMPLATE_YANG_FILES + STATIC_YANG_FILES],
+    visibility = ["//visibility:public"],
+)
 
 # =============================================================================
 # py_wheel: sonic_yang_models-1.0-py3-none-any.whl
@@ -245,7 +257,7 @@ _DATA_FILES = {}
 [_DATA_FILES.update({":gen/yang-models/" + f: "data/yang-models/" + f}) for f in TEMPLATE_YANG_FILES]
 [_DATA_FILES.update({":gen/cvlyang-models/" + f: "data/cvlyang-models/" + f}) for f in TEMPLATE_YANG_FILES]
 [_DATA_FILES.update({"yang-models/" + f: "data/yang-models/" + f}) for f in STATIC_YANG_FILES]
-[_DATA_FILES.update({":gen/cvlyang-models-static/" + f: "data/cvlyang-models/" + f}) for f in STATIC_YANG_FILES]
+[_DATA_FILES.update({":gen/cvlyang-models/" + f: "data/cvlyang-models/" + f}) for f in STATIC_YANG_FILES]
 
 py_library(
     name = "tests_pkg",
@@ -308,14 +320,14 @@ _INSTALL_MTREE = (
     ["./usr/local/yang-models/" + f + " uid=0 gid=0 mode=0644 type=file content=$(location :gen/yang-models/" + f + ")" for f in TEMPLATE_YANG_FILES] +
     ["./usr/local/yang-models/" + f + " uid=0 gid=0 mode=0644 type=file content=$(location yang-models/" + f + ")" for f in STATIC_YANG_FILES] +
     ["./usr/local/cvlyang-models/" + f + " uid=0 gid=0 mode=0644 type=file content=$(location :gen/cvlyang-models/" + f + ")" for f in TEMPLATE_YANG_FILES] +
-    ["./usr/local/cvlyang-models/" + f + " uid=0 gid=0 mode=0644 type=file content=$(location :gen/cvlyang-models-static/" + f + ")" for f in STATIC_YANG_FILES]
+    ["./usr/local/cvlyang-models/" + f + " uid=0 gid=0 mode=0644 type=file content=$(location :gen/cvlyang-models/" + f + ")" for f in STATIC_YANG_FILES]
 )
 
 _INSTALL_SRCS = (
     [":gen/yang-models/" + f for f in TEMPLATE_YANG_FILES] +
     ["yang-models/" + f for f in STATIC_YANG_FILES] +
     [":gen/cvlyang-models/" + f for f in TEMPLATE_YANG_FILES] +
-    [":gen/cvlyang-models-static/" + f for f in STATIC_YANG_FILES]
+    [":gen/cvlyang-models/" + f for f in STATIC_YANG_FILES]
 )
 
 tar(
