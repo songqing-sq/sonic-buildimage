@@ -24,8 +24,6 @@ package(default_visibility = ["//visibility:public"])
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@tar.bzl", "tar")
 
-_WS = "/data/sonic/sonic-dzf"
-
 _DEBDIR = "target/debs/trixie"
 
 # target label  ->  produced .deb filename
@@ -38,13 +36,18 @@ _DEBS = {
 [
     genrule(
         name = target,
+        srcs = ["MODULE.bazel"],
         outs = [deb_file],
         # Run SONiC make for this deb (no-op if already up-to-date), then copy
-        # the produced artifact into the Bazel output tree.
+        # the produced artifact into the Bazel output tree. The workspace root
+        # is derived at runtime (no hardcoded machine path): with local +
+        # no-sandbox, $(location MODULE.bazel) is an execroot symlink into the
+        # real source tree, so readlink -f resolves to
+        # <repo>/src/p4lang/MODULE.bazel and three dirnames up is <repo>.
         cmd = ("set -e; " +
-               "make -C {ws} {dir}/{deb} 1>&2; " +
-               "cp {ws}/{dir}/{deb} $@").format(
-            ws = _WS,
+               "WS=$$(dirname $$(dirname $$(dirname $$(readlink -f $(location MODULE.bazel))))); " +
+               "make -C $$WS {dir}/{deb} 1>&2; " +
+               "cp $$WS/{dir}/{deb} $@").format(
             dir = _DEBDIR,
             deb = deb_file,
         ),
