@@ -1,0 +1,17 @@
+
+[Unit]
+Description=BMP container
+Requires=database@%i.service
+After=database@%i.service
+Before=ntp-config.service
+BindsTo=sonic.target
+After=sonic.target
+StartLimitIntervalSec=1200
+StartLimitBurst=3
+
+[Service]
+User=admin
+ExecStartPre=/usr/local/bin/bmp.sh start %i
+ExecStart=/usr/local/bin/bmp.sh wait %i
+ExecStop=/usr/local/bin/bmp.sh stop %i
+RestartSec=30

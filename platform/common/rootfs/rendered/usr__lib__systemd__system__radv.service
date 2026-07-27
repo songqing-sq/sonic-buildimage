@@ -1,0 +1,18 @@
+[Unit]
+Description=Router advertiser container
+Requires=config-setup.service
+After=config-setup.service swss.service syncd.service
+BindsTo=sonic.target
+After=sonic.target
+StartLimitIntervalSec=1200
+StartLimitBurst=3
+
+[Service]
+User=admin
+ExecStartPre=/usr/local/bin/radv.sh start
+ExecStart=/usr/local/bin/radv.sh wait
+ExecStop=/usr/local/bin/radv.sh stop
+RestartSec=30
+
+[Install]
+WantedBy=sonic.target

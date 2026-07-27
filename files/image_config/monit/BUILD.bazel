@@ -1,6 +1,4 @@
 exports_files(
-    [
-        "container_checker",
-    ],
+    glob(["**"]),
     visibility = ["//visibility:public"],
 )

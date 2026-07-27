@@ -24,12 +24,26 @@ sonic_onie_image(
         "//platform/common/rootfs:base_layer",
         "//platform/common/rootfs:docker_engine_layer",
         "//platform/common/rootfs:sonic_debs_layer",
+        "//platform/common/rootfs:sonic_wheels_layer",
         "//platform/common/rootfs:passwd",
         "//platform/common/rootfs:group",
         "//platform/common/rootfs:shadow_layer",
         "//platform/common/rootfs:host_config_layer",
+        "//platform/common/rootfs:static_layer",
+        "//platform/common/rootfs:rendered_layer",
+        "//platform/common/rootfs:version_layer",
+        "//platform/common/rootfs:systemd_enable_layer",
+        "//platform/common/rootfs:dirs_layer",
+        "//platform/common/rootfs:kernel_modules_layer",
+        "//platform/common/rootfs:generated_services_layer",
     ],
     sharch_body = "//installer:sharch_body.sh",
     var_log_file_size = "4096",
+    visibility = ["//visibility:public"],
+)
+
+# dash-engine.service: host-side unit copied by sonic_debian_extension.j2.
+exports_files(
+    ["dash-engine.service"],
     visibility = ["//visibility:public"],
 )

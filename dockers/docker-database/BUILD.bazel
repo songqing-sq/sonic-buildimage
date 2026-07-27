@@ -161,3 +161,13 @@ oci_load(
     image = "docker-database",
     repo_tags = ["docker-database:latest"],
 )
+
+# BASE_IMAGE_FILES: host-side CLI shims / monit configs the image installs
+# outside the container (slave.mk BASE_IMAGE_FILES; consumed by
+# //platform/common/rootfs:base_image_files_layer).
+exports_files(
+    [
+        "base_image_files/redis-cli",
+    ],
+    visibility = ["//platform:__subpackages__"],
+)

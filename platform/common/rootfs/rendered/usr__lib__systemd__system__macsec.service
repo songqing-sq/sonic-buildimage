@@ -1,0 +1,21 @@
+#
+# =============== Managed by SONiC Package Manager. DO NOT EDIT! ===============
+#             auto-generated from /usr/share/sonic/templates/sonic.service.j2 by sonic-package-manager
+#
+[Unit]
+Description=macsec container
+Requires=config-setup.service
+After=swss.service
+After=syncd.service
+BindsTo=sonic.target
+After=sonic.target
+StartLimitIntervalSec=1200
+StartLimitBurst=3
+
+[Service]
+ExecStartPre=/usr/local/bin/macsec.sh start
+ExecStart=/usr/local/bin/macsec.sh wait
+ExecStop=/usr/local/bin/macsec.sh stop
+RestartSec=30
+[Install]
+WantedBy=sonic.target

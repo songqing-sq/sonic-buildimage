@@ -1,0 +1,22 @@
+#
+# =============== Managed by SONiC Package Manager. DO NOT EDIT! ===============
+#             auto-generated from /usr/share/sonic/templates/sonic.service.j2 by sonic-package-manager
+#
+[Unit]
+Description=dhcp_relay container
+Requires=config-setup.service
+After=swss.service
+After=syncd.service
+After=teamd.service
+BindsTo=sonic.target
+After=sonic.target
+StartLimitIntervalSec=1200
+StartLimitBurst=3
+
+[Service]
+ExecStartPre=/usr/local/bin/dhcp_relay.sh start
+ExecStart=/usr/local/bin/dhcp_relay.sh wait
+ExecStop=/usr/local/bin/dhcp_relay.sh stop
+RestartSec=30
+[Install]
+WantedBy=sonic.target

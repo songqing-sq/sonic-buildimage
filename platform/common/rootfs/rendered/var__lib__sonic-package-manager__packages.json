@@ -1,0 +1,272 @@
+{
+    "bmp_watchdog": {
+        "repository": "docker-bmp-watchdog",
+        "description": "SONiC bmp_watchdog package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "bmp": {
+        "repository": "docker-sonic-bmp",
+        "description": "SONiC bmp package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "dash-ha": {
+        "repository": "docker-dash-ha",
+        "description": "SONiC dash-ha package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "database": {
+        "repository": "docker-database",
+        "description": "SONiC database package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "eventd": {
+        "repository": "docker-eventd",
+        "description": "SONiC eventd package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "fpm-frr": {
+        "repository": "docker-fpm-frr",
+        "description": "SONiC fpm-frr package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "gnmi-sidecar": {
+        "repository": "docker-gnmi-sidecar",
+        "description": "SONiC gnmi-sidecar package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "gnmi_watchdog": {
+        "repository": "docker-gnmi-watchdog",
+        "description": "SONiC gnmi_watchdog package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "gnmi": {
+        "repository": "docker-sonic-gnmi",
+        "description": "SONiC gnmi package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "lldp": {
+        "repository": "docker-lldp",
+        "description": "SONiC lldp package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "mux": {
+        "repository": "docker-mux",
+        "description": "SONiC mux package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "nat": {
+        "repository": "docker-nat",
+        "description": "SONiC nat package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "swss": {
+        "repository": "docker-orchagent",
+        "description": "SONiC swss package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "otel": {
+        "repository": "docker-sonic-otel",
+        "description": "SONiC otel package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "pmon": {
+        "repository": "docker-platform-monitor",
+        "description": "SONiC pmon package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "restapi-sidecar": {
+        "repository": "docker-restapi-sidecar",
+        "description": "SONiC restapi-sidecar package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "radv": {
+        "repository": "docker-router-advertiser",
+        "description": "SONiC radv package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "sflow": {
+        "repository": "docker-sflow",
+        "description": "SONiC sflow package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "snmp": {
+        "repository": "docker-snmp",
+        "description": "SONiC snmp package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "mgmt-framework": {
+        "repository": "docker-sonic-mgmt-framework",
+        "description": "SONiC mgmt-framework package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "sysmgr": {
+        "repository": "docker-sysmgr",
+        "description": "SONiC sysmgr package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "teamd": {
+        "repository": "docker-teamd",
+        "description": "SONiC teamd package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "syncd": {
+        "repository": "docker-syncd-vs",
+        "description": "SONiC syncd package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "gbsyncd": {
+        "repository": "docker-gbsyncd-vs",
+        "description": "SONiC gbsyncd package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "dash-engine": {
+        "repository": "docker-dash-engine",
+        "description": "SONiC dash-engine package",
+        "default-reference": "1.0.0",
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": true,
+        "image-id": null,
+        "docker-image-reference": null
+    },
+    "dhcp-relay": {
+        "repository": "docker-dhcp-relay",
+        "description": "",
+        "default-reference": null,
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": false,
+        "image-id": "sha256:f5969a49dbf274cc5106cd76b5a0562b2abc633e6c462cc9602fd5dc8010fbdc",
+        "docker-image-reference": "docker-dhcp-relay:latest"
+    },
+    "macsec": {
+        "repository": "docker-macsec",
+        "description": "",
+        "default-reference": null,
+        "installed-version": "1.0.0",
+        "installed": true,
+        "built-in": false,
+        "image-id": "sha256:5fdde62df94a86dfb9ab89f65c62f8a30e3b61572d721fc024b437fc53f2d5e3",
+        "docker-image-reference": "docker-macsec:latest"
+    }
+}

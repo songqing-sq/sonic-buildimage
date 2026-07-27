@@ -1,4 +1,4 @@
 exports_files(
-    glob(["*"]),
+    glob(["**"]),
     visibility = ["//visibility:public"],
 )

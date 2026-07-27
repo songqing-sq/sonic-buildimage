@@ -302,3 +302,21 @@ oci_load(
     image = "docker-fpm-frr",
     repo_tags = ["docker-fpm-frr:latest"],
 )
+
+# BASE_IMAGE_FILES: host-side CLI shims / monit configs the image installs
+# outside the container (slave.mk BASE_IMAGE_FILES; consumed by
+# //platform/common/rootfs:base_image_files_layer).
+exports_files(
+    [
+        "base_image_files/TS",
+        "base_image_files/TSA",
+        "base_image_files/TSB",
+        "base_image_files/TSC",
+        "base_image_files/idf_isolation",
+        "base_image_files/platform_utils",
+        "base_image_files/prefix_list",
+        "base_image_files/rvtysh",
+        "base_image_files/vtysh",
+    ],
+    visibility = ["//platform:__subpackages__"],
+)
