@@ -413,8 +413,10 @@ flatten(
     tars = [
         "@trixie//gdb:data",
         "@trixie//gdbserver:data",
-        # trixie's `vim` apt metapackage resolves to the concrete `vim-nox`
-        # binary package; that's the repo directory rules_distroless emits.
+        # vim-nox is requested by its concrete name in base_trixie.MODULE.bazel
+        # (see comment there): the "vim" virtual name resolves to a different
+        # provider per arch (vim-motif on amd64), which broke this target's
+        # amd64 analysis.
         "@trixie//vim-nox:data",
         "@trixie//openssh-client:data",
         "@trixie//sshpass:data",

@@ -422,7 +422,15 @@ apt.install(
         # them. Mirrors bookworm's split.
         "gdb",
         "gdbserver",
-        "vim",
+        # Explicitly the concrete vim-nox binary package, NOT the "vim" name:
+        # vim-nox/vim-motif/vim-gtk3 all `Provides: vim`, and the resolver's
+        # virtual-package tie-break among same-version providers depends on
+        # index enumeration order -- it picked vim-nox on arm64 but vim-motif
+        # (the X11 variant, ~100-pkg GUI dep train) on amd64, leaving
+        # @trixie//vim-nox with no amd64 branch and breaking debug-packages
+        # analysis on amd64. Concrete names bypass provider resolution
+        # entirely (same lesson as dash-engine's cron/fakeroot/make).
+        "vim-nox",
         "openssh-client",
         "sshpass",
         "strace",
