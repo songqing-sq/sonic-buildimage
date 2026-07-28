@@ -1,6 +1,7 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@sonic_build_infra//grub:grub_libs.bzl", "GRUB_ALL_LIB_DEPS", "GRUB_COMMON_COPTS", "GRUB_COMMON_DEPS")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+load(":script_subst.bzl", "script_subst_cmd")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -509,4 +510,442 @@ cc_binary(
     copts = GRUB_COMMON_COPTS,
     linkopts = ["-lm"],
     deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS + ["@sonic_build_infra//grub:mkimage_osdep_config"] + ["@grub2_deps//liblzma-dev:lzma"],
+)
+
+# Restored by Debian's restore-mkdevicemap.patch (upstream 2.06 dropped it);
+# grub-common still ships it.
+cc_binary(
+    name = "grub_mkdevicemap",
+    srcs = [
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/deviceiter.c",
+        "@sonic_build_infra//grub:src/util/devicemap.c",
+        "@sonic_build_infra//grub:src/util/grub-mkdevicemap.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS,
+)
+
+# ---------------------------------------------------------------------------
+# The shell scripts. All are `.in` templates that ./configure fills in; the
+# substitution table (verified against Make's debs) lives in script_subst.bzl.
+# ---------------------------------------------------------------------------
+
+# usr/sbin: grub-mkconfig. usr/bin: grub-kbdcomp.
+# grub2-common's usr/sbin: grub-set-default, grub-reboot.
+[
+    genrule(
+        name = "gen_" + name.replace("-", "_"),
+        srcs = ["@sonic_build_infra//grub:src/util/" + name + ".in"],
+        outs = ["scripts/" + name],
+        cmd = script_subst_cmd() + " $< > $@",
+    )
+    for name in [
+        "grub-mkconfig",
+        "grub-kbdcomp",
+        "grub-set-default",
+        "grub-reboot",
+        "grub-mkconfig_lib",
+    ]
+]
+
+# etc/grub.d/*. Upstream ships one .in per generator; Debian adds
+# 05_debian_theme and drops the non-Linux ones (10_hurd, 10_kfreebsd, ...) via
+# grub-common.install.in listing only etc/grub.d.
+[
+    genrule(
+        name = "gen_grubd_" + name,
+        srcs = ["@sonic_build_infra//grub:src/util/grub.d/" + name + ".in"],
+        outs = ["grub.d/" + name],
+        cmd = script_subst_cmd() + " $< > $@",
+    )
+    for name in [
+        "00_header",
+        "10_linux",
+        "20_linux_xen",
+        "30_os-prober",
+        "30_uefi-firmware",
+        "40_custom",
+        "41_custom",
+    ]
+]
+
+
+# cc_binary target names cannot contain '-', so each is renamed to its real
+# program name on the way into the deb.
+genrule(
+    name = "bin_grub_editenv",
+    srcs = [":grub_editenv"],
+    outs = ["bin/grub-editenv"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_file",
+    srcs = [":grub_file"],
+    outs = ["bin/grub-file"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_fstest",
+    srcs = [":grub_fstest"],
+    outs = ["bin/grub-fstest"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_glue_efi",
+    srcs = [":grub_glue_efi"],
+    outs = ["bin/grub-glue-efi"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_menulst2cfg",
+    srcs = [":grub_menulst2cfg"],
+    outs = ["bin/grub-menulst2cfg"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_mkfont",
+    srcs = [":grub_mkfont"],
+    outs = ["bin/grub-mkfont"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_mkimage",
+    srcs = [":grub_mkimage"],
+    outs = ["bin/grub-mkimage"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_mklayout",
+    srcs = [":grub_mklayout"],
+    outs = ["bin/grub-mklayout"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_mknetdir",
+    srcs = [":grub_mknetdir"],
+    outs = ["bin/grub-mknetdir"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_mkpasswd_pbkdf2",
+    srcs = [":grub_mkpasswd_pbkdf2"],
+    outs = ["bin/grub-mkpasswd-pbkdf2"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_mkrelpath",
+    srcs = [":grub_mkrelpath"],
+    outs = ["bin/grub-mkrelpath"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_mkrescue",
+    srcs = [":grub_mkrescue"],
+    outs = ["bin/grub-mkrescue"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_mkstandalone",
+    srcs = [":grub_mkstandalone"],
+    outs = ["bin/grub-mkstandalone"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_mount",
+    srcs = [":grub_mount"],
+    outs = ["bin/grub-mount"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_render_label",
+    srcs = [":grub_render_label"],
+    outs = ["bin/grub-render-label"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_script_check",
+    srcs = [":grub_script_check"],
+    outs = ["bin/grub-script-check"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_syslinux2cfg",
+    srcs = [":grub_syslinux2cfg"],
+    outs = ["bin/grub-syslinux2cfg"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_macbless",
+    srcs = [":grub_macbless"],
+    outs = ["bin/grub-macbless"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_mkdevicemap",
+    srcs = [":grub_mkdevicemap"],
+    outs = ["bin/grub-mkdevicemap"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_probe",
+    srcs = [":grub_probe"],
+    outs = ["bin/grub-probe"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "bin_grub_install",
+    srcs = [":grub_install"],
+    outs = ["bin/grub-install"],
+    cmd = "cp $< $@",
+)
+
+
+# usr/share/bash-completion/completions/grub, plus the 8 per-program symlinks to
+# it that debian/rules creates.
+genrule(
+    name = "gen_completion",
+    srcs = ["@sonic_build_infra//grub:src/util/bash-completion.d/grub-completion.bash.in"],
+    outs = ["completion/grub"],
+    cmd = script_subst_cmd() + " $< > $@",
+)
+
+
+# ---------------------------------------------------------------------------
+# grub-common
+# ---------------------------------------------------------------------------
+
+# KNOWN GAP: usr/share/grub/{unicode,ascii,euro}.pf2 and {ascii,widthspec}.h are
+# NOT shipped. Makefile.am generates them from unifont with grub-mkfont plus two
+# small generators, and all three build and produce byte-size-identical output to
+# Make's when run directly — but grub-mkfont links the HOST's
+# /usr/lib/x86_64-linux-gnu/libfreetype.so.6 (the apt cc_import contributes only
+# the static lib and headers), so inside the sandbox it segfaults.
+#
+# Closing it means making libfreetype a proper hermetic shared-library dep, which
+# is a sonic-build-infra change. Safe to defer: the vs image's grub.cfg issues no
+# `loadfont`, so nothing reads these files at boot — they exist for graphical
+# menu themes the image does not use.
+
+genrule(
+    name = "grub_common_data",
+    srcs = [
+        ":gen_completion",
+        ":gen_grub_kbdcomp",
+        ":gen_grub_mkconfig",
+        ":gen_grub_mkconfig_lib",
+        ":bin_grub_editenv",
+        ":bin_grub_file",
+        ":bin_grub_fstest",
+        ":bin_grub_glue_efi",
+        ":bin_grub_menulst2cfg",
+        ":bin_grub_mkfont",
+        ":bin_grub_mkimage",
+        ":bin_grub_mklayout",
+        ":bin_grub_mknetdir",
+        ":bin_grub_mkpasswd_pbkdf2",
+        ":bin_grub_mkrelpath",
+        ":bin_grub_mkrescue",
+        ":bin_grub_mkstandalone",
+        ":bin_grub_mount",
+        ":bin_grub_render_label",
+        ":bin_grub_script_check",
+        ":bin_grub_syslinux2cfg",
+        ":bin_grub_macbless",
+        ":bin_grub_mkdevicemap",
+        ":bin_grub_probe",
+        ":gen_grubd_00_header",
+        ":gen_grubd_10_linux",
+        ":gen_grubd_20_linux_xen",
+        ":gen_grubd_30_os-prober",
+        ":gen_grubd_30_uefi-firmware",
+        ":gen_grubd_40_custom",
+        ":gen_grubd_41_custom",
+        "@sonic_build_infra//grub:src/debian/grub.d/05_debian_theme",
+        "@sonic_build_infra//grub:src/util/grub.d/README",
+        "@sonic_build_infra//grub:src/debian/init-select.cfg",
+        "@sonic_build_infra//grub:src/debian/apport/source_grub2.py",
+    ],
+    outs = ["grub_common_data.tar"],
+    cmd = ("set -e; " +
+           "R=$(RULEDIR)/_common; " +
+           "mkdir -p $$R/usr/bin $$R/usr/sbin $$R/etc/grub.d " +
+           "  $$R/etc/default/grub.d $$R/usr/share/grub $$R/usr/lib/grub " +
+           "  $$R/usr/share/bash-completion/completions " +
+           "  $$R/usr/share/apport/package-hooks $$R/var/lib/grub/ucf; " +
+           "install -m0755 $(location :bin_grub_editenv) $$R/usr/bin/grub-editenv; " +
+           "install -m0755 $(location :bin_grub_file) $$R/usr/bin/grub-file; " +
+           "install -m0755 $(location :bin_grub_fstest) $$R/usr/bin/grub-fstest; " +
+           "install -m0755 $(location :bin_grub_glue_efi) $$R/usr/bin/grub-glue-efi; " +
+           "install -m0755 $(location :bin_grub_menulst2cfg) $$R/usr/bin/grub-menulst2cfg; " +
+           "install -m0755 $(location :bin_grub_mkfont) $$R/usr/bin/grub-mkfont; " +
+           "install -m0755 $(location :bin_grub_mkimage) $$R/usr/bin/grub-mkimage; " +
+           "install -m0755 $(location :bin_grub_mklayout) $$R/usr/bin/grub-mklayout; " +
+           "install -m0755 $(location :bin_grub_mknetdir) $$R/usr/bin/grub-mknetdir; " +
+           "install -m0755 $(location :bin_grub_mkpasswd_pbkdf2) $$R/usr/bin/grub-mkpasswd-pbkdf2; " +
+           "install -m0755 $(location :bin_grub_mkrelpath) $$R/usr/bin/grub-mkrelpath; " +
+           "install -m0755 $(location :bin_grub_mkrescue) $$R/usr/bin/grub-mkrescue; " +
+           "install -m0755 $(location :bin_grub_mkstandalone) $$R/usr/bin/grub-mkstandalone; " +
+           "install -m0755 $(location :bin_grub_mount) $$R/usr/bin/grub-mount; " +
+           "install -m0755 $(location :bin_grub_render_label) $$R/usr/bin/grub-render-label; " +
+           "install -m0755 $(location :bin_grub_script_check) $$R/usr/bin/grub-script-check; " +
+           "install -m0755 $(location :bin_grub_syslinux2cfg) $$R/usr/bin/grub-syslinux2cfg; " +
+           "install -m0755 $(location :bin_grub_macbless) $$R/usr/sbin/grub-macbless; " +
+           "install -m0755 $(location :bin_grub_mkdevicemap) $$R/usr/sbin/grub-mkdevicemap; " +
+           "install -m0755 $(location :bin_grub_probe) $$R/usr/sbin/grub-probe; " +
+           "install -m0755 $(location :gen_grub_kbdcomp) $$R/usr/bin/grub-kbdcomp; " +
+           "install -m0755 $(location :gen_grub_mkconfig) $$R/usr/sbin/grub-mkconfig; " +
+           "install -m0644 $(location :gen_grub_mkconfig_lib) " +
+           "  $$R/usr/share/grub/grub-mkconfig_lib; " +
+           "install -m0755 $(location :gen_grubd_00_header) $$R/etc/grub.d/00_header; " +
+           "install -m0755 $(location :gen_grubd_10_linux) $$R/etc/grub.d/10_linux; " +
+           "install -m0755 $(location :gen_grubd_20_linux_xen) $$R/etc/grub.d/20_linux_xen; " +
+           "install -m0755 $(location :gen_grubd_30_os-prober) $$R/etc/grub.d/30_os-prober; " +
+           "install -m0755 $(location :gen_grubd_30_uefi-firmware) $$R/etc/grub.d/30_uefi-firmware; " +
+           "install -m0755 $(location :gen_grubd_40_custom) $$R/etc/grub.d/40_custom; " +
+           "install -m0755 $(location :gen_grubd_41_custom) $$R/etc/grub.d/41_custom; " +
+           "install -m0755 $(location @sonic_build_infra//grub:src/debian/grub.d/05_debian_theme) " +
+           "  $$R/etc/grub.d/05_debian_theme; " +
+           "install -m0644 $(location @sonic_build_infra//grub:src/util/grub.d/README) " +
+           "  $$R/etc/grub.d/README; " +
+           "install -m0644 $(location @sonic_build_infra//grub:src/debian/init-select.cfg) " +
+           "  $$R/etc/default/grub.d/init-select.cfg; " +
+           "install -m0644 $(location @sonic_build_infra//grub:src/debian/apport/source_grub2.py) " +
+           "  $$R/usr/share/apport/package-hooks/source_grub2.py; " +
+           "install -m0644 $(location :gen_completion) " +
+           "  $$R/usr/share/bash-completion/completions/grub; " +
+           # debian/rules creates these as symlinks, which the content map
+           # cannot express.
+           "for p in grub-editenv grub-mkconfig grub-mkfont grub-mkimage " +
+           "         grub-mkpasswd-pbkdf2 grub-mkrescue grub-probe " +
+           "         grub-script-check; do " +
+           "  ln -s grub $$R/usr/share/bash-completion/completions/$$p; " +
+           "done; " +
+           "ln -s ../../share/grub/grub-mkconfig_lib " +
+           "  $$R/usr/lib/grub/grub-mkconfig_lib; " +
+           "tar -cf $@ --owner=0 --group=0 --numeric-owner -C $$R ."),
+)
+
+sonic_deb(
+    name = "grub-common_{}.deb".format(VERSION),
+    package = "grub-common",
+    version = VERSION,
+    content = {},
+    data = ":grub_common_data",
+    depends = [
+        "libc6 (>= 2.38)",
+        "libdevmapper1.02.1 (>= 2:1.02.36)",
+        "libefiboot1t64 (>= 38)",
+        "libefivar1t64 (>= 38)",
+        "libfreetype6 (>= 2.2.1)",
+        "libfuse2t64 (>= 2.8)",
+        "liblzma5 (>= 5.1.1alpha+20120614)",
+        "gettext-base",
+    ],
+    maintainer = "GRUB Maintainers <pkg-grub-devel@alioth-lists.debian.net>",
+    description = "GRand Unified Bootloader (common files)\n This package contains common files shared by the distinct flavours of GRUB.",
+    homepage = "https://www.gnu.org/software/grub/",
+    section = "admin",
+    priority = "optional",
+    multi_arch = "foreign",
+    gen_dbg = True,
+)
+
+# ---------------------------------------------------------------------------
+# grub2-common
+# ---------------------------------------------------------------------------
+
+# debian/default/grub is also a template.
+genrule(
+    name = "gen_default_grub",
+    srcs = ["@sonic_build_infra//grub:src/debian/default/grub"],
+    outs = ["default/grub"],
+    cmd = script_subst_cmd() + " $< > $@",
+)
+
+genrule(
+    name = "grub2_common_data",
+    srcs = [
+        ":bin_grub_install",
+        ":gen_grub_reboot",
+        ":gen_grub_set_default",
+        "@sonic_build_infra//grub:src/debian/update-grub",
+        "@sonic_build_infra//grub:src/debian/kernel/zz-update-grub",
+        ":gen_default_grub",
+        "@sonic_build_infra//grub:src/debian/default/grub.md5sum",
+    ],
+    outs = ["grub2_common_data.tar"],
+    cmd = ("set -e; " +
+           "R=$(RULEDIR)/_g2c; " +
+           "mkdir -p $$R/usr/sbin $$R/usr/share/grub/default " +
+           "  $$R/etc/kernel/postinst.d $$R/etc/kernel/postrm.d " +
+           "  $$R/usr/share/bash-completion/completions; " +
+           "install -m0755 $(location :bin_grub_install) $$R/usr/sbin/grub-install; " +
+           "install -m0755 $(location :gen_grub_reboot) $$R/usr/sbin/grub-reboot; " +
+           "install -m0755 $(location :gen_grub_set_default) " +
+           "  $$R/usr/sbin/grub-set-default; " +
+           "install -m0755 $(location @sonic_build_infra//grub:src/debian/update-grub) " +
+           "  $$R/usr/sbin/update-grub; " +
+           # debian/rules ships update-grub2 as a symlink to update-grub.
+           "ln -s update-grub $$R/usr/sbin/update-grub2; " +
+           # The same hook script goes in both kernel postinst.d and postrm.d.
+           "install -m0755 " +
+           "  $(location @sonic_build_infra//grub:src/debian/kernel/zz-update-grub) " +
+           "  $$R/etc/kernel/postinst.d/zz-update-grub; " +
+           "install -m0755 " +
+           "  $(location @sonic_build_infra//grub:src/debian/kernel/zz-update-grub) " +
+           "  $$R/etc/kernel/postrm.d/zz-update-grub; " +
+           "install -m0644 $(location :gen_default_grub) " +
+           "  $$R/usr/share/grub/default/grub; " +
+           "install -m0644 " +
+           "  $(location @sonic_build_infra//grub:src/debian/default/grub.md5sum) " +
+           "  $$R/usr/share/grub/default/grub.md5sum; " +
+           # These three complete via grub-common's shared completion script.
+           "for p in grub-install grub-reboot grub-set-default; do " +
+           "  ln -s grub $$R/usr/share/bash-completion/completions/$$p; " +
+           "done; " +
+           "tar -cf $@ --owner=0 --group=0 --numeric-owner -C $$R ."),
+)
+
+sonic_deb(
+    name = "grub2-common_{}.deb".format(VERSION),
+    package = "grub2-common",
+    version = VERSION,
+    content = {},
+    data = ":grub2_common_data",
+    depends = [
+        "grub-common (= {})".format(VERSION),
+        "libc6 (>= 2.38)",
+        "libdevmapper1.02.1 (>= 2:1.02.36)",
+        "libefiboot1t64 (>= 38)",
+        "libefivar1t64 (>= 38)",
+        "liblzma5 (>= 5.1.1alpha+20120614)",
+    ],
+    maintainer = "GRUB Maintainers <pkg-grub-devel@alioth-lists.debian.net>",
+    description = "GRand Unified Bootloader (common files for version 2)\n This package contains common files shared by the distinct flavours of GRUB 2.",
+    homepage = "https://www.gnu.org/software/grub/",
+    section = "admin",
+    priority = "optional",
+    gen_dbg = True,
 )

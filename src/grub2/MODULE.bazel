@@ -47,6 +47,10 @@ apt.install(
         "libfuse-dev:arm64",
         "liblzma-dev:amd64",
         "liblzma-dev:arm64",
+        # unifont.pcf, the FONT_SOURCE grub's Makefile.am turns into
+        # usr/share/grub/{unicode,ascii,euro}.pf2 + {ascii,widthspec}.h.
+        "xfonts-unifont:amd64",
+        "xfonts-unifont:arm64",
     ],
     suites = [
         "trixie",

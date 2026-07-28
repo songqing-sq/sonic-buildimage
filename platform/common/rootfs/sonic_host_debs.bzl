@@ -110,6 +110,18 @@ FIPS_HOST_DEBS = {
 # the data tar. Listed separately from HERMETIC_HOST_DEBS, whose entries follow
 # the <name>_data / <name>_statusd convention.
 HERMETIC_HOST_DEB_DATA_TARS = {
+    # grub 2.06-13+deb13u1: SONiC pins 2.06 while trixie ships 2.12. Built from
+    # the Debian source so debian/patches/series (incl. the CVE-2022-2601 font
+    # and NTFS OOB fixes) applies. Uses `data =` because the payload carries
+    # symlinks the content map cannot express.
+    "grub-common": (
+        "@grub2//:grub_common_data",
+        "@grub2//:grub-common_2.06-13+deb13u1.deb_statusd",
+    ),
+    "grub2-common": (
+        "@grub2//:grub2_common_data",
+        "@grub2//:grub2-common_2.06-13+deb13u1.deb_statusd",
+    ),
     # Pure Python; five patches incl. the python 3.12 compatibility fix the
     # image's python3.13 needs, so trixie's 3.0.0-1.3 is not a substitute.
     "ifupdown2": (
@@ -130,11 +142,6 @@ HERMETIC_HOST_DEB_DATA_TARS = {
     ),
 }
 
-TODO_HERMETIC = [
-    # SONiC builds these from source with its own patches, so the stock trixie
-    # package is not a substitute:
-    #   grub-common       cpio ustar large-uid handling
-    #   grub2-common      (same source package as grub-common)
-    "grub-common",
-    "grub2-common",
-]
+# Every SONiC-built host package now has a hermetic Bazel target; nothing is
+# bridged from Make output.
+TODO_HERMETIC = []
