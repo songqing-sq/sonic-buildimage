@@ -1,0 +1,199 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sonic_build_infra//shared_library:shared_library.bzl", "sonic_shared_library")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+load(":config_defines.bzl", "FREERADIUS_DEFINES", "PAM_RADIUS_DEFINES", "RADPATHS", "config_h_cmd")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.4.1-1"
+
+exports_files([
+    "pam_radius_src.BUILD",
+    "freeradius_src.BUILD",
+])
+
+# debian/rules: RADIUS_CONF_FILE=/etc/pam_radius_auth.conf, passed through
+# DEB_CPPFLAGS_MAINT_APPEND.
+RADIUS_CONF_FILE = "/etc/pam_radius_auth.conf"
+
+# ---------------------------------------------------------------------------
+# What ./configure would emit. Running it is avoided (it probes the host
+# compiler and libc); the substitution tables live in config_defines.bzl.
+# ---------------------------------------------------------------------------
+
+genrule(
+    name = "gen_pam_radius_config_h",
+    srcs = ["@pam_radius_src//:src/config.h.in"],
+    outs = ["config.h"],
+    cmd = config_h_cmd(PAM_RADIUS_DEFINES),
+)
+
+genrule(
+    name = "gen_freeradius_autoconf_h",
+    srcs = ["@freeradius_src//:src/include/autoconf.h.in"],
+    outs = ["autoconf.h"],
+    cmd = config_h_cmd(FREERADIUS_DEFINES),
+)
+
+genrule(
+    name = "gen_radpaths_h",
+    outs = ["radpaths.h"],
+    cmd = "{ " + " ".join([
+        "echo '#define {name} \"{value}\"';".format(name = name, value = value)
+        for name, value in RADPATHS.items()
+    ]) + " } > $@",
+)
+
+cc_library(
+    name = "freeradius_config",
+    hdrs = [
+        "autoconf.h",
+        "radpaths.h",
+    ],
+    includes = ["."],
+)
+
+_FR_COPTS = [
+    # FreeRADIUS 1.1.8 is C89-era; gcc-15 defaults reject its implicit
+    # declarations and K&R prototypes.
+    "-std=gnu17",
+    "-DHAVE_CONFIG_H",
+    # libradius.h keeps the library-internal API (librad_log, TAG_ANY,
+    # TAG_VALID, DEBUG) behind `#ifdef _LIBRADIUS`, which the upstream Makefile
+    # defines when building the library itself.
+    "-D_LIBRADIUS",
+    "-Wno-deprecated-declarations",
+]
+
+# libradius-1.1.8.so — the RADIUS protocol library.
+sonic_shared_library(
+    name = "libradius",
+    srcs = ["@freeradius_src//:libradius_srcs"],
+    copts = _FR_COPTS,
+    output_name = "libradius-1.1.8",
+    # FreeRADIUS 1.1.8 leaves cross-module symbols unresolved at library link
+    # time; the final PAM module supplies them.
+    allow_undefined = True,
+    deps = [
+        ":freeradius_config",
+        "@freeradius_src//:hdrs_lib",
+    ],
+)
+
+# libeap-1.1.8.so — EAP/TLS, which is what carries PEAP-MSCHAPv2.
+sonic_shared_library(
+    name = "libeap",
+    srcs = ["@freeradius_src//:libeap_srcs"],
+    copts = _FR_COPTS,
+    output_name = "libeap-1.1.8",
+    allow_undefined = True,
+    dynamic_deps = [":libradius_shared"],
+    deps = [
+        ":freeradius_config",
+        "@freeradius_src//:hdrs_lib",
+        "@pam_radius_deps//libssl-dev:ssl",
+        "@pam_radius_deps//libssl-dev:crypto",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# pam_radius_auth.so
+# ---------------------------------------------------------------------------
+
+cc_library(
+    name = "pam_radius_config",
+    hdrs = ["config.h"],
+    includes = ["."],
+)
+
+# The prototype 0002-peap-mschapv2-support.patch forgot. Force-included rather
+# than patched in, so the patch files stay byte-identical to Make's.
+genrule(
+    name = "gen_peap_log_debug_decl",
+    outs = ["peap_log_debug_decl.h"],
+    cmd = "echo 'int peap_log_debug(const char *msg, ...);' > $@",
+)
+
+sonic_shared_library(
+    name = "pam_radius_auth",
+    srcs = ["@pam_radius_src//:srcs"],
+    additional_compiler_inputs = [":peap_log_debug_decl.h"],
+    copts = [
+        "-std=gnu17",
+        "-DHAVE_CONFIG_H",
+        "-DCONF_FILE=\\\"{}\\\"".format(RADIUS_CONF_FILE),
+        # radpeapclient.c calls peap_log_debug() ~90 lines before defining it
+        # and 0002-peap-mschapv2-support.patch adds no prototype for it, so the
+        # implicit `int()` declaration clashes with the real variadic definition.
+        # Supplying the missing prototype up front is what the header should have
+        # done; the alternative is silencing two gcc-15 errors.
+        "-include",
+        "$(execpath :peap_log_debug_decl.h)",
+    ],
+    output_name = "pam_radius_auth",
+    # A PAM module resolves pam_* symbols from the host process at dlopen time.
+    allow_undefined = True,
+    # Drops libstdc++/libm/libgcc_s, which cc_shared_library would otherwise
+    # record.
+    #
+    # KNOWN DIVERGENCE: DT_NEEDED still lists libaudit / libcap-ng / libcrypto /
+    # libz / libzstd, which Make's module does not, because the apt cc_imports
+    # propagate their own transitive deps. The exported symbol set is
+    # byte-identical to Make's and all of these are in the base rootfs, so this
+    # is cosmetic — but it is a real difference, not verified equal.
+    linkopts = ["-Wl,--as-needed"],
+    dynamic_deps = [
+        ":libeap_shared",
+        ":libradius_shared",
+    ],
+    deps = [
+        # radpeapclient.c pulls in rlm_eap/eap.h, which needs freeradius'
+        # autoconf.h / radpaths.h as well as its own headers.
+        ":freeradius_config",
+        ":pam_radius_config",
+        "@freeradius_src//:hdrs_lib",
+        "@pam_radius_deps//libpam0g-dev:pam",
+        "@pam_radius_deps//libssl-dev:ssl",
+        "@pam_radius_src//:hdrs_lib",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# The deb. Layout from debian/rules override_dh_install: the module and both
+# libraries go under /lib/<multiarch>, not /usr/lib.
+# ---------------------------------------------------------------------------
+sonic_deb(
+    name = "libpam-radius-auth_{}.deb".format(VERSION),
+    package = "libpam-radius-auth",
+    version = VERSION,
+    content = {
+        "/lib/x86_64-linux-gnu/security:*:0644": [":pam_radius_auth_shared"],
+        "/lib/x86_64-linux-gnu:*:0644": [
+            ":libeap_shared",
+            ":libradius_shared",
+        ],
+        # dh_fixperms chmods this to 600: it can hold the RADIUS shared secret.
+        "/etc:pam_radius_auth.conf:0600": ["@pam_radius_src//:pam_radius_auth.conf"],
+        # The logrotate config is added by 0003-nas-ip-address-config.patch,
+        # so it comes from the patched tarball, not debian/.
+        "/etc/logrotate.d:pam_radius:0644": ["@pam_radius_src//:pam_radius"],
+    },
+    # override_dh_installdirs creates these empty; pam_radius_stats.c writes
+    # per-server counters into statistics/.
+    empty_dirs = [
+        "/etc/pam_radius_auth.d",
+        "/etc/pam_radius_auth.d/statistics",
+    ],
+    depends = [
+        "libc6 (>= 2.34)",
+        "libpam0g (>= 0.99.7.1)",
+        "libssl3t64 (>= 3.0.0)",
+    ],
+    suggests = ["radius-server"],
+    maintainer = "Debian QA Group <packages@qa.debian.org>",
+    description = "PAM RADIUS authentication module\n This is the PAM to RADIUS authentication module. It allows any PAM-capable\n machine to become a RADIUS client for authentication and accounting\n requests. You will, however, need to supply your own RADIUS server to\n perform the actual authentication",
+    homepage = "https://www.freeradius.org/pam_radius_auth/",
+    section = "admin",
+    priority = "optional",
+    gen_dbg = True,
+)

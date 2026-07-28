@@ -1,1 +1,10 @@
 pam_radius
+freeradius
+!.gitignore
+!Makefile
+!debian/
+!debian/**
+!MODULE.bazel
+!BUILD.bazel
+!*.BUILD
+!config_defines.bzl

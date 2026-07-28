@@ -53,6 +53,10 @@ HERMETIC_HOST_DEBS = {
     "libnl-genl-3-200": "@libnl3//:libnl-genl-3-200_3.7.0-0.2+b1sonic1.deb",
     "libnl-nf-3-200": "@libnl3//:libnl-nf-3-200_3.7.0-0.2+b1sonic1.deb",
     "libnl-route-3-200": "@libnl3//:libnl-route-3-200_3.7.0-0.2+b1sonic1.deb",
+    # Built from source: trixie's 2.0.0-1 is the standalone pam_radius without
+    # the FreeRADIUS bundle, so it lacks the RADIUS MPL / CHAP / PEAP-MSCHAPv2
+    # support SONiC's 1.4.1-1 fork carries.
+    "libpam-radius-auth": "@libpam-radius-auth//:libpam-radius-auth_1.4.1-1.deb",
 }
 
 # The FIPS stack (INCLUDE_FIPS=y, the Makefile.work default): OpenSSL, CPython,
@@ -112,8 +116,6 @@ TODO_HERMETIC = [
     #   makedumpfile      plain Debian rebuild, but pinned to 1.7.7-1 which
     #                     trixie does not carry
     #   sedutil           1.15-5ad84d8, a git snapshot with no Debian release
-    #   libpam-radius-auth  pam_radius git snapshot + CHAP / PEAP-MSCHAPv2 and
-    #                     nas-ip-address patches
     "monit",
     "rasdaemon",
     "makedumpfile",
@@ -122,5 +124,4 @@ TODO_HERMETIC = [
     "grub-common",
     "grub2-common",
     "sedutil",
-    "libpam-radius-auth",
 ]

@@ -428,6 +428,12 @@ local_path_override(
     path = "src/sonic-nettools",
 )
 
+bazel_dep(name = "libpam-radius-auth", version = "1.4.1-1")
+local_path_override(
+    module_name = "libpam-radius-auth",
+    path = "src/radius/pam",
+)
+
 bazel_dep(name = "bash", version = "5.2.37-2")
 local_path_override(
     module_name = "bash",
