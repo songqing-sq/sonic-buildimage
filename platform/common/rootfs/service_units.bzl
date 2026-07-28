@@ -181,3 +181,35 @@ SERVICE_UNITS = {
 # rules/config DEFAULT_USERNAME.
 SONICADMIN_USER = "admin"
 
+# slave.mk:1857-1863's $(SERVICES): the unit names the image actually installs.
+# A container whose only template is per_namespace/<c>.service.j2 contributes
+# just <c>@.service — the plain unit is rendered but not listed, which is what
+# makes has_global_scope false for it in init_cfg.json.
+INSTALLER_SERVICES = [
+    'bgp@.service',
+    'bmp@.service',
+    'config-chassisdb.service',
+    'config-setup.service',
+    'dash-ha@.service',
+    'database-chassis.service',
+    'database.service',
+    'database@.service',
+    'dhcp_relay.service',
+    'eventd.service',
+    'gbsyncd@.service',
+    'gnmi.service',
+    'lldp@.service',
+    'macsec@.service',
+    'mgmt-framework.service',
+    'mux.service',
+    'nat.service',
+    'otel.service',
+    'pmon.service',
+    'radv.service',
+    'sflow.service',
+    'snmp.service',
+    'swss@.service',
+    'syncd@.service',
+    'sysmgr.service',
+    'teamd@.service',
+]

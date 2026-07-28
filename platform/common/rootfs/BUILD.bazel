@@ -4,7 +4,8 @@ load("@tar.bzl", "tar")
 load("@sonic_build_infra//python:site_packages.bzl", "site_packages")
 load("//platform/common/rootfs:host_packages.bzl", "HOST_PACKAGES")
 load("//platform/common/rootfs:container_ctl.bzl", "COMMON_CTL_VARS", "CONTAINER_CTL", "SONIC_ASIC_PLATFORM")
-load("//platform/common/rootfs:service_units.bzl", "SERVICE_UNITS", "SONICADMIN_USER")
+load("//platform/common/rootfs:init_cfg_flags.bzl", "INIT_CFG_FLAGS")
+load("//platform/common/rootfs:service_units.bzl", "INSTALLER_SERVICES", "SERVICE_UNITS", "SONICADMIN_USER")
 load("//platform/common/rootfs:sonic_host_debs.bzl", "FIPS_HOST_DEBS", "HERMETIC_HOST_DEBS", "HERMETIC_HOST_DEB_DATA_TARS")
 
 # =============================================================================
@@ -644,17 +645,23 @@ tar(
 )
 
 # -----------------------------------------------------------------------------
-# Make-rendered host content (73 files): outputs that Make produces by
-# jinja-rendering templates with build-time context computed across dozens of
-# .mk variables (docker_image_ctl.j2 per-container start scripts, the systemd
-# .service/@.service units, init_cfg.json/constants.yml/sonic_version.yml/
-# dhclient.conf/00-sonic.conf/packages.json, sources.list, the j2-rendered
-# initramfs union-mount/arista-convertfs). Rather than re-plumb every Make
-# variable, these are snapshotted verbatim from the Make fsroot-vs (the build
-# baseline) under rendered/. default_users.json is NOT here (root-only in
-# fsroot; the version_layer generates it).
-# TODO: replace with hermetic jinja renders once the docker_image_ctl.j2 run-
-# option plumbing is ported.
+# Host content that Make produces by jinja-rendering build templates. The 27
+# container control scripts, the 32 build-time systemd units and constants.yml
+# are rendered here from those same templates (see container_ctl.bzl /
+# service_units.bzl); what remains under rendered/ is snapshotted from the Make
+# fsroot-vs baseline:
+#
+#   init_cfg.json, sonic_version.yml, bmc_config.json, packages.json
+#       still template-backed, but their context is build metadata (git SHA,
+#       build date, builder identity) or the ~20 INCLUDE_* feature flags.
+#   dhcp_relay.service, macsec.service, macsec@.service
+#       NOT build templates: sonic-package-manager generates these on the device
+#       from sonic.service.j2 at install time ("DO NOT EDIT!" banner).
+#   sources.list, dhclient.conf, 00-sonic.conf, asic_config_checksum,
+#   union-mount, arista-convertfs
+#       effectively static for this platform.
+#
+# default_users.json is NOT here (root-only in fsroot; version_layer builds it).
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
@@ -716,6 +723,27 @@ genrule(
     tools = ["@sonic_build_infra//jinja2:render"],
 )
 
+
+# init_cfg.json.j2, driven by the INCLUDE_*/ENABLE_* flags in init_cfg_flags.bzl.
+genrule(
+    name = "cfg_init_cfg_json",
+    srcs = ["//files/build_templates:init_cfg.json.j2"],
+    outs = ["cfg/init_cfg.json"],
+    cmd = ("$(execpath @sonic_build_infra//jinja2:render) " +
+           "$(execpath //files/build_templates:init_cfg.json.j2) $@ " +
+           "sonic_asic_platform=" + SONIC_ASIC_PLATFORM + " " +
+           # slave.mk:1857-1863 builds $(SERVICES): a container with only a
+           # per_namespace template (_TEMPLATE set, _GLOBAL unset) contributes
+           # ONLY <c>@.service, which is what makes has_global_scope false for
+           # bgp/swss/syncd/teamd/gbsyncd. INSTALLER_SERVICES encodes that.
+           "installer_services=" + repr(" ".join(INSTALLER_SERVICES)) + " " +
+           " ".join([
+               k + "=" + v
+               for k, v in INIT_CFG_FLAGS.items()
+           ])),
+    tools = ["@sonic_build_infra//jinja2:render"],
+)
+
 tar(
     name = "rendered_layer",
     srcs = glob(["rendered/**"]) + [
@@ -724,7 +752,10 @@ tar(
     ] + [
         ":svc_" + unit.replace("@", "at").replace(".", "_").replace("-", "_")
         for unit in SERVICE_UNITS
-    ] + [":cfg_constants_yml"],
+    ] + [
+        ":cfg_constants_yml",
+        ":cfg_init_cfg_json",
+    ],
     mtree = [
         "./etc/apt/sources.list uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__apt__sources.list)",
         "./etc/dhcp/dhclient.conf uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__dhcp__dhclient.conf)",
@@ -734,7 +765,7 @@ tar(
         "./etc/sonic/asic_config_checksum uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__sonic__asic_config_checksum)",
         "./etc/sonic/bmc_config.json uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__sonic__bmc_config.json)",
         "./etc/sonic/constants.yml uid=0 gid=0 mode=0644 type=file content=$(location :cfg_constants_yml)",
-        "./etc/sonic/init_cfg.json uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__sonic__init_cfg.json)",
+        "./etc/sonic/init_cfg.json uid=0 gid=0 mode=0644 type=file content=$(location :cfg_init_cfg_json)",
         "./etc/sonic/sonic_version.yml uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__sonic__sonic_version.yml)",
         "./usr/bin/bgp.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_bgp)",
         "./usr/bin/bmp.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_bmp)",
