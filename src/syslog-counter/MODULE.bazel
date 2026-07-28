@@ -1,0 +1,30 @@
+module(
+    name = "syslog-counter",
+    version = "1.0.0",
+)
+
+bazel_dep(name = "rules_rust", version = "0.61.0")
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "sonic-swss-common", version = "1.0.0")
+
+# Cargo.toml lists swss-common as a `path = "../sonic-swss-common/crates/swss-common"`
+# dep so plain `cargo build` still works. crate_universe cannot cross module
+# boundaries for path deps, so in the Bazel graph it is substituted with
+# @sonic-swss-common//crates/swss-common:swss_common (see BUILD.bazel).
+#
+# from_specs mode (rather than from_cargo) is used for exactly that reason: it
+# lets us enumerate only the crates.io deps and skip the path dep, and it does
+# not require Cargo.lock to stay in sync.
+crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
+crate.spec(
+    package = "env_logger",
+    version = "0.11.8",
+)
+crate.spec(
+    package = "log",
+    version = "0.4.27",
+)
+crate.from_specs(name = "syslog_counter_crates")
+use_repo(crate, "syslog_counter_crates")

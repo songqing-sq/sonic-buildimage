@@ -1,0 +1,97 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.0.0"
+
+exports_files(["Cargo.toml"])
+
+# from_specs mode emits one target per direct dep (no aliases / all_crate_deps
+# generator), so list them explicitly.
+_COMMON_CRATES = [
+    "@ctrmgrd_rs_crates//:bollard",
+    "@ctrmgrd_rs_crates//:clap",
+    "@ctrmgrd_rs_crates//:futures-util",
+    "@ctrmgrd_rs_crates//:syslog-tracing",
+    "@ctrmgrd_rs_crates//:thiserror",
+    "@ctrmgrd_rs_crates//:tokio",
+    "@ctrmgrd_rs_crates//:tracing",
+    "@ctrmgrd_rs_crates//:tracing-subscriber",
+]
+
+# crates/docker-rs: main.rs + `mod container;`
+rust_binary(
+    name = "docker-rs",
+    srcs = [
+        "crates/docker-rs/src/container.rs",
+        "crates/docker-rs/src/main.rs",
+    ],
+    crate_root = "crates/docker-rs/src/main.rs",
+    edition = "2021",
+    deps = _COMMON_CRATES + [
+        "@ctrmgrd_rs_crates//:chrono",
+        "@ctrmgrd_rs_crates//:enumset",
+        "@ctrmgrd_rs_crates//:serde_json",
+    ],
+)
+
+# crates/docker-wait-any-rs: main.rs depends on the lib crate by name
+# (`use docker_wait_any_rs::{...}`), so lib.rs is a separate rust_library.
+rust_library(
+    name = "docker_wait_any_rs_lib",
+    srcs = ["crates/docker-wait-any-rs/src/lib.rs"],
+    crate_name = "docker_wait_any_rs",
+    edition = "2021",
+    proc_macro_deps = ["@ctrmgrd_rs_crates//:async-trait"],
+    deps = _COMMON_CRATES + [
+        "@sonic-rs-common//:sonic_rs_common",
+        "@sonic-swss-common//crates/swss-common:swss_common",
+    ],
+)
+
+rust_binary(
+    name = "docker-wait-any-rs",
+    srcs = ["crates/docker-wait-any-rs/src/main.rs"],
+    crate_root = "crates/docker-wait-any-rs/src/main.rs",
+    edition = "2021",
+    # Rust's default linker mode emits version-stripped `-lX` for every
+    # propagated `.so.N`, which needs unversioned `libX.so` symlinks that
+    # trixie's package split does not reliably provide. cc_common link mode
+    # uses `-l:libX.so.N`, matching cc_binary.
+    experimental_use_cc_common_link = 1,
+    deps = _COMMON_CRATES + [
+        ":docker_wait_any_rs_lib",
+        "@sonic-rs-common//:sonic_rs_common",
+        "@sonic-swss-common//crates/swss-common:swss_common",
+    ],
+)
+
+# debian/install:
+#   target/release/docker-rs           usr/bin
+#   target/release/docker-wait-any-rs  usr/bin
+sonic_deb(
+    name = "sonic-ctrmgrd-rs_{}.deb".format(VERSION),
+    package = "sonic-ctrmgrd-rs",
+    version = VERSION,
+    content = {
+        "/usr/bin:*:0755": [
+            ":docker-rs",
+            ":docker-wait-any-rs",
+        ],
+    },
+    depends = [
+        # Aligned with Make's dpkg-shlibdeps output.
+        "libc6 (>= 2.34)",
+        "libgcc-s1 (>= 4.2)",
+        "libswsscommon (>= 1.0.0)",
+    ],
+    maintainer = "SONiC Team <sonic-dev@lists.sonicfoundation.dev>",
+    description = "Container management in Rust",
+    section = "net",
+    priority = "optional",
+    # dh_strip: main deb carries stripped binaries, debug info goes to
+    # sonic-ctrmgrd-rs-dbgsym.
+    gen_dbg = True,
+    visibility = ["//visibility:public"],
+)

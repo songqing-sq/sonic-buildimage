@@ -416,6 +416,30 @@ local_path_override(
     path = "src/sonic-supervisord-utilities-rs",
 )
 
+bazel_dep(name = "syslog-counter", version = "1.0.0")
+local_path_override(
+    module_name = "syslog-counter",
+    path = "src/syslog-counter",
+)
+
+bazel_dep(name = "sonic-nettools", version = "0.0.1-0")
+local_path_override(
+    module_name = "sonic-nettools",
+    path = "src/sonic-nettools",
+)
+
+bazel_dep(name = "sonic-rs-common", version = "0.1.0")
+local_path_override(
+    module_name = "sonic-rs-common",
+    path = "src/sonic-rs-common",
+)
+
+bazel_dep(name = "sonic-ctrmgrd-rs", version = "1.0.0")
+local_path_override(
+    module_name = "sonic-ctrmgrd-rs",
+    path = "src/sonic-ctrmgrd-rs",
+)
+
 bazel_dep(name = "sonic-dash-ha", version = "1.0.0")
 local_path_override(
     module_name = "sonic-dash-ha",

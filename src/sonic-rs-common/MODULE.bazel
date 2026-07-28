@@ -1,0 +1,39 @@
+module(
+    name = "sonic-rs-common",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "rules_rust", version = "0.61.0")
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "sonic-swss-common", version = "1.0.0")
+
+# Cargo.toml declares swss-common as a `path = ...` dep so plain `cargo build`
+# works standalone. crate_universe cannot cross module boundaries for path deps,
+# so the Bazel graph substitutes @sonic-swss-common//crates/swss-common instead.
+#
+# from_specs mode enumerates only the crates.io deps, letting us skip that path
+# dep and avoiding a Cargo.lock sync requirement.
+crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
+crate.spec(
+    package = "thiserror",
+    version = "1",
+)
+crate.spec(
+    package = "tracing",
+    version = "0.1",
+)
+crate.spec(
+    package = "syslog",
+    version = "6.1",
+)
+
+# `time` is pulled transitively by syslog 6.x. 0.3.52+ needs nightly
+# `integer_sign_cast`; pin to the last version that builds on stable 1.86.
+crate.spec(
+    package = "time",
+    version = "=0.3.36",
+)
+crate.from_specs(name = "sonic_rs_common_crates")
+use_repo(crate, "sonic_rs_common_crates")

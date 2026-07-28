@@ -38,6 +38,10 @@ HERMETIC_HOST_DEBS = {
     "libnss-radius": "@libnss-radius//:libnss-radius_1.0.1-1.deb",
     "sonic-host-services-data": "@sonic-host-services//:sonic-host-services-data_1.0-1_all.deb",
     "sonic-utilities-data": "@sonic-utilities//:sonic-utilities-data_1.0-1_all.deb",
+    "sonic-ctrmgrd-rs": "@sonic-ctrmgrd-rs//:sonic-ctrmgrd-rs_1.0.0.deb",
+    "sonic-host-services-rs": "@sonic-host-services//:sonic-host-services-rs_1.0.0.deb",
+    "sonic-nettools": "@sonic-nettools//:sonic-nettools_0.0.1-0.deb",
+    "syslog-counter": "@syslog-counter//:syslog-counter_1.0.0.deb",
 }
 
 # Packages SONiC merely REBUILDS from Debian source at the same upstream
@@ -65,9 +69,8 @@ DEBIAN_EQUIVALENT = [
 # Awaiting a hermetic sonic_deb. No Make bridge is used for these — until each
 # lands the image simply lacks it, which is visible rather than papered over.
 #
-#   tacacs/radius, Rust daemons, data-only packages: SONiC-only sources.
-#   FIPS stack: needs symcrypt-openssl, then OpenSSL/CPython/OpenSSH/krb5
-#       rebuilt against it.
+# What remains is the FIPS stack: symcrypt-openssl first, then OpenSSL, CPython,
+# OpenSSH and krb5 rebuilt against it.
 # sonic-device-data is built with sonic_deb's `data =` shortcut (its payload is
 # a ~20k-file tree packed directly), so it has no `_data` sibling — the tar IS
 # the data tar. Listed separately from HERMETIC_HOST_DEBS, whose entries follow
@@ -80,10 +83,6 @@ HERMETIC_HOST_DEB_DATA_TARS = {
 }
 
 TODO_HERMETIC = [
-    "sonic-ctrmgrd-rs",
-    "sonic-host-services-rs",
-    "sonic-nettools",
-    "syslog-counter",
     "symcrypt-openssl",
     "openssl",
     "libssl3t64",

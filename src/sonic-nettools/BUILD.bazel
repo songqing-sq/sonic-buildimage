@@ -1,0 +1,47 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "0.0.1-0"
+
+exports_files(["Cargo.toml"])
+
+# from_specs mode emits one target per direct dep (no aliases / all_crate_deps
+# generator), so list them explicitly. Mirrors wol/Cargo.toml [dependencies].
+_DIRECT_CRATES = [
+    "@nettools_crates//:clap",
+    "@nettools_crates//:pnet",
+    "@nettools_crates//:libc",
+]
+
+rust_binary(
+    name = "wol",
+    srcs = [
+        "wol/src/main.rs",
+        "wol/src/socket.rs",
+        "wol/src/wol.rs",
+    ],
+    crate_root = "wol/src/main.rs",
+    edition = "2015",
+    deps = _DIRECT_CRATES,
+)
+
+# debian/install: `bin/wol /usr/bin/` (the Makefile moves target/release/wol
+# to bin/ first).
+sonic_deb(
+    name = "sonic-nettools_{}.deb".format(VERSION),
+    package = "sonic-nettools",
+    version = VERSION,
+    content = {
+        "/usr/bin:*:0755": [":wol"],
+    },
+    maintainer = "Wenda Chu <wendachu@microsoft.com>",
+    description = "Networking command line tools",
+    section = "custom",
+    priority = "optional",
+    # dh_strip: main deb carries the stripped binary, debug info goes to
+    # sonic-nettools-dbgsym.
+    gen_dbg = True,
+    visibility = ["//visibility:public"],
+)

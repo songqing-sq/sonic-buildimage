@@ -1,0 +1,91 @@
+module(
+    name = "sonic-ctrmgrd-rs",
+    version = "1.0.0",
+)
+
+bazel_dep(name = "rules_rust", version = "0.61.0")
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "sonic-swss-common", version = "1.0.0")
+bazel_dep(name = "sonic-rs-common", version = "0.1.0")
+
+# docker-wait-any-rs/Cargo.toml declares sonic-rs-common and swss-common as
+# `path = ...` deps so plain `cargo build` works standalone. crate_universe
+# cannot cross module boundaries for path deps, so the Bazel graph substitutes
+# the bzlmod targets @sonic-rs-common//:sonic_rs_common and
+# @sonic-swss-common//crates/swss-common instead.
+#
+# from_specs mode enumerates only the crates.io deps, which is what lets us skip
+# those path deps; it also removes the Cargo.lock sync requirement. Versions
+# mirror the root Cargo.toml [workspace.dependencies] section.
+crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
+crate.spec(
+    features = [
+        "macros",
+        "rt-multi-thread",
+        "signal",
+    ],
+    package = "tokio",
+    version = "1.37",
+)
+crate.spec(
+    features = ["chrono"],
+    package = "bollard",
+    version = "0.17.1",
+)
+crate.spec(
+    package = "chrono",
+    version = "0.4",
+)
+crate.spec(
+    package = "enumset",
+    version = "1",
+)
+crate.spec(
+    package = "futures-util",
+    version = "0.3",
+)
+crate.spec(
+    features = [
+        "cargo",
+        "derive",
+        "string",
+        "unicode",
+        "unstable-styles",
+        "wrap_help",
+    ],
+    package = "clap",
+    version = "4",
+)
+crate.spec(
+    package = "serde_json",
+    version = "1",
+)
+crate.spec(
+    package = "thiserror",
+    version = "1",
+)
+crate.spec(
+    features = ["log"],
+    package = "tracing",
+    version = "0.1",
+)
+crate.spec(
+    features = [
+        "env-filter",
+        "serde",
+    ],
+    package = "tracing-subscriber",
+    version = "0.3",
+)
+crate.spec(
+    package = "syslog-tracing",
+    version = "0.3",
+)
+crate.spec(
+    package = "async-trait",
+    version = "0.1.77",
+)
+crate.from_specs(name = "ctrmgrd_rs_crates")
+use_repo(crate, "ctrmgrd_rs_crates")

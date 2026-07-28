@@ -1,0 +1,29 @@
+module(
+    name = "sonic-nettools",
+    version = "0.0.1-0",
+)
+
+bazel_dep(name = "rules_rust", version = "0.61.0")
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+
+# from_specs mode (rather than from_cargo) keeps the crate set explicit and
+# avoids requiring Cargo.lock to stay in sync with the Bazel graph. Direct deps
+# mirror wol/Cargo.toml [dependencies]; there are no path deps here.
+crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
+crate.spec(
+    features = ["derive"],
+    package = "clap",
+    version = "4.5.7",
+)
+crate.spec(
+    package = "pnet",
+    version = "0.35.0",
+)
+crate.spec(
+    package = "libc",
+    version = "0.2.159",
+)
+crate.from_specs(name = "nettools_crates")
+use_repo(crate, "nettools_crates")

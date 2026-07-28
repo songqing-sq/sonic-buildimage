@@ -1,0 +1,28 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["Cargo.toml"])
+
+# Shared helper crate (device_info + logger). Not a Debian package of its own —
+# it is statically linked into consumers (currently docker-wait-any-rs).
+#
+# from_specs mode emits one target per direct dep. Mirrors Cargo.toml
+# [dependencies] minus `swss-common`, which is a cross-module path dep
+# substituted with the Bazel target below.
+rust_library(
+    name = "sonic_rs_common",
+    srcs = [
+        "src/device_info.rs",
+        "src/lib.rs",
+        "src/logger.rs",
+    ],
+    crate_name = "sonic_rs_common",
+    edition = "2021",
+    deps = [
+        "@sonic-swss-common//crates/swss-common:swss_common",
+        "@sonic_rs_common_crates//:syslog",
+        "@sonic_rs_common_crates//:thiserror",
+        "@sonic_rs_common_crates//:tracing",
+    ],
+)

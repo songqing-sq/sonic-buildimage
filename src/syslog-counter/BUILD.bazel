@@ -1,0 +1,61 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.0.0"
+
+exports_files(["Cargo.toml"])
+
+# from_specs mode emits one target per direct dep (no aliases / all_crate_deps
+# generator), so list them explicitly. Mirrors Cargo.toml [dependencies] minus
+# `swss-common`, which is a cross-module path dep substituted with the Bazel
+# target below.
+_DIRECT_CRATES = [
+    "@syslog_counter_crates//:env_logger",
+    "@syslog_counter_crates//:log",
+]
+
+# src/main.rs pulls src/lib.rs in as `mod lib;` (rather than depending on the
+# library crate), so both files belong to the binary's compilation unit.
+rust_binary(
+    name = "syslog-counter",
+    srcs = [
+        "src/lib.rs",
+        "src/main.rs",
+    ],
+    crate_root = "src/main.rs",
+    edition = "2021",
+    # Rust's default linker mode emits version-stripped `-lX` for every
+    # propagated `.so.N`, which needs unversioned `libX.so` symlinks that
+    # trixie's package split does not reliably provide. cc_common link mode
+    # uses `-l:libX.so.N`, matching cc_binary.
+    experimental_use_cc_common_link = 1,
+    deps = _DIRECT_CRATES + [
+        "@sonic-swss-common//crates/swss-common:swss_common",
+    ],
+)
+
+# debian/install: `target/release/syslog-counter usr/bin`
+sonic_deb(
+    name = "syslog-counter_{}.deb".format(VERSION),
+    package = "syslog-counter",
+    version = VERSION,
+    content = {
+        "/usr/bin:*:0755": [":syslog-counter"],
+    },
+    depends = [
+        # Aligned with Make's dpkg-shlibdeps output.
+        "libc6 (>= 2.34)",
+        "libgcc-s1 (>= 4.2)",
+        "libswsscommon (>= 1.0.0)",
+    ],
+    maintainer = "Liu Hua <liuh@microsoft.com>",
+    description = "SONiC syslog counter",
+    section = "utils",
+    priority = "optional",
+    # dh_strip: main deb carries the stripped binary, debug info goes to
+    # syslog-counter-dbgsym.
+    gen_dbg = True,
+    visibility = ["//visibility:public"],
+)
