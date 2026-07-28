@@ -3,6 +3,7 @@ load("@rules_deb//distroless:defs.bzl", "flatten")
 load("@tar.bzl", "tar")
 load("@sonic_build_infra//python:site_packages.bzl", "site_packages")
 load("//platform/common/rootfs:host_packages.bzl", "HOST_PACKAGES")
+load("//platform/common/rootfs:container_ctl.bzl", "COMMON_CTL_VARS", "CONTAINER_CTL", "SONIC_ASIC_PLATFORM")
 load("//platform/common/rootfs:sonic_host_debs.bzl", "FIPS_HOST_DEBS", "HERMETIC_HOST_DEBS", "HERMETIC_HOST_DEB_DATA_TARS")
 
 # =============================================================================
@@ -654,9 +655,39 @@ tar(
 # TODO: replace with hermetic jinja renders once the docker_image_ctl.j2 run-
 # option plumbing is ported.
 # -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# The 27 container control scripts, rendered from
+# files/build_templates/docker_image_ctl.j2 the way slave.mk:1842 does (one `j2`
+# run per container with docker_container_name / docker_image_name /
+# docker_image_run_opt exported). Per-container values live in container_ctl.bzl.
+# -----------------------------------------------------------------------------
+[
+    genrule(
+        name = "ctl_" + name.replace("-", "_").replace(".", "_"),
+        srcs = ["//files/build_templates:docker_image_ctl.j2"],
+        outs = ["ctl/" + name + ".sh"],
+        cmd = ("$(execpath @sonic_build_infra//jinja2:render) " +
+               "$(execpath //files/build_templates:docker_image_ctl.j2) $@ " +
+               "docker_container_name=" + container + " " +
+               "docker_image_name=" + image + " " +
+               "sonic_asic_platform=" + SONIC_ASIC_PLATFORM + " " +
+               " ".join([
+                   k + "=" + v
+                   for k, v in COMMON_CTL_VARS.items()
+               ]) + " " +
+               "docker_image_run_opt=" + repr(run_opt)),
+        tools = ["@sonic_build_infra//jinja2:render"],
+    )
+    for name, (container, image, run_opt) in CONTAINER_CTL.items()
+]
+
 tar(
     name = "rendered_layer",
-    srcs = glob(["rendered/**"]),
+    srcs = glob(["rendered/**"]) + [
+        ":ctl_" + name.replace("-", "_").replace(".", "_")
+        for name in CONTAINER_CTL
+    ],
     mtree = [
         "./etc/apt/sources.list uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__apt__sources.list)",
         "./etc/dhcp/dhclient.conf uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__dhcp__dhclient.conf)",
@@ -668,33 +699,33 @@ tar(
         "./etc/sonic/constants.yml uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__sonic__constants.yml)",
         "./etc/sonic/init_cfg.json uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__sonic__init_cfg.json)",
         "./etc/sonic/sonic_version.yml uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__sonic__sonic_version.yml)",
-        "./usr/bin/bgp.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__bgp.sh)",
-        "./usr/bin/bmp.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__bmp.sh)",
-        "./usr/bin/bmp_watchdog.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__bmp_watchdog.sh)",
-        "./usr/bin/dash-ha.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__dash-ha.sh)",
-        "./usr/bin/dash_engine.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__dash_engine.sh)",
-        "./usr/bin/database.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__database.sh)",
-        "./usr/bin/dhcp_relay.sh uid=0 gid=0 mode=0744 type=file content=$(location rendered/usr__bin__dhcp_relay.sh)",
-        "./usr/bin/eventd.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__eventd.sh)",
-        "./usr/bin/gbsyncd.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__gbsyncd.sh)",
-        "./usr/bin/gnmi-sidecar.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__gnmi-sidecar.sh)",
-        "./usr/bin/gnmi.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__gnmi.sh)",
-        "./usr/bin/gnmi_watchdog.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__gnmi_watchdog.sh)",
-        "./usr/bin/lldp.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__lldp.sh)",
-        "./usr/bin/macsec.sh uid=0 gid=0 mode=0744 type=file content=$(location rendered/usr__bin__macsec.sh)",
-        "./usr/bin/mgmt-framework.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__mgmt-framework.sh)",
-        "./usr/bin/mux.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__mux.sh)",
-        "./usr/bin/nat.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__nat.sh)",
-        "./usr/bin/otel.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__otel.sh)",
-        "./usr/bin/pmon.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__pmon.sh)",
-        "./usr/bin/radv.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__radv.sh)",
-        "./usr/bin/restapi-sidecar.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__restapi-sidecar.sh)",
-        "./usr/bin/sflow.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__sflow.sh)",
-        "./usr/bin/snmp.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__snmp.sh)",
-        "./usr/bin/swss.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__swss.sh)",
-        "./usr/bin/syncd.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__syncd.sh)",
-        "./usr/bin/sysmgr.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__sysmgr.sh)",
-        "./usr/bin/teamd.sh uid=0 gid=0 mode=0755 type=file content=$(location rendered/usr__bin__teamd.sh)",
+        "./usr/bin/bgp.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_bgp)",
+        "./usr/bin/bmp.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_bmp)",
+        "./usr/bin/bmp_watchdog.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_bmp_watchdog)",
+        "./usr/bin/dash-ha.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_dash_ha)",
+        "./usr/bin/dash_engine.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_dash_engine)",
+        "./usr/bin/database.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_database)",
+        "./usr/bin/dhcp_relay.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_dhcp_relay)",
+        "./usr/bin/eventd.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_eventd)",
+        "./usr/bin/gbsyncd.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_gbsyncd)",
+        "./usr/bin/gnmi-sidecar.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_gnmi_sidecar)",
+        "./usr/bin/gnmi.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_gnmi)",
+        "./usr/bin/gnmi_watchdog.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_gnmi_watchdog)",
+        "./usr/bin/lldp.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_lldp)",
+        "./usr/bin/macsec.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_macsec)",
+        "./usr/bin/mgmt-framework.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_mgmt_framework)",
+        "./usr/bin/mux.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_mux)",
+        "./usr/bin/nat.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_nat)",
+        "./usr/bin/otel.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_otel)",
+        "./usr/bin/pmon.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_pmon)",
+        "./usr/bin/radv.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_radv)",
+        "./usr/bin/restapi-sidecar.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_restapi_sidecar)",
+        "./usr/bin/sflow.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_sflow)",
+        "./usr/bin/snmp.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_snmp)",
+        "./usr/bin/swss.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_swss)",
+        "./usr/bin/syncd.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_syncd)",
+        "./usr/bin/sysmgr.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_sysmgr)",
+        "./usr/bin/teamd.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_teamd)",
         "./usr/lib/systemd/system/bgp.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__bgp.service)",
         "./usr/lib/systemd/system/bgp@.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__bgp@.service)",
         "./usr/lib/systemd/system/bmp.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__bmp.service)",
