@@ -57,6 +57,10 @@ HERMETIC_HOST_DEBS = {
     # the FreeRADIUS bundle, so it lacks the RADIUS MPL / CHAP / PEAP-MSCHAPv2
     # support SONiC's 1.4.1-1 fork carries.
     "libpam-radius-auth": "@libpam-radius-auth//:libpam-radius-auth_1.4.1-1.deb",
+    # Built from source: 0002-change_monit_alert_log_error.patch extends the
+    # grammar with `alert ... repeat`, which SONiC's monit configs use. Verified
+    # that stock trixie monit rejects that syntax outright.
+    "monit": "@monit//:monit_5.34.3-1.deb",
 }
 
 # The FIPS stack (INCLUDE_FIPS=y, the Makefile.work default): OpenSSL, CPython,
@@ -107,7 +111,6 @@ HERMETIC_HOST_DEB_DATA_TARS = {
 TODO_HERMETIC = [
     # SONiC builds these from source with its own patches, so the stock trixie
     # package is not a substitute:
-    #   monit             MemAvailable accounting + alert-log changes
     #   ifupdown2         5 patches incl. python 3.12 compatibility
     #   kdump-tools       kdump core prefix, initrd generated at build time
     #   grub-common       cpio ustar large-uid handling
@@ -116,7 +119,6 @@ TODO_HERMETIC = [
     #   makedumpfile      plain Debian rebuild, but pinned to 1.7.7-1 which
     #                     trixie does not carry
     #   sedutil           1.15-5ad84d8, a git snapshot with no Debian release
-    "monit",
     "rasdaemon",
     "makedumpfile",
     "kdump-tools",

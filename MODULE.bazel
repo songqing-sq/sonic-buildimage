@@ -428,6 +428,12 @@ local_path_override(
     path = "src/sonic-nettools",
 )
 
+bazel_dep(name = "monit", version = "5.34.3-1")
+local_path_override(
+    module_name = "monit",
+    path = "src/monit",
+)
+
 bazel_dep(name = "libpam-radius-auth", version = "1.4.1-1")
 local_path_override(
     module_name = "libpam-radius-auth",

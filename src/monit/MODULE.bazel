@@ -1,0 +1,79 @@
+module(
+    name = "monit",
+    version = "5.34.3-1",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+# =============================================================================
+# monit — built FROM SOURCE.
+#
+# SONiC applies patch/0002-change_monit_alert_log_error.patch, which changes
+# behaviour the image depends on: it makes monit log an Log_error() on the first
+# transition to failed and honour a `repeat` clause on `alert` actions, so
+# persistent failures keep producing syslog errors. SONiC's monit configs rely on
+# that (the alert-repeat syntax it adds to the grammar would otherwise be a parse
+# error), so trixie's stock monit is not a substitute.
+#
+# Note the patch touches src/p.y, the bison grammar — the pre-generated y.tab.c
+# in the tarball is therefore stale and must be regenerated.
+#
+# The other two patches in patch/series are commented out upstream and are
+# deliberately not applied:
+#   0001-used_system_memory_sysdep-...  (disabled)
+#   0003-fix-yacc-header-file-naming   (disabled)
+# =============================================================================
+debian_source = use_repo_rule("@sonic_build_infra//debian_source:debian_source.bzl", "debian_source")
+
+debian_source(
+    name = "monit_src",
+    build_file = "//:monit_src.BUILD",
+    debian_sha256 = "2f314b1774c4e2351c71fb05ab988cece0cad458dab7a1bf236cc82ddbf97cda",
+    debian_urls = ["https://deb.debian.org/debian/pool/main/m/monit/monit_5.34.3-1.debian.tar.xz"],
+    orig_sha256 = "669d8b95ddec124d1444ba5264f67fdeae8e90e53b2929719f4750fc5ff3ba60",
+    orig_urls = ["https://deb.debian.org/debian/pool/main/m/monit/monit_5.34.3.orig.tar.gz"],
+    patches = ["//:patch/0002-change_monit_alert_log_error.patch"],
+    strip_prefix = "monit-5.34.3",
+)
+
+# OpenSSL (src/ssl/Ssl.c), zlib (websocket protocol check) and PAM (util.c
+# authenticates the HTTP interface against PAM) — matching the deb's Depends.
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = [
+        "trixie",
+        "trixie-updates",
+    ],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+apt.install(
+    dependency_set = "monit_deps",
+    packages = [
+        "libssl-dev:amd64",
+        "libssl-dev:arm64",
+        "zlib1g-dev:amd64",
+        "zlib1g-dev:arm64",
+        "libpam0g-dev:amd64",
+        "libpam0g-dev:arm64",
+        # crypt(), called by util.c's Util_checkCredentials.
+        "libcrypt-dev:amd64",
+        "libcrypt-dev:arm64",
+    ],
+    suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
+)
+use_repo(apt, "monit_deps")

@@ -1,5 +1,9 @@
-*
+monit
 !.gitignore
 !Makefile
 !patch/
 !patch/*
+!MODULE.bazel
+!BUILD.bazel
+!*.BUILD
+!config_defines.bzl
