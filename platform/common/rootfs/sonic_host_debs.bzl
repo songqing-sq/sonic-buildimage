@@ -61,6 +61,10 @@ HERMETIC_HOST_DEBS = {
     # grammar with `alert ... repeat`, which SONiC's monit configs use. Verified
     # that stock trixie monit rejects that syntax outright.
     "monit": "@monit//:monit_5.34.3-1.deb",
+    # Built from source: 0001-Check-CPUs-online-not-configured.patch switches
+    # ras-events.c to _SC_NPROCESSORS_ONLN, without which the daemon fails to
+    # start when any CPU is offline. Not upstream as of 0.6.8-1.
+    "rasdaemon": "@rasdaemon//:rasdaemon_0.6.8-1.deb",
 }
 
 # The FIPS stack (INCLUDE_FIPS=y, the Makefile.work default): OpenSSL, CPython,
@@ -115,11 +119,9 @@ TODO_HERMETIC = [
     #   kdump-tools       kdump core prefix, initrd generated at build time
     #   grub-common       cpio ustar large-uid handling
     #   grub2-common      (same source package as grub-common)
-    #   rasdaemon         "Check CPUs online not configured"
     #   makedumpfile      plain Debian rebuild, but pinned to 1.7.7-1 which
     #                     trixie does not carry
     #   sedutil           1.15-5ad84d8, a git snapshot with no Debian release
-    "rasdaemon",
     "makedumpfile",
     "kdump-tools",
     "ifupdown2",

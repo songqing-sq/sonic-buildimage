@@ -428,6 +428,12 @@ local_path_override(
     path = "src/sonic-nettools",
 )
 
+bazel_dep(name = "rasdaemon", version = "0.6.8-1")
+local_path_override(
+    module_name = "rasdaemon",
+    path = "src/rasdaemon",
+)
+
 bazel_dep(name = "monit", version = "5.34.3-1")
 local_path_override(
     module_name = "monit",

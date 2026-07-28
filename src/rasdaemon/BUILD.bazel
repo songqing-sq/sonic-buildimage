@@ -1,0 +1,133 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+load(":config_defines.bzl", "CONFIG_DEFINES", "CONFIG_STRING_DEFINES", "RAS_MC_CTL_SUBST", "SERVICE_SUBST", "config_h_cmd")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "0.6.8-1"
+
+exports_files(["rasdaemon_src.BUILD"])
+
+# The git snapshot has no config.h.in (Debian runs autoreconf); the macro set is
+# recorded in config_defines.bzl instead of invoking host autotools.
+genrule(
+    name = "gen_config_h",
+    outs = ["config.h"],
+    cmd = config_h_cmd(CONFIG_DEFINES, CONFIG_STRING_DEFINES),
+)
+
+cc_library(
+    name = "rasdaemon_config",
+    hdrs = ["config.h"],
+    includes = ["."],
+)
+
+_COPTS = [
+    "-std=gnu17",
+    "-DHAVE_CONFIG_H",
+]
+
+_DEPS = [
+    ":rasdaemon_config",
+    "@rasdaemon_src//:hdrs_lib",
+]
+
+cc_library(
+    name = "libtrace",
+    srcs = ["@rasdaemon_src//:libtrace_srcs"],
+    copts = _COPTS,
+    linkstatic = True,
+    deps = _DEPS,
+)
+
+cc_binary(
+    name = "rasdaemon",
+    srcs = ["@rasdaemon_src//:rasdaemon_srcs"],
+    copts = _COPTS,
+    # Makefile.am rasdaemon_LDADD. Drops the DT_NEEDED entries cc_binary's C++
+    # driver would otherwise add.
+    linkopts = [
+        "-lpthread",
+        "-Wl,--as-needed",
+    ],
+    deps = _DEPS + [
+        ":libtrace",
+        "@rasdaemon_deps//libsqlite3-dev:sqlite3",
+    ],
+)
+
+# util/ras-mc-ctl.in is a perl script; configure substitutes the paths and the
+# automake conditional prefixes (empty when a feature is on, "#" when off).
+genrule(
+    name = "gen_ras_mc_ctl",
+    srcs = ["@rasdaemon_src//:util/ras-mc-ctl.in"],
+    outs = ["ras-mc-ctl"],
+    cmd = "sed " + " ".join([
+        "-e 's|@{name}@|{value}|g'".format(name = name, value = value)
+        for name, value in RAS_MC_CTL_SUBST.items()
+    ]) + " $< > $@",
+)
+
+# misc/*.service.in: configure fills in the install paths.
+[
+    genrule(
+        name = "gen_" + unit.replace("-", "_").replace(".", "_") + "_service",
+        srcs = ["@rasdaemon_src//:misc/" + unit + ".service.in"],
+        outs = ["units/" + unit + ".service"],
+        cmd = "sed " + " ".join([
+            "-e 's|@{name}@|{value}|g'".format(name = name, value = value)
+            for name, value in SERVICE_SUBST.items()
+        ]) + " $< > $@",
+    )
+    for unit in [
+        "rasdaemon",
+        "ras-mc-ctl",
+    ]
+]
+
+# debian/rasdaemon.install renames misc/rasdaemon.env to /etc/default/rasdaemon.
+genrule(
+    name = "gen_default",
+    srcs = ["@rasdaemon_src//:misc/rasdaemon.env"],
+    outs = ["renamed/default/rasdaemon"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "gen_init",
+    srcs = ["@rasdaemon_src//:debian/rasdaemon.init"],
+    outs = ["renamed/init/rasdaemon"],
+    cmd = "cp $< $@",
+)
+
+sonic_deb(
+    name = "rasdaemon_{}.deb".format(VERSION),
+    package = "rasdaemon",
+    version = VERSION,
+    content = {
+        "/usr/sbin:*:0755": [
+            ":ras-mc-ctl",
+            ":rasdaemon",
+        ],
+        "/etc/default:*:0644": [":gen_default"],
+        "/etc/init.d:*:0755": [":gen_init"],
+        "/lib/systemd/system:*:0644": [
+            ":gen_ras_mc_ctl_service",
+            ":gen_rasdaemon_service",
+        ],
+    },
+    # ras-mc-ctl reads per-DIMM label files from here; the deb ships it empty.
+    empty_dirs = ["/etc/ras/dimm_labels.d"],
+    depends = [
+        "libc6 (>= 2.34)",
+        "libsqlite3-0 (>= 3.5.9)",
+        "perl:any",
+    ],
+    maintainer = "Debian Kernel Team <debian-kernel@lists.debian.org>",
+    description = "Reliability, Availability and Serviceability logging tool\n rasdaemon is a RAS (Reliability, Availability and Serviceability) logging\n tool. It currently records memory errors, using the EDAC tracing events.",
+    homepage = "https://git.kernel.org/pub/scm/linux/kernel/git/mchehab/rasdaemon.git",
+    section = "admin",
+    priority = "optional",
+    gen_dbg = True,
+)

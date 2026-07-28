@@ -1,0 +1,8 @@
+rasdaemon
+!.gitignore
+!Makefile
+!*.patch
+!MODULE.bazel
+!BUILD.bazel
+!*.BUILD
+!config_defines.bzl
