@@ -428,6 +428,12 @@ local_path_override(
     path = "src/sonic-nettools",
 )
 
+bazel_dep(name = "grub2", version = "2.06-13+deb13u1")
+local_path_override(
+    module_name = "grub2",
+    path = "src/grub2",
+)
+
 bazel_dep(name = "sedutil", version = "1.15-5ad84d8")
 local_path_override(
     module_name = "sedutil",

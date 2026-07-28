@@ -1,0 +1,512 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@sonic_build_infra//grub:grub_libs.bzl", "GRUB_ALL_LIB_DEPS", "GRUB_COMMON_COPTS", "GRUB_COMMON_DEPS")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "2.06-13+deb13u1"
+
+# KNOWN DIVERGENCE: `grub-probe --version` prints "2.06" where Make's prints
+# "2.06-13+deb13u1". debian/rules passes the Debian version as PACKAGE_VERSION,
+# but //sonic_rules/grub's generated config.h hardcodes the upstream "2.06" and
+# its include directory arrives transitively through every grub library here, so
+# it cannot be shadowed from this package. Cosmetic: only the --version banner
+# differs, and closing it means making the version a parameter of
+# //sonic_rules/grub's config.h, which its own host tools share.
+
+# =============================================================================
+# The GRUB 2.06 userspace utilities that grub-common and grub2-common ship.
+#
+# The four libraries they link (libgrubmods / libgrubgcry / libgrubkern /
+# gnulib) are already built by //sonic_rules/grub for its own host tools, so
+# GRUB_ALL_LIB_DEPS is reused rather than compiling GRUB twice.
+#
+# Per-program source lists are transcribed from upstream Makefile.util.def.
+# =============================================================================
+
+# util/config.c and grub-core/osdep/config.c share a basename, so the osdep one
+# is compiled separately (same split //sonic_rules/grub already needs).
+
+cc_binary(
+    name = "grub_editenv",
+    srcs = [
+        "@sonic_build_infra//grub:src/grub-core/osdep/compress.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/config.c",
+        "@sonic_build_infra//grub:src/util/editenv.c",
+        "@sonic_build_infra//grub:src/util/grub-editenv.c",
+        "@sonic_build_infra//grub:src/util/grub-install-common.c",
+        "@sonic_build_infra//grub:src/util/grub-mkimage32.c",
+        "@sonic_build_infra//grub:src/util/grub-mkimage64.c",
+        "@sonic_build_infra//grub:src/util/mkimage.c",
+        "@sonic_build_infra//grub:src/util/resolve.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS + ["@sonic_build_infra//grub:mkimage_osdep_config"] + ["@grub2_deps//liblzma-dev:lzma"],
+)
+
+cc_binary(
+    name = "grub_file",
+    srcs = [
+        # Font/unicode module objects pulled from libgrubmods; the reference
+        # comes from this program's own translation units, so as archive members
+        # they would be dropped.
+        "@sonic_build_infra//grub:src/grub-core/font/font.c",
+        "@sonic_build_infra//grub:src/grub-core/normal/charset.c",
+        "@sonic_build_infra//grub:src/grub-core/unidata.c",
+        "@sonic_build_infra//grub:src/grub-core/gfxmenu/font.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/video_fb.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbblit.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbutil.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbfill.c",
+        "@sonic_build_infra//grub:src/grub-core/video/video.c",
+        "@sonic_build_infra//grub:src/grub-core/video/capture.c",
+        "@sonic_build_infra//grub:src/grub-core/video/colors.c",
+        "@sonic_build_infra//grub:src/grub-core/commands/file.c",
+        "@sonic_build_infra//grub:src/grub-core/commands/file32.c",
+        "@sonic_build_infra//grub:src/grub-core/commands/file64.c",
+        "@sonic_build_infra//grub:src/grub-core/disk/host.c",
+        "@sonic_build_infra//grub:src/grub-core/io/offset.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/elf.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/hostfs.c",
+        "@sonic_build_infra//grub:src/grub-core/loader/i386/xen_file.c",
+        "@sonic_build_infra//grub:src/grub-core/loader/i386/xen_file32.c",
+        "@sonic_build_infra//grub:src/grub-core/loader/i386/xen_file64.c",
+        "@sonic_build_infra//grub:src/grub-core/loader/lzss.c",
+        "@sonic_build_infra//grub:src/grub-core/loader/macho.c",
+        "@sonic_build_infra//grub:src/grub-core/loader/macho32.c",
+        "@sonic_build_infra//grub:src/grub-core/loader/macho64.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/grub-file.c",
+        "@sonic_build_infra//grub:src/util/render-label.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS,
+)
+
+cc_binary(
+    name = "grub_fstest",
+    srcs = [
+        # Registers the filesystem/crypto modules libgrubmods.a provides;
+        # upstream generates an equivalent <prog>_init.c per program.
+        "@sonic_build_infra//grub:generated/libgrub_a_init.c",
+        "@sonic_build_infra//grub:src/grub-core/disk/host.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/hostfs.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/grub-fstest.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS,
+)
+
+cc_binary(
+    name = "grub_glue_efi",
+    srcs = [
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/glue-efi.c",
+        "@sonic_build_infra//grub:src/util/grub-glue-efi.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS,
+)
+
+cc_binary(
+    name = "grub_menulst2cfg",
+    srcs = [
+        # Font/unicode module objects these pull from libgrubmods; as archive
+        # members they are dropped because the reference comes from this
+        # program's own translation units.
+        "@sonic_build_infra//grub:src/grub-core/font/font.c",
+        "@sonic_build_infra//grub:src/grub-core/normal/charset.c",
+        "@sonic_build_infra//grub:src/grub-core/unidata.c",
+        "@sonic_build_infra//grub:src/grub-core/gfxmenu/font.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/video_fb.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbblit.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbutil.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbfill.c",
+        "@sonic_build_infra//grub:src/grub-core/video/video.c",
+        "@sonic_build_infra//grub:src/grub-core/video/capture.c",
+        "@sonic_build_infra//grub:src/grub-core/video/colors.c",
+        "@sonic_build_infra//grub:src/grub-core/lib/i386/pc/vesa_modes_table.c",
+        "@sonic_build_infra//grub:src/grub-core/lib/legacy_parse.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/grub-menulst2cfg.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS,
+)
+
+cc_binary(
+    name = "grub_mkfont",
+    srcs = [
+        # Font/unicode module objects these pull from libgrubmods; as archive
+        # members they are dropped because the reference comes from this
+        # program's own translation units.
+        "@sonic_build_infra//grub:src/grub-core/unidata.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/grub-mkfont.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS + ["@grub2_deps//libfreetype-dev:freetype",
+        "@grub2_deps//libbrotli-dev:brotlidec",
+        # brotlidec references the shared alloc/dictionary helpers here.
+        "@grub2_deps//libbrotli-dev:brotlicommon"],
+)
+
+cc_binary(
+    name = "grub_mkimage",
+    srcs = [
+        # Font/unicode module objects pulled from libgrubmods; the reference
+        # comes from this program's own translation units, so as archive members
+        # they would be dropped.
+        "@sonic_build_infra//grub:src/grub-core/font/font.c",
+        "@sonic_build_infra//grub:src/grub-core/normal/charset.c",
+        "@sonic_build_infra//grub:src/grub-core/unidata.c",
+        "@sonic_build_infra//grub:src/grub-core/gfxmenu/font.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/video_fb.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbblit.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbutil.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbfill.c",
+        "@sonic_build_infra//grub:src/grub-core/video/video.c",
+        "@sonic_build_infra//grub:src/grub-core/video/capture.c",
+        "@sonic_build_infra//grub:src/grub-core/video/colors.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/config.c",
+        "@sonic_build_infra//grub:src/util/grub-mkimage.c",
+        "@sonic_build_infra//grub:src/util/grub-mkimage32.c",
+        "@sonic_build_infra//grub:src/util/grub-mkimage64.c",
+        "@sonic_build_infra//grub:src/util/mkimage.c",
+        "@sonic_build_infra//grub:src/util/resolve.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS + ["@sonic_build_infra//grub:mkimage_osdep_config"] + ["@grub2_deps//liblzma-dev:lzma"],
+)
+
+cc_binary(
+    name = "grub_mklayout",
+    srcs = [
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/grub-mklayout.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS,
+)
+
+cc_binary(
+    name = "grub_mknetdir",
+    srcs = [
+        # Font/unicode module objects pulled from libgrubmods; the reference
+        # comes from this program's own translation units, so as archive members
+        # they would be dropped.
+        "@sonic_build_infra//grub:src/grub-core/font/font.c",
+        "@sonic_build_infra//grub:src/grub-core/normal/charset.c",
+        "@sonic_build_infra//grub:src/grub-core/unidata.c",
+        "@sonic_build_infra//grub:src/grub-core/gfxmenu/font.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/video_fb.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbblit.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbutil.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbfill.c",
+        "@sonic_build_infra//grub:src/grub-core/video/video.c",
+        "@sonic_build_infra//grub:src/grub-core/video/capture.c",
+        "@sonic_build_infra//grub:src/grub-core/video/colors.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/lib/reed_solomon.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/blocklist.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/compress.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/ofpath.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/platform.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/platform_unix.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/random.c",
+        "@sonic_build_infra//grub:src/util/config.c",
+        "@sonic_build_infra//grub:src/util/editenv.c",
+        "@sonic_build_infra//grub:src/util/grub-install-common.c",
+        "@sonic_build_infra//grub:src/util/grub-mkimage32.c",
+        "@sonic_build_infra//grub:src/util/grub-mkimage64.c",
+        "@sonic_build_infra//grub:src/util/grub-mknetdir.c",
+        "@sonic_build_infra//grub:src/util/mkimage.c",
+        "@sonic_build_infra//grub:src/util/resolve.c",
+        "@sonic_build_infra//grub:src/util/setup_bios.c",
+        "@sonic_build_infra//grub:src/util/setup_sparc.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS + ["@sonic_build_infra//grub:mkimage_osdep_config"] + ["@grub2_deps//liblzma-dev:lzma"],
+)
+
+cc_binary(
+    name = "grub_mkpasswd_pbkdf2",
+    srcs = [
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/random.c",
+        "@sonic_build_infra//grub:src/util/grub-mkpasswd-pbkdf2.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS,
+)
+
+cc_binary(
+    name = "grub_mkrelpath",
+    srcs = [
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/grub-mkrelpath.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS,
+)
+
+cc_binary(
+    name = "grub_mkrescue",
+    srcs = [
+        # Font/unicode module objects these pull from libgrubmods; as archive
+        # members they are dropped because the reference comes from this
+        # program's own translation units.
+        "@sonic_build_infra//grub:src/grub-core/font/font.c",
+        "@sonic_build_infra//grub:src/grub-core/normal/charset.c",
+        "@sonic_build_infra//grub:src/grub-core/unidata.c",
+        "@sonic_build_infra//grub:src/grub-core/gfxmenu/font.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/video_fb.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbblit.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbutil.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbfill.c",
+        "@sonic_build_infra//grub:src/grub-core/video/video.c",
+        "@sonic_build_infra//grub:src/grub-core/video/capture.c",
+        "@sonic_build_infra//grub:src/grub-core/video/colors.c",
+        "@sonic_build_infra//grub:src/grub-core/disk/host.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/hostfs.c",
+        "@sonic_build_infra//grub:src/grub-core/lib/reed_solomon.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/blocklist.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/compress.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/ofpath.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/platform.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/platform_unix.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/random.c",
+        "@sonic_build_infra//grub:src/util/config.c",
+        "@sonic_build_infra//grub:src/util/editenv.c",
+        "@sonic_build_infra//grub:src/util/glue-efi.c",
+        "@sonic_build_infra//grub:src/util/grub-install-common.c",
+        "@sonic_build_infra//grub:src/util/grub-mkimage32.c",
+        "@sonic_build_infra//grub:src/util/grub-mkimage64.c",
+        "@sonic_build_infra//grub:src/util/grub-mkrescue.c",
+        "@sonic_build_infra//grub:src/util/mkimage.c",
+        "@sonic_build_infra//grub:src/util/render-label.c",
+        "@sonic_build_infra//grub:src/util/resolve.c",
+        "@sonic_build_infra//grub:src/util/setup_bios.c",
+        "@sonic_build_infra//grub:src/util/setup_sparc.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS + ["@sonic_build_infra//grub:mkimage_osdep_config"] + ["@grub2_deps//liblzma-dev:lzma"],
+)
+
+cc_binary(
+    name = "grub_mkstandalone",
+    srcs = [
+        # Font/unicode module objects these pull from libgrubmods; as archive
+        # members they are dropped because the reference comes from this
+        # program's own translation units.
+        "@sonic_build_infra//grub:src/grub-core/font/font.c",
+        "@sonic_build_infra//grub:src/grub-core/normal/charset.c",
+        "@sonic_build_infra//grub:src/grub-core/unidata.c",
+        "@sonic_build_infra//grub:src/grub-core/gfxmenu/font.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/video_fb.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbblit.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbutil.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbfill.c",
+        "@sonic_build_infra//grub:src/grub-core/video/video.c",
+        "@sonic_build_infra//grub:src/grub-core/video/capture.c",
+        "@sonic_build_infra//grub:src/grub-core/video/colors.c",
+        "@sonic_build_infra//grub:src/grub-core/disk/host.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/hostfs.c",
+        "@sonic_build_infra//grub:src/grub-core/lib/reed_solomon.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/blocklist.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/compress.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/ofpath.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/platform.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/platform_unix.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/random.c",
+        "@sonic_build_infra//grub:src/util/config.c",
+        "@sonic_build_infra//grub:src/util/editenv.c",
+        "@sonic_build_infra//grub:src/util/glue-efi.c",
+        "@sonic_build_infra//grub:src/util/grub-install-common.c",
+        "@sonic_build_infra//grub:src/util/grub-mkimage32.c",
+        "@sonic_build_infra//grub:src/util/grub-mkimage64.c",
+        "@sonic_build_infra//grub:src/util/grub-mkstandalone.c",
+        "@sonic_build_infra//grub:src/util/mkimage.c",
+        "@sonic_build_infra//grub:src/util/render-label.c",
+        "@sonic_build_infra//grub:src/util/resolve.c",
+        "@sonic_build_infra//grub:src/util/setup_bios.c",
+        "@sonic_build_infra//grub:src/util/setup_sparc.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS + ["@sonic_build_infra//grub:mkimage_osdep_config"] + ["@grub2_deps//liblzma-dev:lzma"],
+)
+
+cc_binary(
+    name = "grub_mount",
+    srcs = [
+        # Registers the filesystem/crypto modules libgrubmods.a provides;
+        # upstream generates an equivalent <prog>_init.c per program.
+        "@sonic_build_infra//grub:generated/libgrub_a_init.c",
+        "@sonic_build_infra//grub:src/grub-core/disk/host.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/hostfs.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/grub-mount.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS + ["@grub2_deps//libfuse-dev:fuse"],
+)
+
+cc_binary(
+    name = "grub_render_label",
+    srcs = [
+        # Font/unicode module objects these pull from libgrubmods; as archive
+        # members they are dropped because the reference comes from this
+        # program's own translation units.
+        "@sonic_build_infra//grub:src/grub-core/font/font.c",
+        "@sonic_build_infra//grub:src/grub-core/normal/charset.c",
+        "@sonic_build_infra//grub:src/grub-core/unidata.c",
+        "@sonic_build_infra//grub:src/grub-core/gfxmenu/font.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/video_fb.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbblit.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbutil.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbfill.c",
+        "@sonic_build_infra//grub:src/grub-core/video/video.c",
+        "@sonic_build_infra//grub:src/grub-core/video/capture.c",
+        "@sonic_build_infra//grub:src/grub-core/video/colors.c",
+        "@sonic_build_infra//grub:src/grub-core/disk/host.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/hostfs.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/grub-render-label.c",
+        "@sonic_build_infra//grub:src/util/render-label.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS,
+)
+
+cc_binary(
+    name = "grub_script_check",
+    srcs = [
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/grub-script-check.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS,
+)
+
+cc_binary(
+    name = "grub_syslinux2cfg",
+    srcs = [
+        # Registers the filesystem/crypto modules libgrubmods.a provides;
+        # upstream generates an equivalent <prog>_init.c per program.
+        "@sonic_build_infra//grub:generated/libgrub_a_init.c",
+        "@sonic_build_infra//grub:src/grub-core/disk/host.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/hostfs.c",
+        "@sonic_build_infra//grub:src/grub-core/lib/getline.c",
+        "@sonic_build_infra//grub:src/grub-core/lib/syslinux_parse.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/grub-syslinux2cfg.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS,
+)
+
+cc_binary(
+    name = "grub_macbless",
+    srcs = [
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/util/grub-macbless.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS,
+)
+
+cc_binary(
+    name = "grub_probe",
+    srcs = [
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/ofpath.c",
+        "@sonic_build_infra//grub:src/util/grub-probe.c",
+        "@sonic_build_infra//grub:src/util/probe.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS,
+)
+
+cc_binary(
+    name = "grub_install",
+    srcs = [
+        # Font/unicode module objects pulled from libgrubmods; the reference
+        # comes from this program's own translation units, so as archive members
+        # they would be dropped.
+        "@sonic_build_infra//grub:src/grub-core/font/font.c",
+        "@sonic_build_infra//grub:src/grub-core/normal/charset.c",
+        "@sonic_build_infra//grub:src/grub-core/unidata.c",
+        "@sonic_build_infra//grub:src/grub-core/gfxmenu/font.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/video_fb.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbblit.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbutil.c",
+        "@sonic_build_infra//grub:src/grub-core/video/fb/fbfill.c",
+        "@sonic_build_infra//grub:src/grub-core/video/video.c",
+        "@sonic_build_infra//grub:src/grub-core/video/capture.c",
+        "@sonic_build_infra//grub:src/grub-core/video/colors.c",
+        "@sonic_build_infra//grub:src/grub-core/disk/host.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/argp_common.c",
+        "@sonic_build_infra//grub:src/grub-core/kern/emu/hostfs.c",
+        "@sonic_build_infra//grub:src/grub-core/lib/reed_solomon.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/blocklist.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/compress.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/init.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/ofpath.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/platform.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/platform_unix.c",
+        "@sonic_build_infra//grub:src/grub-core/osdep/random.c",
+        "@sonic_build_infra//grub:src/util/config.c",
+        "@sonic_build_infra//grub:src/util/editenv.c",
+        "@sonic_build_infra//grub:src/util/grub-install-common.c",
+        "@sonic_build_infra//grub:src/util/grub-install.c",
+        "@sonic_build_infra//grub:src/util/grub-mkimage32.c",
+        "@sonic_build_infra//grub:src/util/grub-mkimage64.c",
+        "@sonic_build_infra//grub:src/util/mkimage.c",
+        "@sonic_build_infra//grub:src/util/probe.c",
+        "@sonic_build_infra//grub:src/util/render-label.c",
+        "@sonic_build_infra//grub:src/util/resolve.c",
+        "@sonic_build_infra//grub:src/util/setup_bios.c",
+        "@sonic_build_infra//grub:src/util/setup_sparc.c",
+    ],
+    copts = GRUB_COMMON_COPTS,
+    linkopts = ["-lm"],
+    deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS + ["@sonic_build_infra//grub:mkimage_osdep_config"] + ["@grub2_deps//liblzma-dev:lzma"],
+)

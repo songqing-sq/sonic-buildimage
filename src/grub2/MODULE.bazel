@@ -1,0 +1,57 @@
+module(
+    name = "grub2",
+    version = "2.06-13+deb13u1",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+# =============================================================================
+# grub-common / grub2-common — the GRUB 2.06 userspace utilities, built from the
+# same @grub_src tarball //sonic_rules/grub already uses.
+#
+# Why not @trixie: SONiC pins 2.06-13+deb13u1 while trixie ships 2.12-9+deb13u1.
+# SONiC's own two patches do NOT change installed content (one edits
+# tests/cpio_test.in, the other drops gcc-12/qemu build-deps from debian/), so
+# the version pin is the whole reason this is built rather than re-wrapped.
+#
+# freetype (grub-mkfont), fuse (grub-mount) and lzma (the mkimage family).
+# =============================================================================
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = [
+        "trixie",
+        "trixie-updates",
+    ],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+apt.install(
+    dependency_set = "grub2_deps",
+    packages = [
+        "libfreetype-dev:amd64",
+        "libfreetype-dev:arm64",
+        # libfreetype.a pulls in brotli for WOFF2 support.
+        "libbrotli-dev:amd64",
+        "libbrotli-dev:arm64",
+        "libfuse-dev:amd64",
+        "libfuse-dev:arm64",
+        "liblzma-dev:amd64",
+        "liblzma-dev:arm64",
+    ],
+    suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
+)
+use_repo(apt, "grub2_deps")

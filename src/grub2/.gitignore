@@ -1,5 +1,7 @@
 *
 !.gitignore
 !Makefile
-!patch
+!patch/
 !patch/*
+!MODULE.bazel
+!BUILD.bazel
