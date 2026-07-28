@@ -1,0 +1,78 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sonic_build_infra//shared_library:shared_library.bzl", "sonic_shared_library")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.0.0"
+
+# =============================================================================
+# bash-tacplus — the bash plugin that reports executed commands to TACACS+
+# accounting.
+#
+# The sources live in this repo (no download), and are compiled by native cc
+# rules; configure and make are never run. config.h below carries what
+# configure resolves to on glibc/trixie.
+# =============================================================================
+write_file(
+    name = "config_h",
+    out = "config.h",
+    content = [
+        "/* Bazel-generated config.h for bash_tacplus 1.0.0 on glibc/trixie. */",
+        "#define PACKAGE \"bash_tacplus\"",
+        "#define PACKAGE_NAME \"bash_tacplus\"",
+        "#define PACKAGE_VERSION \"1.0.0\"",
+        "#define PACKAGE_STRING \"bash_tacplus 1.0.0\"",
+        "#define PACKAGE_TARNAME \"bash_tacplus\"",
+        "#define VERSION \"1.0.0\"",
+        "#define HAVE_LIBTAC 1",
+        "#define HAVE_LIBTACSUPPORT 1",
+        "#define STDC_HEADERS 1",
+    ],
+)
+
+cc_library(
+    name = "config",
+    hdrs = [":config_h"],
+    includes = ["."],
+)
+
+# -module -avoid-version: an unversioned .so, loaded by bash as a plugin.
+sonic_shared_library(
+    name = "bash_tacplus",
+    srcs = ["bash_tacplus.c"],
+    copts = [
+        "-std=gnu17",
+        "-D_GNU_SOURCE",
+        "-DHAVE_CONFIG_H",
+        "-Wno-unused-parameter",
+        "-Wno-sign-compare",
+    ],
+    output_name = "bash_tacplus",
+    deps = [
+        ":config",
+        "@pam-tacplus//:libtac",
+        "@pam-tacplus//:libtac_public_headers",
+        "@pam-tacplus//:libtacsupport",
+        "@pam-tacplus//:libtacsupport_public_headers",
+    ],
+)
+
+sonic_deb(
+    name = "bash-tacplus_{}.deb".format(VERSION),
+    architecture = "amd64",
+    content = {
+        "/usr/lib/x86_64-linux-gnu/security:*:0644": [":bash_tacplus_shared"],
+    },
+    depends = [
+        "libc6 (>= 2.38)",
+        "libtac2",
+    ],
+    description = "bash plugin reporting executed commands to TACACS+ accounting",
+    maintainer = "Sonic <sonic@microsoft.com>",
+    package = "bash-tacplus",
+    priority = "optional",
+    section = "admin",
+    version = VERSION,
+)

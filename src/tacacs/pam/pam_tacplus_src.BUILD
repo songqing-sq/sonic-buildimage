@@ -58,3 +58,11 @@ cc_library(
         "support.h",
     ],
 )
+
+# support.h under a libtac/ prefix: audisp-tacplus includes
+# <libtac/support.h>, the path installed libtac-dev provides.
+cc_library(
+    name = "libtacsupport_headers_prefixed",
+    hdrs = ["support.h"],
+    include_prefix = "libtac",
+)

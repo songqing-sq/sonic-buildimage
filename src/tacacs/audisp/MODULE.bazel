@@ -1,0 +1,72 @@
+module(
+    name = "audisp-tacplus",
+    version = "1.0.2",
+)
+
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "pam-tacplus", version = "1.4.1-1")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# The upstream commit src/tacacs/audisp/Makefile checks out, with SONiC's 5
+# patches applied in patches/series order.
+http_archive(
+    name = "audisp_tacplus_src",
+    build_file = "//:audisp_tacplus_src.BUILD",
+    patch_args = ["-p1"],
+    patch_tool = "patch",
+    patches = [
+        "//:patches/0001-Porting-to-sonic.patch",
+        "//:patches/0002-Remove-user-secret-from-accounting-log.patch",
+        "//:patches/0003-Add-local-accounting.patch",
+        "//:patches/0004-Trixie-fixes.patch",
+        "//:patches/0005-Trixie-libauparse0t64-dependency.patch",
+    ],
+    sha256 = "6c36af60f317cfeb2b52294d30fdd24bbf3ed5a4f199fcfe49245b47a51a07cc",
+    strip_prefix = "audisp-tacplus-559c9f22edd4f2dea0ecedffb3ad9502b12a75b6",
+    urls = ["https://github.com/daveolson53/audisp-tacplus/archive/559c9f22edd4f2dea0ecedffb3ad9502b12a75b6.tar.gz"],
+)
+
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(
+    architectures = [
+        "amd64",
+        "arm64",
+    ],
+    components = ["main"],
+    suites = [
+        "trixie",
+        "trixie-updates",
+    ],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+apt.sources_list(
+    architectures = [
+        "amd64",
+        "arm64",
+    ],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+
+# audisp_tacplus_LDADD = -lauparse (plus -ltac/-ltacsupport, which come from
+# @pam-tacplus); the source includes <libaudit.h> and <auparse.h>.
+apt.install(
+    dependency_set = "audisp_deps",
+    # auparse lives in its own dev package alongside libaudit-dev.
+    packages = [
+        "libaudit-dev",
+        "libauparse-dev",
+    ],
+    suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
+)
+use_repo(apt, "audisp_deps")

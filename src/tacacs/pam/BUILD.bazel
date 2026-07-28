@@ -20,6 +20,11 @@ alias(
     actual = "@pam_tacplus_src//:libtac_headers_prefixed",
 )
 
+alias(
+    name = "libtacsupport_public_headers",
+    actual = "@pam_tacplus_src//:libtacsupport_headers_prefixed",
+)
+
 # =============================================================================
 # pam_tacplus — TACACS+ PAM module, client library and CLI.
 #

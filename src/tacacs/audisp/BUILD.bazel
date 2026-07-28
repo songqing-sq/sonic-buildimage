@@ -1,0 +1,109 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(glob([
+    "patches/*.patch",
+    "audisp_tacplus_src.BUILD",
+]))
+
+VERSION = "1.0.2"
+
+# =============================================================================
+# audisp-tacplus — the audit dispatcher plugin that sends TACACS+ accounting
+# records for shell commands.
+#
+# Native cc rules over the patched upstream sources; configure and make are
+# never run, and config.h below carries what configure resolves to on
+# glibc/trixie.
+# =============================================================================
+write_file(
+    name = "config_h",
+    out = "config.h",
+    content = [
+        "/* Bazel-generated config.h for audisp-tacplus 1.0.0 on glibc/trixie,",
+        "   mirroring configure.ac's AC_CHECK_HEADERS / AC_CHECK_LIB results. */",
+        "#define PACKAGE \"audisp-tacplus\"",
+        "#define PACKAGE_NAME \"audisp-tacplus\"",
+        "#define PACKAGE_VERSION \"1.0.0\"",
+        "#define PACKAGE_STRING \"audisp-tacplus 1.0.0\"",
+        "#define PACKAGE_TARNAME \"audisp-tacplus\"",
+        "#define VERSION \"1.0.0\"",
+        "#define HAVE_LIBAUDIT_H 1",
+        "#define HAVE_FCNTL_H 1",
+        "#define HAVE_STDLIB_H 1",
+        "#define HAVE_STRING_H 1",
+        "#define HAVE_STRINGS_H 1",
+        "#define HAVE_SYS_SOCKET_H 1",
+        "#define HAVE_SYS_TIME_H 1",
+        "#define HAVE_SYSLOG_H 1",
+        "#define HAVE_UNISTD_H 1",
+        "#define HAVE_LIBTAC 1",
+        "#define STDC_HEADERS 1",
+    ],
+)
+
+cc_library(
+    name = "config",
+    hdrs = [":config_h"],
+    includes = ["."],
+)
+
+cc_binary(
+    name = "audisp-tacplus",
+    srcs = [
+        "@audisp_tacplus_src//:audisp-tacplus.c",
+        "@audisp_tacplus_src//:local_accounting.c",
+        "@audisp_tacplus_src//:password.c",
+        "@audisp_tacplus_src//:regex_helper.c",
+        "@audisp_tacplus_src//:sudoers_helper.c",
+        "@audisp_tacplus_src//:trace.c",
+    ],
+    copts = [
+        "-std=gnu17",
+        "-D_GNU_SOURCE",
+        "-DHAVE_CONFIG_H",
+        "-Wno-unused-parameter",
+        "-Wno-sign-compare",
+    ],
+    # audisp_tacplus_LDADD = -lauparse -ltacsupport -ltac
+    dynamic_deps = [
+        "@pam-tacplus//:libtac_shared",
+        "@pam-tacplus//:libtacsupport_shared",
+    ],
+    deps = [
+        ":config",
+        "@audisp_tacplus_src//:local_headers",
+        "@pam-tacplus//:libtac",
+        "@pam-tacplus//:libtac_public_headers",
+        "@pam-tacplus//:libtacsupport",
+        "@pam-tacplus//:libtacsupport_public_headers",
+        "@audisp_deps//libaudit-dev:audit",
+        "@audisp_deps//libauparse-dev:auparse",
+    ],
+)
+
+sonic_deb(
+    name = "audisp-tacplus_{}.deb".format(VERSION),
+    architecture = "amd64",
+    content = {
+        "/sbin:*:0755": [":audisp-tacplus"],
+        "/etc/audit/plugins.d:*:0640": ["@audisp_tacplus_src//:audisp-tacplus.conf"],
+        "/etc/audit/rules.d:*:0640": ["@audisp_tacplus_src//:audisp-tacplus.rules"],
+    },
+    depends = [
+        "libc6 (>= 2.38)",
+        "libauparse0t64 (>= 1:4.0)",
+        "libtac2",
+        "auditd",
+    ],
+    description = "TACACS+ accounting plugin for the audit dispatcher",
+    maintainer = "Sonic <sonic@microsoft.com>",
+    package = "audisp-tacplus",
+    priority = "optional",
+    section = "admin",
+    version = VERSION,
+)

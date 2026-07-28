@@ -1,0 +1,10 @@
+module(
+    name = "bash-tacplus",
+    version = "1.0.0",
+)
+
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "pam-tacplus", version = "1.4.1-1")

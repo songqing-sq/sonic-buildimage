@@ -356,6 +356,18 @@ local_path_override(
     path = "src/sonic-linux-kernel",
 )
 
+bazel_dep(name = "bash-tacplus", version = "1.0.0")
+local_path_override(
+    module_name = "bash-tacplus",
+    path = "src/tacacs/bash_tacplus",
+)
+
+bazel_dep(name = "audisp-tacplus", version = "1.0.2")
+local_path_override(
+    module_name = "audisp-tacplus",
+    path = "src/tacacs/audisp",
+)
+
 bazel_dep(name = "libnss-tacplus", version = "1.0.4-1")
 local_path_override(
     module_name = "libnss-tacplus",

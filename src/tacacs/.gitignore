@@ -2,10 +2,17 @@
 !.gitignore
 !pam/
 !nss/
+!audisp/
+!bash_tacplus/
 audisp/*
 !audisp/Makefile
 !audisp/*.patch
+!audisp/*.bazel
+!audisp/audisp_tacplus_src.BUILD
+!audisp/patches/
+!audisp/patches/*
 !bash_tacplus/*
+!bash_tacplus/*.bazel
 nsm/*
 !nsm/Makefile
 !nsm/*.patch
