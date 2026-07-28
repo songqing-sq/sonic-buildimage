@@ -53,6 +53,32 @@ cc_library(
     includes = ["."],
 )
 
+# Debian hardening (debian/rules: DEB_BUILD_MAINT_OPTIONS=hardening=+all).
+# The hermetic toolchain supplies -O2/-DNDEBUG but not stack-protector, so it is
+# added explicitly to restore __stack_chk_fail.
+#
+# Same approach and same residual gaps as src/wpasupplicant, none of which this
+# module can close:
+#   - FORTIFY (__printf_chk etc.): the sysroot glibc headers emit no fortified
+#     calls even with -D_FORTIFY_SOURCE, so Make's binary imports the _chk
+#     variants and this one imports the plain ones.
+#   - __assert_fail: opt mode forces -DNDEBUG after user copts.
+#   - stdout / optind / environ and friends: Make's binary leaves these
+#     undefined for the dynamic loader, while this link resolves them as copy
+#     relocations into .bss. Same glibc objects either way.
+# RELRO, BIND_NOW and stack-protector DO match Make's binary.
+HARDEN_COPTS = [
+    "-fstack-protector-strong",
+    "-Wformat",
+    "-Wformat-security",
+]
+
+# dpkg-buildflags LDFLAGS: relro + immediate binding.
+HARDEN_LINKOPTS = [
+    "-Wl,-z,relro",
+    "-Wl,-z,now",
+]
+
 _FR_COPTS = [
     # FreeRADIUS 1.1.8 is C89-era; gcc-15 defaults reject its implicit
     # declarations and K&R prototypes.
@@ -63,7 +89,7 @@ _FR_COPTS = [
     # defines when building the library itself.
     "-D_LIBRADIUS",
     "-Wno-deprecated-declarations",
-]
+] + HARDEN_COPTS
 
 # libradius-1.1.8.so — the RADIUS protocol library.
 sonic_shared_library(
@@ -129,7 +155,7 @@ sonic_shared_library(
         # done; the alternative is silencing two gcc-15 errors.
         "-include",
         "$(execpath :peap_log_debug_decl.h)",
-    ],
+    ] + HARDEN_COPTS,
     output_name = "pam_radius_auth",
     # A PAM module resolves pam_* symbols from the host process at dlopen time.
     allow_undefined = True,
@@ -141,7 +167,7 @@ sonic_shared_library(
     # propagate their own transitive deps. The exported symbol set is
     # byte-identical to Make's and all of these are in the base rootfs, so this
     # is cosmetic — but it is a real difference, not verified equal.
-    linkopts = ["-Wl,--as-needed"],
+    linkopts = HARDEN_LINKOPTS + ["-Wl,--as-needed"],
     dynamic_deps = [
         ":libeap_shared",
         ":libradius_shared",

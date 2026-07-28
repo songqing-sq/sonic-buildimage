@@ -23,10 +23,36 @@ cc_library(
     includes = ["."],
 )
 
+# Debian hardening (debian/rules: DEB_BUILD_MAINT_OPTIONS=hardening=+all).
+# The hermetic toolchain supplies -O2/-DNDEBUG but not stack-protector, so it is
+# added explicitly to restore __stack_chk_fail.
+#
+# Same approach and same residual gaps as src/wpasupplicant, none of which this
+# module can close:
+#   - FORTIFY (__printf_chk etc.): the sysroot glibc headers emit no fortified
+#     calls even with -D_FORTIFY_SOURCE, so Make's binary imports the _chk
+#     variants and this one imports the plain ones.
+#   - __assert_fail: opt mode forces -DNDEBUG after user copts.
+#   - stdout / optind / environ and friends: Make's binary leaves these
+#     undefined for the dynamic loader, while this link resolves them as copy
+#     relocations into .bss. Same glibc objects either way.
+# RELRO, BIND_NOW and stack-protector DO match Make's binary.
+HARDEN_COPTS = [
+    "-fstack-protector-strong",
+    "-Wformat",
+    "-Wformat-security",
+]
+
+# dpkg-buildflags LDFLAGS. Note -z,now is deliberately NOT here: unlike the
+# other packages, rasdaemon's debian/rules sets no hardening=+all, so it gets
+# dpkg's defaults, which enable relro but not bindnow. Verified against Make's
+# binary (BIND_NOW absent).
+HARDEN_LINKOPTS = ["-Wl,-z,relro"]
+
 _COPTS = [
     "-std=gnu17",
     "-DHAVE_CONFIG_H",
-]
+] + HARDEN_COPTS
 
 _DEPS = [
     ":rasdaemon_config",
@@ -47,7 +73,7 @@ cc_binary(
     copts = _COPTS,
     # Makefile.am rasdaemon_LDADD. Drops the DT_NEEDED entries cc_binary's C++
     # driver would otherwise add.
-    linkopts = [
+    linkopts = HARDEN_LINKOPTS + [
         "-lpthread",
         "-Wl,--as-needed",
     ],

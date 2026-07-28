@@ -72,6 +72,32 @@ cc_library(
     includes = ["."],
 )
 
+# Debian hardening (debian/rules: DEB_BUILD_MAINT_OPTIONS=hardening=+all).
+# The hermetic toolchain supplies -O2/-DNDEBUG but not stack-protector, so it is
+# added explicitly to restore __stack_chk_fail.
+#
+# Same approach and same residual gaps as src/wpasupplicant, none of which this
+# module can close:
+#   - FORTIFY (__printf_chk etc.): the sysroot glibc headers emit no fortified
+#     calls even with -D_FORTIFY_SOURCE, so Make's binary imports the _chk
+#     variants and this one imports the plain ones.
+#   - __assert_fail: opt mode forces -DNDEBUG after user copts.
+#   - stdout / optind / environ and friends: Make's binary leaves these
+#     undefined for the dynamic loader, while this link resolves them as copy
+#     relocations into .bss. Same glibc objects either way.
+# RELRO, BIND_NOW and stack-protector DO match Make's binary.
+HARDEN_COPTS = [
+    "-fstack-protector-strong",
+    "-Wformat",
+    "-Wformat-security",
+]
+
+# dpkg-buildflags LDFLAGS: relro + immediate binding.
+HARDEN_LINKOPTS = [
+    "-Wl,-z,relro",
+    "-Wl,-z,now",
+]
+
 # From configure's CFLAGS. -std=c11 (strict, not gnu11) is load-bearing: monit.h
 # declares `struct { ... } unix;` members, and in a GNU dialect `unix` is a
 # predefined macro, so the struct fails to parse.
@@ -83,7 +109,7 @@ _COPTS = [
     # AM_CPPFLAGS.
     "-D" + ARCH,
     "-DSYSCONFDIR=\\\"{}\\\"".format(SYSCONFDIR),
-]
+] + HARDEN_COPTS
 
 _DEPS = [
     ":monit_config",
@@ -120,7 +146,7 @@ cc_binary(
     # which Make's binary does not, because the apt cc_imports propagate their
     # own transitive deps. All are in the base rootfs and the built-in feature
     # set matches Make's ("ssl, ipv6, compression, pam"), so this is cosmetic.
-    linkopts = ["-Wl,--as-needed"],
+    linkopts = HARDEN_LINKOPTS + ["-Wl,--as-needed"],
     deps = _DEPS + [
         ":libmonit",
         "@monit_src//:textual_includes",

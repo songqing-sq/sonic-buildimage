@@ -94,6 +94,32 @@ cc_library(
     deps = ["@bash_src//:bash_hdrs"],
 )
 
+# Debian hardening (debian/rules: DEB_BUILD_MAINT_OPTIONS=hardening=+all).
+# The hermetic toolchain supplies -O2/-DNDEBUG but not stack-protector, so it is
+# added explicitly to restore __stack_chk_fail.
+#
+# Same approach and same residual gaps as src/wpasupplicant, none of which this
+# module can close:
+#   - FORTIFY (__printf_chk etc.): the sysroot glibc headers emit no fortified
+#     calls even with -D_FORTIFY_SOURCE, so Make's binary imports the _chk
+#     variants and this one imports the plain ones.
+#   - __assert_fail: opt mode forces -DNDEBUG after user copts.
+#   - stdout / optind / environ and friends: Make's binary leaves these
+#     undefined for the dynamic loader, while this link resolves them as copy
+#     relocations into .bss. Same glibc objects either way.
+# RELRO, BIND_NOW and stack-protector DO match Make's binary.
+HARDEN_COPTS = [
+    "-fstack-protector-strong",
+    "-Wformat",
+    "-Wformat-security",
+]
+
+# dpkg-buildflags LDFLAGS: relro + immediate binding.
+HARDEN_LINKOPTS = [
+    "-Wl,-z,relro",
+    "-Wl,-z,now",
+]
+
 # Makefile.in: DEFS + LOCAL_DEFS + SYSTEM_FLAGS.
 COMMON_COPTS = [
     "-DHAVE_CONFIG_H",
@@ -108,8 +134,7 @@ COMMON_COPTS = [
     # declarations and treat `true`/`false` as keywords.
     "-std=gnu17",
     "-Wno-parentheses",
-    "-Wno-format-security",
-]
+] + HARDEN_COPTS
 
 COMMON_DEPS = [
     ":generated_hdrs",
@@ -383,7 +408,7 @@ cc_binary(
         "@bash_src//:y.tab.h",
     ],
     copts = COMMON_COPTS,
-    linkopts = [
+    linkopts = HARDEN_LINKOPTS + [
         # The plugin patch calls dlopen()/dlsym() from plugin.c.
         "-ldl",
         # Makefile.in's LOCAL_LDFLAGS. Load-bearing for the plugin patch:
