@@ -428,6 +428,12 @@ local_path_override(
     path = "src/sonic-nettools",
 )
 
+bazel_dep(name = "bash", version = "5.2.37-2")
+local_path_override(
+    module_name = "bash",
+    path = "src/bash",
+)
+
 bazel_dep(name = "sonic-rs-common", version = "0.1.0")
 local_path_override(
     module_name = "sonic-rs-common",

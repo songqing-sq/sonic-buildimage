@@ -5,3 +5,9 @@
 !Files/*
 !patches/
 !patches/*
+!BUILD.bazel
+!MODULE.bazel
+!bash_src.BUILD
+!config_defines.bzl
+
+

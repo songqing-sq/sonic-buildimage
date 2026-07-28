@@ -86,6 +86,14 @@ FIPS_HOST_DEBS = {
 # the data tar. Listed separately from HERMETIC_HOST_DEBS, whose entries follow
 # the <name>_data / <name>_statusd convention.
 HERMETIC_HOST_DEB_DATA_TARS = {
+    # Built from source for its plugin-support patch: bash-tacplus is dlopen'd
+    # through the hook that patch adds (and needs bash linked -rdynamic), so
+    # trixie's stock bash is not a substitute. Uses sonic_deb's `data =`
+    # shortcut because the locale tree is generated, hence no `_data` sibling.
+    "bash": (
+        "@bash//:bash_data",
+        "@bash//:bash_5.2.37-2.deb_statusd",
+    ),
     "sonic-device-data": (
         "//src/sonic-device-data:device_tar",
         "//src/sonic-device-data:sonic-device-data_1.0-1_all.deb_statusd",
@@ -95,8 +103,6 @@ HERMETIC_HOST_DEB_DATA_TARS = {
 TODO_HERMETIC = [
     # SONiC builds these from source with its own patches, so the stock trixie
     # package is not a substitute:
-    #   bash              +0001-Add-plugin-support-to-bash.patch (bash-tacplus
-    #                     loads /usr/lib/bash-tacplus.so through it)
     #   monit             MemAvailable accounting + alert-log changes
     #   ifupdown2         5 patches incl. python 3.12 compatibility
     #   kdump-tools       kdump core prefix, initrd generated at build time
@@ -108,7 +114,6 @@ TODO_HERMETIC = [
     #   sedutil           1.15-5ad84d8, a git snapshot with no Debian release
     #   libpam-radius-auth  pam_radius git snapshot + CHAP / PEAP-MSCHAPv2 and
     #                     nas-ip-address patches
-    "bash",
     "monit",
     "rasdaemon",
     "makedumpfile",

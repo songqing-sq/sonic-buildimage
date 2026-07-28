@@ -1,0 +1,538 @@
+load(":config_defines.bzl", "CONFIG_DEFINES", "CONFIG_REDEFINES", "DEBUGGER_START_FILE", "PIPESIZE", "RELSTATUS", "SYSTEM_FLAGS", "VERSION_BASE")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "5.2.37-2"
+
+exports_files([
+    "bash_src.BUILD",
+    "patches/0001-Add-plugin-support-to-bash.patch",
+])
+
+# =============================================================================
+# bash 5.2.37-2, built from source with SONiC's plugin-support patch.
+#
+# Why from source rather than re-wrapping trixie's binary: the patch adds a
+# plugin.c/plugin.h pair and calls load_plugins() from shell.c plus
+# invoke_plugin_on_shell_execve() from execute_cmd.c. bash-tacplus is loaded
+# through that hook; without the patch TACACS+ shell command authorization
+# silently does nothing.
+#
+# Nothing is checked in but Bazel files: config.h / pathnames.h / version.h are
+# generated from the tarball's own templates (substitution table in
+# config_defines.bzl), the three codegen tools and every object are built here,
+# and y.tab.c ships pre-generated in the release tarball.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# What ./configure would emit, applied to the tarball's own templates by sed.
+# configure itself is avoided because it probes the host compiler and libc; the
+# substitution table lives in config_defines.bzl.
+# ---------------------------------------------------------------------------
+
+# Turn the enabled `#undef NAME` lines into `#define NAME VALUE`, then comment
+# out every #undef left over, the way autoconf does.
+genrule(
+    name = "gen_config_h",
+    srcs = ["@bash_src//:config.h.in"],
+    outs = ["config.h"],
+    cmd = "sed " + " ".join([
+        "-e 's|^#undef {name}$$|#define {name} {value}|'".format(
+            name = name,
+            value = value,
+        )
+        for name, value in CONFIG_DEFINES.items()
+    ] + [
+        "-e 's|^#define {name}.*$$|#define {name} {value}|'".format(
+            name = name,
+            value = value,
+        )
+        for name, value in CONFIG_REDEFINES.items()
+    ] + [
+        "-e 's|^#undef \\(.*\\)$$|/* #undef \\1 */|'",
+    ]) + " $< > $@",
+)
+
+genrule(
+    name = "gen_pathnames_h",
+    srcs = ["@bash_src//:pathnames.h.in"],
+    outs = ["pathnames.h"],
+    cmd = "sed -e 's|@DEBUGGER_START_FILE@|{path}|' $< > $@".format(
+        path = DEBUGGER_START_FILE,
+    ),
+)
+
+# support/mkversion.sh is a portable POSIX shell script shipped in the tarball.
+genrule(
+    name = "gen_version_h",
+    srcs = [
+        "@bash_src//:support/mkversion.sh",
+        "@bash_src//:patchlevel.h",
+    ],
+    outs = ["version.h"],
+    cmd = ("set -e; " +
+           "SRCDIR=$$(dirname $(location @bash_src//:patchlevel.h)); " +
+           "sh $(location @bash_src//:support/mkversion.sh) -b -S $$SRCDIR " +
+           "-s {status} -d {version} -o $@").format(
+        status = RELSTATUS,
+        version = VERSION_BASE,
+    ),
+)
+
+# config.h #includes config-top.h / config-bot.h, which live in the tarball.
+cc_library(
+    name = "generated_hdrs",
+    hdrs = [
+        "config.h",
+        "pathnames.h",
+        "version.h",
+    ],
+    includes = ["."],
+    deps = ["@bash_src//:bash_hdrs"],
+)
+
+# Makefile.in: DEFS + LOCAL_DEFS + SYSTEM_FLAGS.
+COMMON_COPTS = [
+    "-DHAVE_CONFIG_H",
+    "-DSHELL",
+] + [
+    # The value must survive the shell that runs the compiler, hence the
+    # backslash-escaped quotes reaching gcc as -DNAME=\"value\".
+    "-D{name}=\\\"{value}\\\"".format(name = name, value = value)
+    for name, value in SYSTEM_FLAGS.items()
+] + [
+    # bash 5.2 predates C23; gcc-15 defaults would reject its K&R-era
+    # declarations and treat `true`/`false` as keywords.
+    "-std=gnu17",
+    "-Wno-parentheses",
+    "-Wno-format-security",
+]
+
+COMMON_DEPS = [
+    ":generated_hdrs",
+    "@bash_src//:bash_hdrs",
+]
+
+# The shell core and the builtins both include the generated builtext.h.
+SHELL_DEPS = COMMON_DEPS + [":builtins_gen_hdrs"]
+
+# ---------------------------------------------------------------------------
+# Codegen tools. Makefile.in builds these with CC_FOR_BUILD; here they are
+# ordinary host-configured cc_binaries, so Bazel picks the exec toolchain.
+# ---------------------------------------------------------------------------
+
+# builtins/mkbuiltins turns each builtins/*.def into a .c file, and emits
+# builtext.h + builtins.c describing the builtin table.
+cc_binary(
+    name = "mkbuiltins",
+    srcs = ["@bash_src//:builtins/mkbuiltins.c"],
+    copts = COMMON_COPTS + ["-DHAVE_STRING_H", "-DHAVE_STDLIB_H"],
+    deps = COMMON_DEPS,
+)
+
+# support/mksignames writes signames.h (the signal-number -> name table).
+# buildsignames.c is support/signames.c compiled with -DBUILDTOOL.
+cc_binary(
+    name = "mksignames",
+    srcs = [
+        "@bash_src//:support/mksignames.c",
+        "@bash_src//:support/signames.c",
+    ],
+    copts = COMMON_COPTS + ["-DBUILDTOOL"],
+    deps = COMMON_DEPS,
+)
+
+# mksyntax writes syntax.c (the character-class table).
+cc_binary(
+    name = "mksyntax",
+    srcs = ["@bash_src//:mksyntax.c"],
+    copts = COMMON_COPTS,
+    deps = COMMON_DEPS,
+)
+
+genrule(
+    name = "gen_signames",
+    outs = ["signames.h"],
+    cmd = "$(execpath :mksignames) $@",
+    tools = [":mksignames"],
+)
+
+genrule(
+    name = "gen_syntax",
+    outs = ["syntax.c"],
+    cmd = "$(execpath :mksyntax) -o $@",
+    tools = [":mksyntax"],
+)
+
+# builtins/*.def -> the builtin table. `-noproduction` suppresses the
+# documentation-only output; `-D` tells mkbuiltins where the .def files live so
+# the #line directives it emits point at the real sources.
+genrule(
+    name = "gen_builtins",
+    srcs = ["@bash_src//:builtin_defs"],
+    outs = [
+        "builtins/builtext.h",
+        "builtins/builtins.c",
+    ],
+    cmd = ("set -e; " +
+           "DEFDIR=$$(dirname $$(echo $(SRCS) | tr ' ' '\\n' | head -1)); " +
+           "$(execpath :mkbuiltins) -externfile $(location builtins/builtext.h) " +
+           "-includefile builtext.h " +
+           "-structfile $(location builtins/builtins.c) " +
+           "-noproduction -D $$DEFDIR $(SRCS)"),
+    tools = [":mkbuiltins"],
+)
+
+# Each .def also becomes its own .c. mkbuiltins writes `<name>.c` into its
+# working directory, so the action runs from the output dir; -D points at the
+# real source dir so the emitted #line directives reference it.
+genrule(
+    name = "gen_builtin_srcs",
+    srcs = ["@bash_src//:builtin_defs"],
+    outs = [
+        "builtins/alias.c",
+        "builtins/bind.c",
+        "builtins/break.c",
+        "builtins/builtin.c",
+        "builtins/caller.c",
+        "builtins/cd.c",
+        "builtins/colon.c",
+        "builtins/command.c",
+        "builtins/complete.c",
+        "builtins/declare.c",
+        "builtins/echo.c",
+        "builtins/enable.c",
+        "builtins/eval.c",
+        "builtins/exec.c",
+        "builtins/exit.c",
+        "builtins/fc.c",
+        "builtins/fg_bg.c",
+        "builtins/getopts.c",
+        "builtins/hash.c",
+        "builtins/help.c",
+        "builtins/history.c",
+        "builtins/jobs.c",
+        "builtins/kill.c",
+        "builtins/let.c",
+        "builtins/mapfile.c",
+        "builtins/printf.c",
+        "builtins/pushd.c",
+        "builtins/read.c",
+        "builtins/return.c",
+        "builtins/set.c",
+        "builtins/setattr.c",
+        "builtins/shift.c",
+        "builtins/shopt.c",
+        "builtins/source.c",
+        "builtins/suspend.c",
+        "builtins/test.c",
+        "builtins/times.c",
+        "builtins/trap.c",
+        "builtins/type.c",
+        "builtins/ulimit.c",
+        "builtins/umask.c",
+        "builtins/wait.c",
+    ],
+    cmd = ("set -e; " +
+           "TOOL=$$(realpath $(execpath :mkbuiltins)); " +
+           "OUTDIR=$$(dirname $(location builtins/alias.c)); " +
+           "DEFDIR=$$(dirname $$(echo $(SRCS) | tr ' ' '\\n' | head -1)); " +
+           "DEFDIR=$$(realpath $$DEFDIR); " +
+           "cd $$OUTDIR && " +
+           "for d in $$DEFDIR/*.def; do $$TOOL -D $$DEFDIR $$d; done"),
+    tools = [":mkbuiltins"],
+)
+
+# ulimit.def #includes pipesize.h. Upstream generates it by running psize.sh,
+# which probes the build machine's pipe capacity; the constant is used instead.
+genrule(
+    name = "gen_pipesize_h",
+    outs = ["builtins/pipesize.h"],
+    cmd = "echo '#define PIPESIZE {size}' > $@".format(size = PIPESIZE),
+)
+
+# ---------------------------------------------------------------------------
+# The support libraries (Makefile's libsh.a / libglob.a / libtilde.a /
+# libreadline.a). bash links its BUNDLED readline, not the system one.
+# ---------------------------------------------------------------------------
+
+cc_library(
+    name = "libsh",
+    srcs = ["@bash_src//:libsh_srcs"],
+    textual_hdrs = ["@bash_src//:libsh_textual_includes"],
+    copts = COMMON_COPTS,
+    linkstatic = True,
+    deps = COMMON_DEPS,
+)
+
+cc_library(
+    name = "libglob",
+    srcs = ["@bash_src//:libglob_srcs"],
+    textual_hdrs = ["@bash_src//:libglob_textual_includes"],
+    copts = COMMON_COPTS,
+    linkstatic = True,
+    deps = COMMON_DEPS,
+)
+
+cc_library(
+    name = "libtilde",
+    srcs = ["@bash_src//:libtilde_srcs"],
+    copts = COMMON_COPTS,
+    linkstatic = True,
+    deps = COMMON_DEPS,
+)
+
+cc_library(
+    name = "libreadline",
+    srcs = ["@bash_src//:libreadline_srcs"],
+    textual_hdrs = ["@bash_src//:readline_textual_includes"],
+    copts = COMMON_COPTS + ["-DREADLINE_LIBRARY"],
+    linkstatic = True,
+    # lib/readline/tcap.h includes <termcap.h>, and display.c/terminal.c call
+    # into the terminal capability database.
+    deps = COMMON_DEPS + ["@bash_deps//libncurses-dev:tinfo"],
+)
+
+# builtext.h / pipesize.h are generated, so they land in the bin dir rather
+# than next to the tarball's builtins/*.c. A separate cc_library puts that
+# directory on the include path for the unqualified #include "builtext.h".
+cc_library(
+    name = "builtins_gen_hdrs",
+    hdrs = [
+        "builtins/builtext.h",
+        "builtins/pipesize.h",
+    ],
+    includes = ["builtins"],
+)
+
+cc_library(
+    name = "libbuiltins",
+    srcs = ["@bash_src//:builtins_c_srcs"] + [
+        "builtins/builtins.c",
+    ] + [
+        "builtins/" + name + ".c"
+        for name in [
+            "alias",
+            "bind",
+            "break",
+            "builtin",
+            "caller",
+            "cd",
+            "colon",
+            "command",
+            "complete",
+            "declare",
+            "echo",
+            "enable",
+            "eval",
+            "exec",
+            "exit",
+            "fc",
+            "fg_bg",
+            "getopts",
+            "hash",
+            "help",
+            "history",
+            "jobs",
+            "kill",
+            "let",
+            "mapfile",
+            "printf",
+            "pushd",
+            "read",
+            "return",
+            "set",
+            "setattr",
+            "shift",
+            "shopt",
+            "source",
+            "suspend",
+            "test",
+            "times",
+            "trap",
+            "type",
+            "ulimit",
+            "umask",
+            "wait",
+        ]
+    ],
+    copts = COMMON_COPTS,
+    linkstatic = True,
+    deps = COMMON_DEPS + [
+        ":builtins_gen_hdrs",
+        ":libreadline",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# bash itself
+# ---------------------------------------------------------------------------
+cc_binary(
+    name = "bash",
+    srcs = ["@bash_src//:shell_srcs"] + [
+        "signames.h",
+        "syntax.c",
+        # y.tab.c/.h ship pre-generated in the release tarball (bison 3.8.2).
+        # They are used as-is rather than regenerated: the plugin patch does not
+        # touch parse.y, and the pinned rules_bison is 3.3.2, which predates the
+        # YYEOF token parse.y relies on.
+        "@bash_src//:y.tab.c",
+        "@bash_src//:y.tab.h",
+    ],
+    copts = COMMON_COPTS,
+    linkopts = [
+        # The plugin patch calls dlopen()/dlsym() from plugin.c.
+        "-ldl",
+        # Makefile.in's LOCAL_LDFLAGS. Load-bearing for the plugin patch:
+        # loadable builtins (and bash-tacplus) resolve bash's own symbols out of
+        # the executable at dlopen time, which needs them in .dynsym.
+        "-rdynamic",
+    ],
+    # KNOWN DIVERGENCE from Make's deb: Bazel links every cc_binary through the
+    # C++ driver, so this carries libstdc++/libm/libgcc_s in DT_NEEDED while
+    # Make's carries only libtinfo/libc. Harmless here (all three are in the
+    # base rootfs, and bash calls into none of them), but it is a real
+    # difference, not something verified equal.
+    linkstatic = True,
+    deps = COMMON_DEPS + [
+        ":libbuiltins",
+        ":libglob",
+        ":libreadline",
+        ":libsh",
+        ":libtilde",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# The rest of the deb payload
+# ---------------------------------------------------------------------------
+
+# debian/rules builds clear_console separately from the shell, with its own
+# flags — bash's config.h is not involved. _GNU_SOURCE is what exposes
+# getopt_long() from <getopt.h>.
+cc_binary(
+    name = "clear_console",
+    srcs = ["@bash_src//:debian/clear_console.c"],
+    copts = ["-D_GNU_SOURCE"],
+    deps = ["@bash_deps//libncurses-dev:tinfo"],
+)
+
+# support/bashbug.sh with configure's @-substitutions filled in, matching
+# Makefile.in's bashbug rule.
+genrule(
+    name = "gen_bashbug",
+    srcs = ["@bash_src//:support/bashbug.sh"],
+    outs = ["bashbug"],
+    cmd = ("sed " +
+           "-e 's|@BASH@|/usr/bin/bash|' " +
+           "-e 's|@HELPDIR@|/usr/share/bash|' " +
+           "-e 's|@MACHTYPE@|{machtype}|' " +
+           "-e 's|@RELSTATUS@|{status}|' " +
+           "-e 's|@VERSION@|{version}|' " +
+           "$< > $@").format(
+        machtype = SYSTEM_FLAGS["CONF_MACHTYPE"],
+        status = RELSTATUS,
+        version = VERSION_BASE,
+    ),
+)
+
+# po/*.po -> /usr/share/locale/<lang>/LC_MESSAGES/bash.mo. msgfmt comes from
+# apt rather than the host, the same way src/sonic-sysmgr uses dbusxx-xml2cpp.
+genrule(
+    name = "gen_locales",
+    srcs = ["@bash_src//:po_files"],
+    outs = ["locale.tar"],
+    cmd = ("set -e; " +
+           "UNPACK=$(RULEDIR)/_gettext; mkdir -p $$UNPACK; " +
+           "for t in $(locations @bash_deps//gettext:data) " +
+           "         $(locations @bash_deps//libxml2:data) " +
+           "         $(locations @bash_deps//libunistring5:data); do " +
+           "  tar -xzf $$t -C $$UNPACK; done; " +
+           "MSGFMT=$$(realpath $$UNPACK/usr/bin/msgfmt); " +
+           # msgfmt links against gettext's own libgettextsrc/libgettextlib,
+           # which live in the same unpacked tree rather than the sysroot.
+           "export LD_LIBRARY_PATH=$$(realpath $$UNPACK/usr/lib/x86_64-linux-gnu); " +
+           "STAGE=$(RULEDIR)/_locale; " +
+           "for po in $(locations @bash_src//:po_files); do " +
+           "  lang=$$(basename $$po .po); " +
+           "  d=$$STAGE/$$lang/LC_MESSAGES; mkdir -p $$d; " +
+           "  $$MSGFMT -o $$d/bash.mo $$po; " +
+           "done; " +
+           "tar -cf $@ --owner=0 --group=0 --numeric-owner " +
+           "--transform='s,^\\./,./usr/share/locale/,' -C $$STAGE ."),
+    tools = [
+        "@bash_deps//gettext:data",
+        "@bash_deps//libunistring5:data",
+        "@bash_deps//libxml2:data",
+    ],
+)
+
+# One data tar for the whole payload: sonic_deb's `data =` takes a single
+# pre-built tar (it is mutually exclusive with `content`), and the locale tree
+# has to be generated rather than listed file-by-file.
+genrule(
+    name = "bash_data",
+    srcs = [
+        ":bash",
+        ":bashbug",
+        ":clear_console",
+        "@bash_src//:debian/etc.bash.bashrc",
+        "@bash_src//:debian/skel.bashrc",
+        "@bash_src//:debian/skel.bash_logout",
+        "@bash_src//:debian/skel.profile",
+        "@bash_src//:debian/shells.d/bash",
+        "@bash_src//:debian/bash.menu",
+        ":locale.tar",
+    ],
+    outs = ["bash_data.tar"],
+    cmd = ("set -e; " +
+           "R=$(RULEDIR)/_root; " +
+           "mkdir -p $$R/usr/bin $$R/etc/skel $$R/usr/share/debianutils/shells.d " +
+           "  $$R/usr/share/menu; " +
+           "install -m0755 $(location :bash) $$R/usr/bin/bash; " +
+           "install -m0755 $(location :bashbug) $$R/usr/bin/bashbug; " +
+           "install -m0755 $(location :clear_console) $$R/usr/bin/clear_console; " +
+           "install -m0644 $(location @bash_src//:debian/etc.bash.bashrc) $$R/etc/bash.bashrc; " +
+           "install -m0644 $(location @bash_src//:debian/skel.bashrc) $$R/etc/skel/.bashrc; " +
+           "install -m0644 $(location @bash_src//:debian/skel.bash_logout) $$R/etc/skel/.bash_logout; " +
+           "install -m0644 $(location @bash_src//:debian/skel.profile) $$R/etc/skel/.profile; " +
+           "install -m0644 $(location @bash_src//:debian/shells.d/bash) " +
+           "  $$R/usr/share/debianutils/shells.d/bash; " +
+           "install -m0644 $(location @bash_src//:debian/bash.menu) $$R/usr/share/menu/bash; " +
+           # debian/rules:217. rbash is bash's restricted mode, selected by
+           # argv[0], so it must be a symlink rather than a copy.
+           "ln -sf bash $$R/usr/bin/rbash; " +
+           "tar -xf $(location :locale.tar) -C $$R; " +
+           "tar -cf $@ --owner=0 --group=0 --numeric-owner -C $$R ."),
+)
+
+sonic_deb(
+    name = "bash_{}.deb".format(VERSION),
+    package = "bash",
+    version = VERSION,
+    content = {},
+    data = ":bash_data",
+    # Matches Make's deb, where these are Pre-Depends (bash is Essential).
+    pre_depends = [
+        "libc6 (>= 2.38)",
+        "libtinfo6 (>= 6)",
+    ],
+    depends = [
+        "base-files (>= 2.1.12)",
+        "debianutils (>= 5.6-0.1)",
+    ],
+    recommends = ["bash-completion"],
+    suggests = ["bash-doc"],
+    # NOTE: Make's deb also carries `Essential: yes`, which sonic_deb's control
+    # writer does not support. It matters for apt's removal protection, not for
+    # image assembly (the rootfs is built by unpacking data tars).
+    multi_arch = "foreign",
+    maintainer = "Matthias Klose <doko@debian.org>",
+    description = "GNU Bourne Again SHell\n Bash is an sh-compatible command language interpreter that executes\n commands read from the standard input or from a file.  Bash also\n incorporates useful features from the Korn and C shells (ksh and csh).\n .\n Bash is ultimately intended to be a conformant implementation of the\n IEEE POSIX Shell and Tools specification (IEEE Working Group 1003.2).\n .\n The Programmable Completion Code, by Ian Macdonald, is now found in\n the bash-completion package.",
+    homepage = "http://tiswww.case.edu/php/chet/bash/bashtop.html",
+    section = "shells",
+    priority = "required",
+)

@@ -1,0 +1,88 @@
+module(
+    name = "bash",
+    version = "5.2.37-2",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+# =============================================================================
+# bash — built FROM SOURCE, because SONiC's
+# patches/0001-Add-plugin-support-to-bash.patch is load-bearing for this image.
+#
+# The patch adds a `plugin.c` / `plugin.h` pair plus hooks in shell.c
+# (load_plugins / free_plugins) and execute_cmd.c
+# (invoke_plugin_on_shell_execve). bash-tacplus — which IS installed on the
+# host (see platform/common/rootfs/sonic_host_debs.bzl) — is loaded through
+# exactly that hook, reading /etc/bash/bash_plugins.conf. Re-wrapping trixie's
+# stock bash would silently disable TACACS+ shell command authorization, so
+# the Debian binary is NOT a substitute here.
+#
+# Both tarballs are the sha256-pinned ones from bash_5.2.37-2.dsc, i.e. exactly
+# what src/bash/Makefile `dget`s. debian/patches/series is applied first — it is
+# what enables SYS_BASHRC "/etc/bash.bashrc" (deb-bash-config.diff) and carries
+# fixes such as fix-rl_do_undo-crash.diff — then SONiC's patch, the same order
+# dpkg-buildpackage uses.
+# =============================================================================
+debian_source = use_repo_rule("@sonic_build_infra//debian_source:debian_source.bzl", "debian_source")
+
+debian_source(
+    name = "bash_src",
+    build_file = "//:bash_src.BUILD",
+    debian_sha256 = "42e03ef523258b61fa765b8c9719d7bf461f2a274260d07fbe45ca7e4627923a",
+    debian_urls = ["https://deb.debian.org/debian/pool/main/b/bash/bash_5.2.37-2.debian.tar.xz"],
+    orig_sha256 = "370704c9c859f4060b7df19055e43bb9b5fa09d887699cf6ba87885c5485d36a",
+    orig_urls = ["https://deb.debian.org/debian/pool/main/b/bash/bash_5.2.37.orig.tar.xz"],
+    # SONiC's patch is written against `bash-5.2.37/<file>` (quilt applies it
+    # from src/bash/, one level above the unpacked tree), hence -p2 after
+    # strip_prefix has already removed that component.
+    patch_strip = 2,
+    patches = ["//:patches/0001-Add-plugin-support-to-bash.patch"],
+    strip_prefix = "bash-5.2.37",
+)
+
+# libtinfo (terminal capability database) for lib/readline: debian/rules links
+# -ltinfo when libtinfo is present, else -lncurses. The -dev package also
+# supplies the termcap.h that lib/readline/tcap.h includes. Same snapshot and
+# pattern as src/wpasupplicant.
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = [
+        "trixie",
+        "trixie-updates",
+    ],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+apt.install(
+    dependency_set = "bash_deps",
+    packages = [
+        "libncurses-dev:amd64",
+        "libncurses-dev:arm64",
+        # msgfmt, to compile po/*.po into the locale .mo files the deb ships.
+        # Used as a genrule tool, the same way src/sonic-sysmgr consumes
+        # dbusxx-xml2cpp from apt. libxml2 and libunistring are msgfmt's own
+        # runtime deps, which the sandbox has to supply.
+        "gettext:amd64",
+        "gettext:arm64",
+        "libxml2:amd64",
+        "libxml2:arm64",
+        "libunistring5:amd64",
+        "libunistring5:arm64",
+    ],
+    suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
+)
+use_repo(apt, "bash_deps")
