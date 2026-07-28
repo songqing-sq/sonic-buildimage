@@ -704,6 +704,18 @@ tar(
     for unit, (template, container, multi_instance) in SERVICE_UNITS.items()
 ]
 
+
+# rules/config: ENABLE_FRR_SNMP_AGENT ?= y (slave.mk:1805 exports it).
+genrule(
+    name = "cfg_constants_yml",
+    srcs = ["//files/build_templates:constants.yml.j2"],
+    outs = ["cfg/constants.yml"],
+    cmd = ("$(execpath @sonic_build_infra//jinja2:render) " +
+           "$(execpath //files/build_templates:constants.yml.j2) $@ " +
+           "ENABLE_FRR_SNMP_AGENT=y"),
+    tools = ["@sonic_build_infra//jinja2:render"],
+)
+
 tar(
     name = "rendered_layer",
     srcs = glob(["rendered/**"]) + [
@@ -712,7 +724,7 @@ tar(
     ] + [
         ":svc_" + unit.replace("@", "at").replace(".", "_").replace("-", "_")
         for unit in SERVICE_UNITS
-    ],
+    ] + [":cfg_constants_yml"],
     mtree = [
         "./etc/apt/sources.list uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__apt__sources.list)",
         "./etc/dhcp/dhclient.conf uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__dhcp__dhclient.conf)",
@@ -721,7 +733,7 @@ tar(
         "./etc/rsyslog.d/00-sonic.conf uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__rsyslog.d__00-sonic.conf)",
         "./etc/sonic/asic_config_checksum uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__sonic__asic_config_checksum)",
         "./etc/sonic/bmc_config.json uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__sonic__bmc_config.json)",
-        "./etc/sonic/constants.yml uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__sonic__constants.yml)",
+        "./etc/sonic/constants.yml uid=0 gid=0 mode=0644 type=file content=$(location :cfg_constants_yml)",
         "./etc/sonic/init_cfg.json uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__sonic__init_cfg.json)",
         "./etc/sonic/sonic_version.yml uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__sonic__sonic_version.yml)",
         "./usr/bin/bgp.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_bgp)",
