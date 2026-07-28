@@ -1,0 +1,119 @@
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "loopback-file-system-support.patch",
+    "loopback-file-offset-support.patch",
+    "initramfs_tools_src.BUILD",
+    "series",
+])
+
+VERSION = "0.142"
+
+# =============================================================================
+# initramfs-tools / initramfs-tools-core — hermetic rebuild of upstream
+# v0.142 with SONiC's two loopback patches.
+#
+# The legacy build (src/initramfs-tools/Makefile) downloads the pinned salsa
+# tarball, `quilt push -a` the two patches, then dpkg-buildpackage. Here the
+# SAME tarball (same sha256) is fetched by @initramfs_tools_src with the same
+# patches applied in series order, and the two binary packages are assembled
+# from debian/*.install + debian/rules verbatim:
+#
+#   initramfs-tools (Arch: all)
+#     conf/update-initramfs.conf -> /etc/initramfs-tools
+#     update-initramfs           -> /usr/sbin
+#     kernel                     -> /etc          (kernel/postinst.d hooks)
+#   initramfs-tools-core (Arch: all)
+#     lsinitramfs, unmkinitramfs -> /usr/bin
+#     init, scripts, hooks, hook-functions, conf/modules
+#                                -> /usr/share/initramfs-tools
+#     conf/initramfs.conf        -> /etc/initramfs-tools
+#     mkinitramfs (BUSYBOX_* substituted, see debian/rules override_dh_install)
+#                                -> /usr/sbin, mode 0755
+#
+# The patches are why we cannot use Debian trixie's initramfs-tools 0.148.3:
+# they add mount_loop_root / loop= / loopoffset= handling to scripts/local,
+# which is how the SONiC image loop-mounts fs.squashfs at boot.
+# =============================================================================
+
+# debian/rules override_dh_install: mkinitramfs is not installed verbatim — the
+# BUSYBOX_PACKAGES / BUSYBOX_MIN_VERSION placeholders are substituted first.
+# Debian (non-Ubuntu) vendor => "busybox busybox-static", min version
+# 1:1.22.0-17~, so `wordlist 2,100` of "or busybox or busybox-static" is
+# "or busybox-static".
+genrule(
+    name = "mkinitramfs_substituted",
+    srcs = ["@initramfs_tools_src//:mkinitramfs"],
+    outs = ["mkinitramfs"],
+    cmd = ("sed -e 's,@BUSYBOX_PACKAGES@,or busybox-static,' " +
+           "-e 's/@BUSYBOX_MIN_VERSION@/1:1.22.0-17~/' $< > $@"),
+)
+
+sonic_deb(
+    name = "initramfs-tools-core_{}_all.deb".format(VERSION),
+    architecture = "all",
+    content = {
+        "/usr/bin:*:0755": [
+            "@initramfs_tools_src//:lsinitramfs",
+            "@initramfs_tools_src//:unmkinitramfs",
+        ],
+        "/usr/sbin:*:0755": [":mkinitramfs_substituted"],
+        "/usr/share/initramfs-tools:*:0755": [
+            "@initramfs_tools_src//:init",
+        ],
+        "/usr/share/initramfs-tools:*:0644": [
+            "@initramfs_tools_src//:hook-functions",
+            "@initramfs_tools_src//:conf/modules",
+        ],
+        # scripts/ and hooks/ ship as TREES (relative paths preserved) — the
+        # patched scripts/local carrying mount_loop_root / loopoffset= lives
+        # here, and /init run-parts the scripts/init-* dirs by path. The source
+        # paths already start with scripts/ resp. hooks/, so no strip_prefix.
+        "/usr/share/initramfs-tools::0755": [
+            "@initramfs_tools_src//:core_scripts",
+            "@initramfs_tools_src//:core_hooks",
+        ],
+        "/etc/initramfs-tools:*:0644": [
+            "@initramfs_tools_src//:conf/initramfs.conf",
+        ],
+    },
+    depends = [
+        "klibc-utils (>= 2.0.4-8~)",
+        "cpio (>= 2.12)",
+        "kmod",
+        "udev",
+        "coreutils (>= 8.24)",
+        "logsave | e2fsprogs (<< 1.45.3-1~)",
+    ],
+    description = "generic modular initramfs generator (core tools)",
+    homepage = "https://salsa.debian.org/kernel-team/initramfs-tools",
+    maintainer = "Debian kernel team <debian-kernel@lists.debian.org>",
+    package = "initramfs-tools-core",
+    priority = "optional",
+    section = "utils",
+    version = VERSION,
+)
+
+sonic_deb(
+    name = "initramfs-tools_{}_all.deb".format(VERSION),
+    architecture = "all",
+    content = {
+        "/usr/sbin:*:0755": ["@initramfs_tools_src//:update-initramfs"],
+        "/etc/initramfs-tools:*:0644": [
+            "@initramfs_tools_src//:conf/update-initramfs.conf",
+        ],
+    },
+    depends = [
+        "initramfs-tools-core (= {})".format(VERSION),
+        "linux-base",
+    ],
+    description = "generic modular initramfs generator (automation)",
+    homepage = "https://salsa.debian.org/kernel-team/initramfs-tools",
+    maintainer = "Debian kernel team <debian-kernel@lists.debian.org>",
+    package = "initramfs-tools",
+    priority = "optional",
+    section = "utils",
+    version = VERSION,
+)

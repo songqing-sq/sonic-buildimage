@@ -1,65 +1,94 @@
-"""The 57 SONiC-built host debs the Make image installs (one-image.mk
-INSTALLS + build_debian.sh), mapped to their target/debs/trixie filenames.
-Derived from fsroot-vs/var/lib/dpkg/status (Make ground truth).
+"""Hermetic sources for the SONiC-built host packages the vs image installs.
 
-linux-image-* is handled by //platform/vs/kernel (Phase 1 bridge), not here."""
+Ground truth for WHICH packages the host fs needs is the Make build's
+fsroot-vs/var/lib/dpkg/status (57 SONiC-built debs). This file records where
+each one comes from in the BAZEL build — never from target/debs, which is a
+Make artifact; every entry below is a hermetic Bazel target.
 
-SONIC_HOST_DEBS = {
-    "audisp-tacplus": "audisp-tacplus_1.0.2_amd64.deb",
-    "bash": "bash_5.2.37-2_amd64.deb",
-    "bash-tacplus": "bash-tacplus_1.0.0_amd64.deb",
-    "grub-common": "grub-common_2.06-13+deb13u1_amd64.deb",
-    "grub2-common": "grub2-common_2.06-13+deb13u1_amd64.deb",
-    "ifupdown2": "ifupdown2_3.0.0-1_all.deb",
-    "initramfs-tools": "initramfs-tools_0.142_all.deb",
-    "initramfs-tools-core": "initramfs-tools-core_0.142_all.deb",
-    "iproute2": "iproute2_6.15.0-1+sonic.0_amd64.deb",
-    "kdump-tools": "kdump-tools_1.10.7_amd64.deb",
-    "libgssapi-krb5-2": "libgssapi-krb5-2_1.21.3-5+fips_amd64.deb",
-    "libk5crypto3": "libk5crypto3_1.21.3-5+fips_amd64.deb",
-    "libkrb5-3": "libkrb5-3_1.21.3-5+fips_amd64.deb",
-    "libkrb5support0": "libkrb5support0_1.21.3-5+fips_amd64.deb",
-    "libnl-3-200": "libnl-3-200_3.7.0-0.2+b1sonic1_amd64.deb",
-    "libnl-cli-3-200": "libnl-cli-3-200_3.7.0-0.2+b1sonic1_amd64.deb",
-    "libnl-genl-3-200": "libnl-genl-3-200_3.7.0-0.2+b1sonic1_amd64.deb",
-    "libnl-nf-3-200": "libnl-nf-3-200_3.7.0-0.2+b1sonic1_amd64.deb",
-    "libnl-route-3-200": "libnl-route-3-200_3.7.0-0.2+b1sonic1_amd64.deb",
-    "libnss-radius": "libnss-radius_1.0.1-1_amd64.deb",
-    "libnss-tacplus": "libnss-tacplus_1.0.4-1_amd64.deb",
-    "libpam-radius-auth": "libpam-radius-auth_1.4.1-1_amd64.deb",
-    "libpam-tacplus": "libpam-tacplus_1.4.1-1_amd64.deb",
-    "libpython3.13": "libpython3.13_3.13.5-2+fips_amd64.deb",
-    "libpython3.13-minimal": "libpython3.13-minimal_3.13.5-2+fips_amd64.deb",
-    "libpython3.13-stdlib": "libpython3.13-stdlib_3.13.5-2+fips_amd64.deb",
-    "libsensors5": "libsensors5_3.6.0-7.1_amd64.deb",
-    "libssl-dev": "libssl-dev_3.5.4-1+fips_amd64.deb",
-    "libssl3t64": "libssl3t64_3.5.4-1+fips_amd64.deb",
-    "libswsscommon": "libswsscommon_1.0.0_amd64.deb",
-    "libtac2": "libtac2_1.4.1-1_amd64.deb",
-    "libyang3": "libyang3_3.12.2-1_amd64.deb",
-    "makedumpfile": "makedumpfile_1.7.7-1_amd64.deb",
-    "monit": "monit_5.34.3-1_amd64.deb",
-    "openssh-client": "openssh-client_10.0p1-7+fips_amd64.deb",
-    "openssh-server": "openssh-server_10.0p1-7+fips_amd64.deb",
-    "openssh-sftp-server": "openssh-sftp-server_10.0p1-7+fips_amd64.deb",
-    "openssl": "openssl_3.5.4-1+fips_amd64.deb",
-    "python3-libyang": "python3-libyang_3.1.0-1_amd64.deb",
-    "python3-swsscommon": "python3-swsscommon_1.0.0_amd64.deb",
-    "python3.13": "python3.13_3.13.5-2+fips_amd64.deb",
-    "python3.13-minimal": "python3.13-minimal_3.13.5-2+fips_amd64.deb",
-    "rasdaemon": "rasdaemon_0.6.8-1_amd64.deb",
-    "sedutil": "sedutil_1.15-5ad84d8_amd64.deb",
-    "socat": "socat_1.7.4.1-3_amd64.deb",
-    "sonic-ctrmgrd-rs": "sonic-ctrmgrd-rs_1.0.0_amd64.deb",
-    "sonic-db-cli": "sonic-db-cli_1.0.0_amd64.deb",
-    "sonic-device-data": "sonic-device-data_1.0-1_all.deb",
-    "sonic-host-services-data": "sonic-host-services-data_1.0-1_all.deb",
-    "sonic-host-services-rs": "sonic-host-services-rs_1.0.0_amd64.deb",
-    "sonic-nettools": "sonic-nettools_0.0.1-0_amd64.deb",
-    "sonic-rsyslog-plugin": "sonic-rsyslog-plugin_1.0.0-0_amd64.deb",
-    "sonic-utilities-data": "sonic-utilities-data_1.0-1_all.deb",
-    "ssh": "ssh_10.0p1-7+fips_all.deb",
-    "symcrypt-openssl": "symcrypt-openssl_1.9.4_amd64.deb",
-    "syslog-counter": "syslog-counter_1.0.0_amd64.deb",
-    "systemd-sonic-generator": "systemd-sonic-generator_1.0.0_amd64.deb",
+HERMETIC_HOST_DEBS maps package -> the sonic_deb base target name. The macro
+generates `<name>_data` (the deb's data tar, laid into the rootfs) and
+`<name>_statusd` (registers the package in /var/lib/dpkg/status.d).
+
+Packages not yet migrated are listed explicitly so the gap is visible rather
+than silently bridged from Make output.
+"""
+
+# Produced by a hermetic sonic_deb elsewhere in the workspace.
+HERMETIC_HOST_DEBS = {
+    "libswsscommon": "@sonic-swss-common//:libswsscommon_1.0.0.deb",
+    "python3-swsscommon": "@sonic-swss-common//:python3-swsscommon_1.0.0.deb",
+    "sonic-db-cli": "@sonic-swss-common//:sonic-db-cli_1.0.0.deb",
+    "iproute2": "@iproute2//:iproute2_6.15.0-1.deb",
+    "libyang3": "@libyang3//:libyang3_3.12.2-1.deb",
+    "python3-libyang": "@libyang3-py3//:python3-libyang_3.1.0-1.deb",
+    "libsensors5": "@lm-sensors//:libsensors5_3.6.0-7.1.deb",
+    "socat": "@socat//:socat_1.8.0.3-1.deb",
+    "sonic-rsyslog-plugin": "@sonic-eventd//:sonic-rsyslog-plugin_1.0.0-0.deb",
+    # Upstream v0.142 rebuilt with SONiC's two loopback patches (BOOT-CRITICAL:
+    # mount_loop_root loop-mounts fs.squashfs). Debian trixie ships 0.148.3,
+    # which the patches do not apply to, hence the pinned salsa tarball.
+    "initramfs-tools": "@initramfs-tools//:initramfs-tools_0.142_all.deb",
+    "initramfs-tools-core": "@initramfs-tools//:initramfs-tools-core_0.142_all.deb",
 }
+
+# Packages SONiC merely REBUILDS from Debian source at the same upstream
+# version, with no patch that changes shipped behaviour: the binary from the
+# pinned @trixie snapshot is equivalent, so they ship via base_layer
+# (HOST_PACKAGES) rather than as a SONiC deb.
+DEBIAN_EQUIVALENT = [
+    "bash",
+    "monit",
+    "rasdaemon",
+    "makedumpfile",
+    "kdump-tools",
+    "ifupdown2",
+    "grub-common",
+    "grub2-common",
+    "sedutil",
+    "libpam-radius-auth",
+    "libnl-3-200",
+    "libnl-cli-3-200",
+    "libnl-genl-3-200",
+    "libnl-nf-3-200",
+    "libnl-route-3-200",
+]
+
+# Awaiting a hermetic sonic_deb. No Make bridge is used for these — until each
+# lands the image simply lacks it, which is visible rather than papered over.
+#
+#   tacacs/radius, Rust daemons, data-only packages: SONiC-only sources.
+#   FIPS stack: needs symcrypt-openssl, then OpenSSL/CPython/OpenSSH/krb5
+#       rebuilt against it.
+TODO_HERMETIC = [
+    "libtac2",
+    "libpam-tacplus",
+    "libnss-tacplus",
+    "audisp-tacplus",
+    "bash-tacplus",
+    "libnss-radius",
+    "sonic-ctrmgrd-rs",
+    "sonic-host-services-rs",
+    "sonic-nettools",
+    "syslog-counter",
+    "sonic-device-data",
+    "sonic-host-services-data",
+    "sonic-utilities-data",
+    "systemd-sonic-generator",
+    "symcrypt-openssl",
+    "openssl",
+    "libssl3t64",
+    "libssl-dev",
+    "python3.13",
+    "python3.13-minimal",
+    "libpython3.13",
+    "libpython3.13-minimal",
+    "libpython3.13-stdlib",
+    "openssh-client",
+    "openssh-server",
+    "openssh-sftp-server",
+    "ssh",
+    "libkrb5-3",
+    "libk5crypto3",
+    "libkrb5support0",
+    "libgssapi-krb5-2",
+]

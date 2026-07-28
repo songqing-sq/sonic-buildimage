@@ -1,3 +1,7 @@
 *
 !.gitignore
 !Makefile
+!series
+!*.patch
+!*.bazel
+!initramfs_tools_src.BUILD

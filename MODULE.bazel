@@ -350,6 +350,12 @@ local_path_override(
     path = "src/sonic-swss-common",
 )
 
+bazel_dep(name = "initramfs-tools", version = "0.142")
+local_path_override(
+    module_name = "initramfs-tools",
+    path = "src/initramfs-tools",
+)
+
 bazel_dep(name = "sonic-eventd", version = "1.0.0-0")
 local_path_override(
     module_name = "sonic-eventd",
@@ -870,6 +876,23 @@ http_file(
     downloaded_file_path = "apt-transport-https_3.0.3_all.deb",
     sha256 = "b160504c20da5557ad6d5dd691f2ea486874e50539af2e5f389b5cbb047837e7",
     urls = [_SNAPSHOT_POOL + "pool/main/a/apt/apt-transport-https_3.0.3_all.deb"],
+)
+
+# grub bootloader debs shipped VERBATIM inside platform.tar.gz (install.sh
+# installs them at first boot, so the payload needs the .deb files themselves,
+# not their unpacked contents — hence http_file rather than the apt pool).
+http_file(
+    name = "grub_pc_bin_deb",
+    downloaded_file_path = "grub-pc-bin_2.12-9+deb13u1_amd64.deb",
+    sha256 = "7620ccc100521e4b3da89b4c8303b1260426a2b425105d426f741770d5cfe380",
+    urls = [_SNAPSHOT_POOL + "pool/main/g/grub2/grub-pc-bin_2.12-9+deb13u1_amd64.deb"],
+)
+
+http_file(
+    name = "grub_efi_amd64_bin_deb",
+    downloaded_file_path = "grub-efi-amd64-bin_2.12-9+deb13u1_amd64.deb",
+    sha256 = "14055937303982190c675312c8b702837e1940619a536b9aa7509bddbacc7271",
+    urls = [_SNAPSHOT_POOL + "pool/main/g/grub2/grub-efi-amd64-bin_2.12-9+deb13u1_amd64.deb"],
 )
 
 # NOTE: docker-base-trixie's apt sources_list must be the LAST-registered

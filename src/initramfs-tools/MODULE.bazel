@@ -1,0 +1,33 @@
+module(
+    name = "initramfs-tools",
+    version = "0.142",
+)
+
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "tar.bzl", version = "0.5.7")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# Upstream initramfs-tools v0.142 from salsa.debian.org — the SAME pinned
+# tarball (identical sha256) that src/initramfs-tools/Makefile downloads, so
+# the hermetic build starts from byte-identical sources. SONiC needs 0.142
+# specifically (not Debian trixie's 0.148.3) because its two loopback patches
+# apply to this tree.
+http_archive(
+    name = "initramfs_tools_src",
+    build_file = "//:initramfs_tools_src.BUILD",
+    patch_args = ["-p1"],
+    # Order MUST match src/initramfs-tools/series:
+    #   1. loopback-file-system-support  — adds mount_loop_root + loop= handling
+    #   2. loopback-file-offset-support  — adds loopoffset= via losetup
+    # These are BOOT-CRITICAL for SONiC: grub passes
+    # `loop=$image_dir/fs.squashfs` and mount_loop_root is what loop-mounts the
+    # squashfs root and creates /host.
+    patches = [
+        "//:loopback-file-system-support.patch",
+        "//:loopback-file-offset-support.patch",
+    ],
+    sha256 = "27a78cc25acc3ca3d9c78deca165bf001b09b260ce25a3f3756e47a0e7bc0554",
+    strip_prefix = "initramfs-tools-v0.142",
+    urls = ["https://salsa.debian.org/kernel-team/initramfs-tools/-/archive/v0.142/initramfs-tools-v0.142.tar.gz"],
+)

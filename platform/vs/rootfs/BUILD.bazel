@@ -19,6 +19,7 @@
 # //platform/common/rootfs:sonic_debs_layer.
 
 load("@sonic_build_infra//initramfs:defs.bzl", "initramfs")
+load("@tar.bzl", "tar")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -54,7 +55,7 @@ initramfs(
     name = "initrd",
     busybox = ":busybox_static",
     depmod = "@sonic_build_infra//kernel_host_tools:depmod",
-    initramfs_tools_data = "//platform/common/rootfs:sonic_deb_initramfs-tools-core",
+    initramfs_tools_data = "@initramfs-tools//:initramfs-tools-core_0.142_all.deb_data",
     kversion = KVERSION,
     modules = [
         # files/initramfs-tools/modules (build_debian.sh appends to
@@ -100,52 +101,35 @@ initramfs(
 #   ./common/sonic-platform-vs_1.0_amd64.deb   (the platform deb)
 #   ./x86_64-kvm_x86_64-r0/... -> symlink into common/
 #   ./grub/grub-pc-bin*.deb grub-efi-amd64-bin*.deb
-# The debs are Make artifacts bridged from target/debs/trixie (same pattern
-# as the kernel bridge).
+#
+# All three debs come from hermetic sources: sonic-platform-vs is built by
+# //platform/vs/sonic-platform-modules-vs (sonic_deb over its setup.py
+# modules), and the grub bin debs are the pinned Debian snapshot .deb files
+# (installed by install.sh at first boot, so the payload carries the .deb
+# itself rather than its unpacked contents).
 # -----------------------------------------------------------------------------
-_PLATFORM_DEBS = [
-    "sonic-platform-vs_1.0_amd64.deb",
-    "grub-pc-bin_2.06-13+deb13u1_amd64.deb",
-    "grub-efi-amd64-bin_2.06-13+deb13u1_amd64.deb",
-]
-
-genrule(
-    name = "platform_debs",
-    srcs = ["//platform/vs/kernel:BUILD.bazel"],
-    outs = ["debs/" + d for d in _PLATFORM_DEBS],
-    cmd = ("set -e; " +
-           "WS=$$(dirname $$(dirname $$(dirname $$(dirname $$(readlink -f $(location //platform/vs/kernel:BUILD.bazel)))))); " +
-           "".join([
-               ("if [ ! -f $$WS/target/debs/trixie/{d} ]; then " +
-                "echo 'ERROR: target/debs/trixie/{d} missing — run the Make build first' >&2; exit 1; fi; " +
-                "cp $$WS/target/debs/trixie/{d} $(location debs/{d}); ").format(d = d)
-               for d in _PLATFORM_DEBS
-           ])),
-    local = True,
-    message = "SONiC platform debs (Make bridge)",
-    tags = [
-        "no-sandbox",
-        "manual",
+tar(
+    name = "platform_tar",
+    srcs = [
+        ":firsttime",
+        "//platform/vs/sonic-platform-modules-vs:sonic-platform-vs_1.0.deb",
+        "@grub_pc_bin_deb//file",
+        "@grub_efi_amd64_bin_deb//file",
     ],
+    compress = "gzip",
+    mtree = [
+        "./firsttime uid=0 gid=0 mode=0644 type=file content=$(location :firsttime)",
+        "./common/sonic-platform-vs_1.0_amd64.deb uid=0 gid=0 mode=0644 type=file content=$(location //platform/vs/sonic-platform-modules-vs:sonic-platform-vs_1.0.deb)",
+        "./x86_64-kvm_x86_64-r0/sonic-platform-vs_1.0_amd64.deb uid=0 gid=0 type=link link=../common/sonic-platform-vs_1.0_amd64.deb",
+        "./grub/grub-pc-bin_2.12-9+deb13u1_amd64.deb uid=0 gid=0 mode=0644 type=file content=$(location @grub_pc_bin_deb//file)",
+        "./grub/grub-efi-amd64-bin_2.12-9+deb13u1_amd64.deb uid=0 gid=0 mode=0644 type=file content=$(location @grub_efi_amd64_bin_deb//file)",
+    ],
+    out = "platform.tar.gz",
 )
 
+# The empty first-boot marker install.sh looks for.
 genrule(
-    name = "platform_tar",
-    srcs = [":platform_debs"],
-    outs = ["platform.tar.gz"],
-    cmd = """set -eu
-d=$$(mktemp -d)
-touch $$d/firsttime
-mkdir -p $$d/common $$d/x86_64-kvm_x86_64-r0 $$d/grub
-for f in $(locations :platform_debs); do
-    case $$f in
-        *sonic-platform-vs*) cp $$f $$d/common/ ;;
-        *grub*) cp $$f $$d/grub/ ;;
-    esac
-done
-ln -s ../common/sonic-platform-vs_1.0_amd64.deb $$d/x86_64-kvm_x86_64-r0/sonic-platform-vs_1.0_amd64.deb
-tar -czf $@ --owner=0 --group=0 --numeric-owner -C $$d .
-rm -rf $$d
-""",
-    tags = ["manual"],
+    name = "firsttime",
+    outs = ["firsttime.marker"],
+    cmd = ": > $@",
 )

@@ -3,7 +3,7 @@ load("@rules_deb//distroless:defs.bzl", "flatten")
 load("@tar.bzl", "tar")
 load("@sonic_build_infra//python:site_packages.bzl", "site_packages")
 load("//platform/common/rootfs:host_packages.bzl", "HOST_PACKAGES")
-load("//platform/common/rootfs:sonic_host_debs.bzl", "SONIC_HOST_DEBS")
+load("//platform/common/rootfs:sonic_host_debs.bzl", "HERMETIC_HOST_DEBS")
 
 # =============================================================================
 # Host (vs) rootfs layers for the Bazel-built sonic-vs.bin.
@@ -94,47 +94,24 @@ flatten(
 )
 
 # -----------------------------------------------------------------------------
-# SONiC-built host debs (audisp-tacplus ... systemd-sonic-generator): the 57
-# packages Make installs into the host fs from target/debs/trixie
-# (one-image.mk INSTALLS + build_debian.sh FIPS/openssh/python overrides).
-# Bridged from the Make output tree like //platform/vs/kernel — the deb is the
-# Make artifact itself, so content equivalence is by construction. Runs
-# `make <deb>` only if the deb is absent (local, non-hermetic bridge; the
-# hermetic per-package sonic_deb migrations replace these one by one).
+# SONiC-built host packages: laid in from their HERMETIC sonic_deb targets
+# (each package's `_data` tar = the deb's contents, `_statusd` = its
+# /var/lib/dpkg/status.d entry). Nothing here reads target/debs — that is a
+# Make artifact.
+#
+# The set of packages the host fs needs comes from the Make fsroot-vs dpkg
+# status; sonic_host_debs.bzl records, per package, whether it is already
+# hermetic (HERMETIC_HOST_DEBS), equivalent to the pinned Debian binary and
+# therefore shipped via base_layer (DEBIAN_EQUIVALENT), or still awaiting a
+# hermetic sonic_deb (TODO_HERMETIC).
 # -----------------------------------------------------------------------------
 exports_files(["BUILD.bazel"])
-
-[
-    genrule(
-        name = "sonic_deb_" + pkg.replace(".", "_").replace("+", "_"),
-        srcs = ["BUILD.bazel"],
-        outs = ["sonic_debs/" + deb + ".tar"],
-        cmd = ("set -e; " +
-               "WS=$$(dirname $$(dirname $$(dirname $$(dirname $$(readlink -f $(location BUILD.bazel)))))); " +
-               "DEB=$$WS/target/debs/trixie/{deb}; " +
-               "if [ ! -f $$DEB ]; then " +
-               "  echo 'ERROR: '$$DEB' missing — run the Make build first (make target/debs/trixie/{deb})' >&2; exit 1; " +
-               "fi; " +
-               "dpkg-deb --fsys-tarfile $$DEB > $@").format(deb = deb),
-        local = True,
-        message = "SONiC host deb (Make bridge) -> " + deb,
-        tags = [
-            "no-sandbox",
-            "manual",
-        ],
-        visibility = ["//platform:__subpackages__"],
-    )
-    for pkg, deb in SONIC_HOST_DEBS.items()
-]
 
 flatten(
     name = "sonic_debs_layer",
     deduplicate = True,
-    tars = [
-        ":sonic_deb_" + pkg.replace(".", "_").replace("+", "_")
-        for pkg in SONIC_HOST_DEBS
-    ],
-    tags = ["manual"],
+    tars = [d + "_data" for d in HERMETIC_HOST_DEBS.values()] +
+           [d + "_statusd" for d in HERMETIC_HOST_DEBS.values()],
     visibility = ["//platform:__subpackages__"],
 )
 
