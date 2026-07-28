@@ -1,0 +1,95 @@
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.10.7"
+
+# The deb's Version: carries Debian's epoch.
+DEB_VERSION = "1:1.10.7"
+
+exports_files(["kdump_tools_src.BUILD"])
+
+# debian/rules KDUMP_CMDLINE_APPEND for amd64 (the arm64/ppc64el branches add
+# different flags). Substituted into kdump-config and kdump-tools.conf; verified
+# against the value in Make's deb.
+KDUMP_CMDLINE_APPEND = ("reset_devices systemd.unit=kdump-tools-dump.service " +
+                        "nr_cpus=1 irqpoll usbcore.nousb")
+
+# debian/rules' kdump_cmdline_insert: sed the placeholder in each .in file.
+[
+    genrule(
+        name = "gen_" + out.replace("-", "_").replace(".", "_"),
+        srcs = ["@kdump_tools_src//:debian/" + out + ".in"],
+        outs = ["subst/" + out],
+        cmd = "sed 's|@KDUMP_CMDLINE_APPEND@|{}|' $< > $@".format(KDUMP_CMDLINE_APPEND),
+    )
+    for out in [
+        "kdump-config",
+        "kdump-tools.conf",
+    ]
+]
+
+# debian/rules' override_dh_install renames several files as it installs them.
+[
+    genrule(
+        name = "gen_" + name,
+        srcs = ["@kdump_tools_src//:debian/" + src],
+        outs = ["renamed/" + name + "/" + dst],
+        cmd = "cp $< $@",
+    )
+    for name, src, dst in [
+        # etc/kernel/{postinst,postrm}.d/kdump-tools
+        ("postinst_d", "kernel-postinst-generate-initrd", "kdump-tools"),
+        ("postrm_d", "kernel-postrm-delete-initrd", "kdump-tools"),
+        # usr/share/initramfs-tools/hooks/kdump-tools
+        ("initramfs_hook", "initramfs.hook", "kdump-tools"),
+        # usr/share/initramfs-tools/scripts/local-bottom/kdump-sysctl
+        ("initramfs_bottom", "initramfs.local-bottom", "kdump-sysctl"),
+        # etc/default/grub.d/kdump-tools.cfg (the .grub.<arch> fallback)
+        ("grub_cfg", "kdump-tools.grub.default", "kdump-tools.cfg"),
+        # etc/init.d/kdump-tools
+        ("initd", "kdump-tools.init", "kdump-tools"),
+        # usr/lib/udev/rules.d/50-kdump-tools.rules (dh_installudev --priority=50)
+        ("udev", "kdump-tools.udev", "50-kdump-tools.rules"),
+        # usr/lib/systemd/system/kdump-tools-dump.service
+        ("dump_service", "kdump-tools.kdump-tools-dump.service", "kdump-tools-dump.service"),
+    ]
+]
+
+sonic_deb(
+    name = "kdump-tools_{}.deb".format(VERSION),
+    package = "kdump-tools",
+    version = DEB_VERSION,
+    architecture = "all",
+    content = {
+        "/usr/sbin:*:0755": [":gen_kdump_config"],
+        "/usr/share/kdump-tools:*:0644": [":gen_kdump_tools_conf"],
+        "/usr/share/kdump-tools/*:*:0755": [
+            "@kdump_tools_src//:debian/kdump_mem_estimator",
+        ],
+        "/etc/kdump:*:0644": ["@kdump_tools_src//:debian/sysctl.conf"],
+        "/etc/default/grub.d:*:0644": [":gen_grub_cfg"],
+        "/etc/init.d:*:0755": [":gen_initd"],
+        "/etc/kernel/postinst.d:*:0755": [":gen_postinst_d"],
+        "/etc/kernel/postrm.d:*:0755": [":gen_postrm_d"],
+        "/usr/lib/udev/rules.d:*:0644": [":gen_udev"],
+        "/usr/lib/systemd/system:*:0644": [
+            ":gen_dump_service",
+            "@kdump_tools_src//:debian/kdump-tools.service",
+        ],
+        "/usr/share/initramfs-tools/hooks:*:0755": [":gen_initramfs_hook"],
+        "/usr/share/initramfs-tools/scripts/local-bottom:*:0755": [":gen_initramfs_bottom"],
+    },
+    # debian/kdump-tools.dirs.
+    empty_dirs = ["/var/lib/kdump"],
+    depends = [
+        "debconf (>= 0.5) | debconf-2.0",
+        "kexec-tools",
+        "makedumpfile",
+    ],
+    maintainer = "Debian Kernel Team <debian-kernel@lists.debian.org>",
+    description = "scripts and tools for automating kdump (Linux crash dumps)\n kdump-tools provides an init script and a configuration file to\n automate the use of kdump, the Linux crash dump mechanism.",
+    homepage = "https://salsa.debian.org/debian/kdump-tools",
+    section = "admin",
+    priority = "optional",
+)

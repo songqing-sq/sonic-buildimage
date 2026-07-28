@@ -68,6 +68,9 @@ HERMETIC_HOST_DEBS = {
     # Built from source for its version: SONiC pins 1.7.7-1, trixie ships
     # 1:1.7.6-1. No SONiC patches, but the versions differ.
     "makedumpfile": "@makedumpfile//:makedumpfile_1.7.7-1.deb",
+    # Built from source: four patches change crashdump behaviour (kdump- file
+    # prefix, MODULES dep revert, load-check skip, build-time initrd).
+    "kdump-tools": "@kdump-tools//:kdump-tools_1.10.7.deb",
 }
 
 # Packages whose payload is a pre-built data tar (sonic_deb's `data =`), so they
@@ -127,11 +130,9 @@ HERMETIC_HOST_DEB_DATA_TARS = {
 TODO_HERMETIC = [
     # SONiC builds these from source with its own patches, so the stock trixie
     # package is not a substitute:
-    #   kdump-tools       kdump core prefix, initrd generated at build time
     #   grub-common       cpio ustar large-uid handling
     #   grub2-common      (same source package as grub-common)
     #   sedutil           1.15-5ad84d8, a git snapshot with no Debian release
-    "kdump-tools",
     "grub-common",
     "grub2-common",
     "sedutil",

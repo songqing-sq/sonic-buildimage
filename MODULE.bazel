@@ -428,6 +428,12 @@ local_path_override(
     path = "src/sonic-nettools",
 )
 
+bazel_dep(name = "kdump-tools", version = "1.10.7")
+local_path_override(
+    module_name = "kdump-tools",
+    path = "src/kdump-tools",
+)
+
 bazel_dep(name = "makedumpfile", version = "1.7.7-1")
 local_path_override(
     module_name = "makedumpfile",
