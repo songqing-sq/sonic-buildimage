@@ -1,0 +1,60 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.0.0"
+
+# =============================================================================
+# systemd-sonic-generator — the systemd generator that instantiates SONiC's
+# per-namespace container services at boot.
+#
+# SONiC ships no static per-container .service; this generator reads the
+# template units in /usr/lib/systemd/system plus
+# /etc/sonic/generated_services.conf and writes the concrete units, wiring them
+# under sonic.target. The host rootfs therefore cannot boot its services
+# without it.
+#
+# A single C++20 translation unit linked against json-c, installed to
+# /lib/systemd/system-generators (where systemd looks for generators).
+# ssg-test.cc is the unit test the deb build does not ship.
+# =============================================================================
+cc_binary(
+    name = "systemd-sonic-generator",
+    srcs = [
+        "systemd-sonic-generator.cpp",
+        "systemd-sonic-generator.h",
+    ],
+    copts = [
+        "-std=c++20",
+        "-D_GNU_SOURCE",
+        "-I.",
+    ],
+    # json-c only. The legacy Makefile's LDFLAGS also name boost and gtest,
+    # but the source includes neither — Make links with --as-needed, so they
+    # never end up in the binary's NEEDED either (verified against the Make
+    # deb: libstdc++/libjson-c/libm/libgcc_s/libc, no boost).
+    deps = ["@ssg_deps//libjson-c-dev:json-c"],
+)
+
+sonic_deb(
+    name = "systemd-sonic-generator_{}.deb".format(VERSION),
+    architecture = "amd64",
+    content = {
+        # systemd discovers generators under /lib/systemd/system-generators
+        # (merged-usr makes this /usr/lib/...).
+        "/lib/systemd/system-generators:*:0755": [":systemd-sonic-generator"],
+    },
+    depends = [
+        "libc6 (>= 2.38)",
+        "libgcc-s1 (>= 3.0)",
+        "libstdc++6 (>= 13.1)",
+        "libjson-c5 (>= 0.18)",
+    ],
+    description = "Systemd generator for SONiC services",
+    maintainer = "Sonic <sonic@microsoft.com>",
+    package = "systemd-sonic-generator",
+    priority = "optional",
+    section = "misc",
+    version = VERSION,
+)

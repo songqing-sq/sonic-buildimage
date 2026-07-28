@@ -29,6 +29,9 @@ HERMETIC_HOST_DEBS = {
     # which the patches do not apply to, hence the pinned salsa tarball.
     "initramfs-tools": "@initramfs-tools//:initramfs-tools_0.142_all.deb",
     "initramfs-tools-core": "@initramfs-tools//:initramfs-tools-core_0.142_all.deb",
+    "systemd-sonic-generator": "@systemd-sonic-generator//:systemd-sonic-generator_1.0.0.deb",
+    "sonic-host-services-data": "@sonic-host-services//:sonic-host-services-data_1.0-1_all.deb",
+    "sonic-utilities-data": "@sonic-utilities//:sonic-utilities-data_1.0-1_all.deb",
 }
 
 # Packages SONiC merely REBUILDS from Debian source at the same upstream
@@ -59,6 +62,17 @@ DEBIAN_EQUIVALENT = [
 #   tacacs/radius, Rust daemons, data-only packages: SONiC-only sources.
 #   FIPS stack: needs symcrypt-openssl, then OpenSSL/CPython/OpenSSH/krb5
 #       rebuilt against it.
+# sonic-device-data is built with sonic_deb's `data =` shortcut (its payload is
+# a ~20k-file tree packed directly), so it has no `_data` sibling — the tar IS
+# the data tar. Listed separately from HERMETIC_HOST_DEBS, whose entries follow
+# the <name>_data / <name>_statusd convention.
+HERMETIC_HOST_DEB_DATA_TARS = {
+    "sonic-device-data": (
+        "//src/sonic-device-data:device_tar",
+        "//src/sonic-device-data:sonic-device-data_1.0-1_all.deb_statusd",
+    ),
+}
+
 TODO_HERMETIC = [
     "libtac2",
     "libpam-tacplus",
@@ -70,10 +84,6 @@ TODO_HERMETIC = [
     "sonic-host-services-rs",
     "sonic-nettools",
     "syslog-counter",
-    "sonic-device-data",
-    "sonic-host-services-data",
-    "sonic-utilities-data",
-    "systemd-sonic-generator",
     "symcrypt-openssl",
     "openssl",
     "libssl3t64",

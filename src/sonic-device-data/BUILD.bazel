@@ -1,0 +1,68 @@
+load("@aspect_rules_py//py:defs.bzl", "py_binary")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.0-1"
+
+# =============================================================================
+# sonic-device-data — the per-platform device tree.
+#
+# The real tree lives at workspace-root //device/..., exposed as
+# //device:device_tree. The legacy Makefile applies two transformations before
+# packaging:
+#
+#   1. Vendor flatten: device/<vendor>/<platform>/... -> device/<platform>/...
+#      (vendor segment stripped, symlinks dereferenced, as `cp -r -L` does).
+#   2. Virtual-switch hwsku synthesis: every real hwsku across all vendors is
+#      mirrored into device/x86_64-kvm_x86_64-r0/<hwsku>/ with the VS profile
+#      files overlaid and a derived lanemap.ini (plus coreportindexmap.ini for
+#      port_config.ini files with >= 9 columns); chassisdb and the 0/1/2
+#      subdirs are handled too, and device/virtual/x86_64-kvm_x86_64-r0/
+#      platform_asic gets `vs` written into it.
+#
+# Step 2 is driven by the repo's OWN src/generate_vs_hwsku.py — the same script
+# the Makefile calls — rather than a reimplementation, so the synthesized hwsku
+# layout stays in lockstep with it. pack_device_data.py only does the staging
+# around it and the final tar, which sonic_deb consumes via its `data` shortcut
+# (bypassing the mtree packer — the tree is ~20k files).
+# =============================================================================
+py_binary(
+    name = "pack_device_data",
+    srcs = ["pack_device_data.py"],
+    main = "pack_device_data.py",
+)
+
+genrule(
+    name = "device_tar",
+    srcs = [
+        "//device:device_tree",
+        "src/sai.vs_profile",
+        "src/sai_mlnx.vs_profile",
+        "src/sai_vpp.vs_profile",
+        "src/pai.vs_profile",
+        "src/fabriclanemap_vs.ini",
+        "src/generate_vs_hwsku.py",
+    ],
+    outs = ["device_tree.tar.gz"],
+    cmd = ("$(execpath :pack_device_data) " +
+           "--device-root device " +
+           "--vs-profiles-dir src/sonic-device-data/src " +
+           "--generator $(location src/generate_vs_hwsku.py) " +
+           "--out $@"),
+    tools = [":pack_device_data"],
+)
+
+sonic_deb(
+    name = "sonic-device-data_{}_all.deb".format(VERSION),
+    architecture = "all",
+    content = {},
+    # sonic_deb auto-computes md5sums from the data tar.
+    data = ":device_tar",
+    description = "Device-specific data files for SONiC",
+    maintainer = "Joe LeVeque <jolevequ@microsoft.com>",
+    package = "sonic-device-data",
+    priority = "optional",
+    section = "misc",
+    version = VERSION,
+)

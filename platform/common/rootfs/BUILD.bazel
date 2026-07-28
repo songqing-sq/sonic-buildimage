@@ -3,7 +3,7 @@ load("@rules_deb//distroless:defs.bzl", "flatten")
 load("@tar.bzl", "tar")
 load("@sonic_build_infra//python:site_packages.bzl", "site_packages")
 load("//platform/common/rootfs:host_packages.bzl", "HOST_PACKAGES")
-load("//platform/common/rootfs:sonic_host_debs.bzl", "HERMETIC_HOST_DEBS")
+load("//platform/common/rootfs:sonic_host_debs.bzl", "HERMETIC_HOST_DEBS", "HERMETIC_HOST_DEB_DATA_TARS")
 
 # =============================================================================
 # Host (vs) rootfs layers for the Bazel-built sonic-vs.bin.
@@ -111,7 +111,8 @@ flatten(
     name = "sonic_debs_layer",
     deduplicate = True,
     tars = [d + "_data" for d in HERMETIC_HOST_DEBS.values()] +
-           [d + "_statusd" for d in HERMETIC_HOST_DEBS.values()],
+           [d + "_statusd" for d in HERMETIC_HOST_DEBS.values()] +
+           [t for pair in HERMETIC_HOST_DEB_DATA_TARS.values() for t in pair],
     visibility = ["//platform:__subpackages__"],
 )
 

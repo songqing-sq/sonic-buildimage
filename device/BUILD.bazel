@@ -1,0 +1,16 @@
+# Workspace-root package exposing the device-data tree to other Bazel packages.
+#
+# Bazel cannot glob across package boundaries, so sonic-device-data (and any
+# other consumer that needs the per-platform data files) depends on this
+# filegroup rather than trying to glob //device/... from elsewhere.
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "device_tree",
+    srcs = glob(
+        ["**"],
+        exclude = ["BUILD.bazel"],
+    ),
+    visibility = ["//visibility:public"],
+)

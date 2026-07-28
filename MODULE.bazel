@@ -356,6 +356,12 @@ local_path_override(
     path = "src/sonic-linux-kernel",
 )
 
+bazel_dep(name = "systemd-sonic-generator", version = "1.0.0")
+local_path_override(
+    module_name = "systemd-sonic-generator",
+    path = "src/systemd-sonic-generator",
+)
+
 bazel_dep(name = "initramfs-tools", version = "0.142")
 local_path_override(
     module_name = "initramfs-tools",
