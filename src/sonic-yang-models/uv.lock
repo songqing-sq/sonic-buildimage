@@ -143,20 +143,14 @@ name = "sonic-yang-models"
 version = "1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "jinja2" },
-]
-
-[package.dev-dependencies]
-build = [
     { name = "build" },
+    { name = "jinja2" },
     { name = "setuptools" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "jinja2" }]
-
-[package.metadata.requires-dev]
-build = [
+requires-dist = [
     { name = "build" },
+    { name = "jinja2" },
     { name = "setuptools" },
 ]
