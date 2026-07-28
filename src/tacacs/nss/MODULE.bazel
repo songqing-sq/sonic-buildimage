@@ -1,0 +1,41 @@
+module(
+    name = "libnss-tacplus",
+    version = "1.0.4-1",
+)
+
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "pam-tacplus", version = "1.4.1-1")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# Upstream libnss-tacplus at the commit src/tacacs/nss/Makefile checks out,
+# with SONiC's 13 patches applied in patch/series order. The Makefile clones
+# the repo; GitHub's tarball of the same commit is sha256-pinnable.
+http_archive(
+    name = "libnss_tacplus_src",
+    build_file = "//:libnss_tacplus_src.BUILD",
+    patch_args = ["-p1"],
+    # GNU patch, as the Makefile's quilt/git apply uses.
+    patch_tool = "patch",
+    patches = [
+        "//:patch/0001-Modify-user-map-profile.patch",
+        "//:patch/0002-Enable-modifying-local-user-permission.patch",
+        "//:patch/0003-management-vrf-support.patch",
+        "//:patch/0004-Skip-accessing-tacacs-servers-for-local-non-tacacs-u.patch",
+        "//:patch/0005-libnss-Modify-parsing-of-IP-addr-and-port-number-str.patch",
+        "//:patch/0006-fix-compiling-warning-about-token-dereference.patch",
+        "//:patch/0007-Add-support-for-TACACS-source-address.patch",
+        "//:patch/0008-do-not-create-or-modify-local-user-if-there-is-no-pr.patch",
+        "//:patch/0009-fix-compile-error-strncpy.patch",
+        "//:patch/0010-Send-remote-address-in-TACACS-authorization-message.patch",
+        "//:patch/0011-Replace-popen-shell-execution-with-safer-execle.patch",
+        "//:patch/0012-fix-compile-error-conditionals.patch",
+        "//:patch/0013-Partial-memleak-fix-due-to-unfreed-strdup.patch",
+    ],
+    sha256 = "58560e6cfc27ac53c3fff537bebe5f7605e023a8181e06832f6019afb34a57ee",
+    strip_prefix = "libnss-tacplus-19008ab68d9d504aa58eb34d5f564755a1613b8b",
+    urls = ["https://github.com/daveolson53/libnss-tacplus/archive/19008ab.tar.gz"],
+)

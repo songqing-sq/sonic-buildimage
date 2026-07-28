@@ -1,6 +1,7 @@
 *
 !.gitignore
 !pam/
+!nss/
 audisp/*
 !audisp/Makefile
 !audisp/*.patch
@@ -13,3 +14,7 @@ pam/*
 !pam/*.patch
 !pam/*.bazel
 !pam/pam_tacplus_src.BUILD
+!nss/*.bazel
+!nss/libnss_tacplus_src.BUILD
+!nss/patch/
+!nss/patch/*

@@ -13,6 +13,13 @@ exports_files(glob([
 
 VERSION = "1.4.1-1"
 
+# libtac's public headers, re-exported so other modules (libnss-tacplus,
+# audisp-tacplus) can include <libtac.h> through deps.
+alias(
+    name = "libtac_public_headers",
+    actual = "@pam_tacplus_src//:libtac_headers_prefixed",
+)
+
 # =============================================================================
 # pam_tacplus — TACACS+ PAM module, client library and CLI.
 #

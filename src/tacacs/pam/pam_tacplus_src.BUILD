@@ -33,6 +33,15 @@ cc_library(
     strip_include_prefix = "libtac/include",
 )
 
+# The same headers under a libtac/ prefix: libnss-tacplus and audisp-tacplus
+# include <libtac/libtac.h>, the path the installed libtac-dev provides.
+cc_library(
+    name = "libtac_headers_prefixed",
+    hdrs = glob(["libtac/include/*.h"]),
+    include_prefix = "libtac",
+    strip_include_prefix = "libtac/include",
+)
+
 # libtac's internal headers, included unqualified by its own .c files.
 cc_library(
     name = "libtac_private_headers",
