@@ -1,0 +1,74 @@
+module(
+    name = "makedumpfile",
+    version = "1.7.7-1",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+# =============================================================================
+# makedumpfile — built FROM SOURCE.
+#
+# SONiC applies no patches of its own here; the reason this is not simply the
+# @trixie package is a version difference: rules/makedumpfile.mk pins 1.7.7-1
+# while trixie ships 1:1.7.6-1. src/makedumpfile/Makefile `dget`s the 1.7.7-1
+# source from Debian and rebuilds it, which is what this reproduces.
+#
+# Debian's own debian/patches/series (adapt-makefile-to-debian.patch) IS applied
+# — debian_source handles it.
+# =============================================================================
+debian_source = use_repo_rule("@sonic_build_infra//debian_source:debian_source.bzl", "debian_source")
+
+debian_source(
+    name = "makedumpfile_src",
+    build_file = "//:makedumpfile_src.BUILD",
+    debian_sha256 = "61f424230e507fe142e253ac13d2fb7aea67be745474b87d777fc3c5ba2f27bf",
+    debian_urls = ["https://deb.debian.org/debian/pool/main/m/makedumpfile/makedumpfile_1.7.7-1.debian.tar.xz"],
+    orig_sha256 = "69b4d24ace3024cf2a41f343e162838b62b1b37d6edc7bbad4260fa36217efee",
+    orig_urls = ["https://deb.debian.org/debian/pool/main/m/makedumpfile/makedumpfile_1.7.7.orig.tar.gz"],
+    strip_prefix = "makedumpfile-1.7.7",
+)
+
+# debian/rules MAKE_SETTINGS: LINKTYPE=dynamic USELZO=on USEZSTD=on.
+# Makefile LIBS: -ldw -lbz2 -ldl -lelf -lz, plus -llzo2 and -lzstd.
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = [
+        "trixie",
+        "trixie-updates",
+    ],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+apt.sources_list(
+    architectures = ["amd64", "arm64"],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+apt.install(
+    dependency_set = "makedumpfile_deps",
+    packages = [
+        "libdw-dev:amd64",
+        "libdw-dev:arm64",
+        "libelf-dev:amd64",
+        "libelf-dev:arm64",
+        "libbz2-dev:amd64",
+        "libbz2-dev:arm64",
+        "zlib1g-dev:amd64",
+        "zlib1g-dev:arm64",
+        "liblzo2-dev:amd64",
+        "liblzo2-dev:arm64",
+        "libzstd-dev:amd64",
+        "libzstd-dev:arm64",
+    ],
+    suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
+)
+use_repo(apt, "makedumpfile_deps")

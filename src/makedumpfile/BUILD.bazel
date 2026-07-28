@@ -1,0 +1,114 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.7.7-1"
+
+# The deb's Version: carries Debian's epoch.
+DEB_VERSION = "1:1.7.7-1"
+
+exports_files(["makedumpfile_src.BUILD"])
+
+# Makefile's VERSION / DATE, which it bakes in via -DVERSION / -DRELEASE_DATE.
+UPSTREAM_VERSION = "1.7.7"
+
+RELEASE_DATE = "21 Apr 2025"
+
+# Debian hardening (dpkg-buildflags defaults; debian/rules sets no
+# hardening=+all, so relro but not bindnow). The hermetic toolchain does not add
+# stack-protector, so it is added explicitly.
+#
+# Residual differences from Make's binary, none closable here: FORTIFY (__*_chk)
+# is absent because the sysroot glibc headers emit no fortified calls, and
+# __assert_fail is absent because opt mode forces -DNDEBUG. Both are toolchain
+# properties shared by every Bazel-built binary in this repo.
+HARDEN_COPTS = [
+    "-fstack-protector-strong",
+    "-Wformat",
+    "-Wformat-security",
+]
+
+HARDEN_LINKOPTS = ["-Wl,-z,relro"]
+
+# Makefile CFLAGS_BASE + the arch/target defines. USELZO/USEZSTD come from
+# debian/rules MAKE_SETTINGS.
+_COPTS = [
+    "-D_FILE_OFFSET_BITS=64",
+    "-D_LARGEFILE_SOURCE",
+    "-D_LARGEFILE64_SOURCE",
+    "-D__x86_64__",
+    "-DUSELZO",
+    "-DUSEZSTD",
+    "-DVERSION=\\\"{}\\\"".format(UPSTREAM_VERSION),
+    # The date contains spaces, so the whole -D has to survive the shell as one
+    # argument.
+    "-DRELEASE_DATE=\\\"{}\\\"".format(RELEASE_DATE.replace(" ", "\\ ")),
+    # 1.7.7 is C89-era in places; gcc-15's C23 default rejects it.
+    "-std=gnu17",
+] + HARDEN_COPTS
+
+cc_binary(
+    name = "makedumpfile",
+    srcs = [
+        "@makedumpfile_src//:arch_srcs",
+        "@makedumpfile_src//:srcs",
+    ],
+    copts = _COPTS,
+    # Makefile LIBS with LINKTYPE=dynamic, plus lzo2/zstd from MAKE_SETTINGS.
+    # KNOWN DIVERGENCE: DT_NEEDED additionally lists libbz2 and liblzma, which
+    # Make's binary does not. They arrive transitively through libdw-dev's
+    # cc_import and --as-needed cannot drop them because the apt import records
+    # them as direct link inputs. Nothing in the sources references BZ2_* or
+    # lzma_*, and both libraries are in the base rootfs, so this is cosmetic.
+    linkopts = HARDEN_LINKOPTS + ["-Wl,--as-needed"],
+    deps = [
+        # NOTE: no libbz2 here even though the upstream Makefile lists -lbz2.
+        # Nothing in the compiled sources references BZ2_*, and Make's binary
+        # ends up with no libbz2 in DT_NEEDED either (its --as-needed drops it),
+        # so linking it would add a dependency the Debian package does not have.
+        "@makedumpfile_deps//libdw-dev:dw",
+        "@makedumpfile_deps//libelf-dev:elf",
+        "@makedumpfile_deps//liblzo2-dev:lzo2",
+        "@makedumpfile_deps//libzstd-dev:zstd",
+        "@makedumpfile_deps//zlib1g-dev:z",
+        "@makedumpfile_src//:hdrs_lib",
+    ],
+)
+
+# Makefile's install rule renames makedumpfile.conf to .conf.sample.
+genrule(
+    name = "gen_conf_sample",
+    srcs = ["@makedumpfile_src//:makedumpfile.conf"],
+    outs = ["makedumpfile.conf.sample"],
+    cmd = "cp $< $@",
+)
+
+# debian/rules sets SBINDIR=/usr/bin, so the binary and the helper script both
+# land in /usr/bin rather than /usr/sbin.
+sonic_deb(
+    name = "makedumpfile_{}.deb".format(VERSION),
+    package = "makedumpfile",
+    version = DEB_VERSION,
+    content = {
+        "/usr/bin:*:0755": [
+            ":makedumpfile",
+            "@makedumpfile_src//:makedumpfile-R.pl",
+        ],
+        "/usr/share/makedumpfile:*:0644": [":gen_conf_sample"],
+    },
+    depends = [
+        "libbz2-1.0",
+        "libc6 (>= 2.38)",
+        "libdw1t64 (>= 0.171)",
+        "liblzo2-2",
+        "libzstd1 (>= 1.5.5)",
+        "zlib1g (>= 1:1.2.0)",
+    ],
+    maintainer = "Debian Kernel Team <debian-kernel@lists.debian.org>",
+    description = "VMcore extraction tool\n This program is used to extract a subset of the memory available either\n via /dev/mem or /proc/vmcore (for crashdumps).",
+    homepage = "https://github.com/makedumpfile/makedumpfile",
+    section = "admin",
+    priority = "optional",
+    gen_dbg = True,
+)

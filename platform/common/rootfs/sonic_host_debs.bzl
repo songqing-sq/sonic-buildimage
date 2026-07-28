@@ -65,6 +65,9 @@ HERMETIC_HOST_DEBS = {
     # ras-events.c to _SC_NPROCESSORS_ONLN, without which the daemon fails to
     # start when any CPU is offline. Not upstream as of 0.6.8-1.
     "rasdaemon": "@rasdaemon//:rasdaemon_0.6.8-1.deb",
+    # Built from source for its version: SONiC pins 1.7.7-1, trixie ships
+    # 1:1.7.6-1. No SONiC patches, but the versions differ.
+    "makedumpfile": "@makedumpfile//:makedumpfile_1.7.7-1.deb",
 }
 
 # Packages whose payload is a pre-built data tar (sonic_deb's `data =`), so they
@@ -127,10 +130,7 @@ TODO_HERMETIC = [
     #   kdump-tools       kdump core prefix, initrd generated at build time
     #   grub-common       cpio ustar large-uid handling
     #   grub2-common      (same source package as grub-common)
-    #   makedumpfile      plain Debian rebuild, but pinned to 1.7.7-1 which
-    #                     trixie does not carry
     #   sedutil           1.15-5ad84d8, a git snapshot with no Debian release
-    "makedumpfile",
     "kdump-tools",
     "grub-common",
     "grub2-common",
