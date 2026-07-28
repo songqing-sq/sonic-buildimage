@@ -4,6 +4,7 @@ load("@tar.bzl", "tar")
 load("@sonic_build_infra//python:site_packages.bzl", "site_packages")
 load("//platform/common/rootfs:host_packages.bzl", "HOST_PACKAGES")
 load("//platform/common/rootfs:container_ctl.bzl", "COMMON_CTL_VARS", "CONTAINER_CTL", "SONIC_ASIC_PLATFORM")
+load("//platform/common/rootfs:service_units.bzl", "SERVICE_UNITS", "SONICADMIN_USER")
 load("//platform/common/rootfs:sonic_host_debs.bzl", "FIPS_HOST_DEBS", "HERMETIC_HOST_DEBS", "HERMETIC_HOST_DEB_DATA_TARS")
 
 # =============================================================================
@@ -682,11 +683,35 @@ tar(
     for name, (container, image, run_opt) in CONTAINER_CTL.items()
 ]
 
+
+# -----------------------------------------------------------------------------
+# The 35 systemd units, rendered from their .j2 templates the way
+# slave.mk:1815-1838 does. Template/variable mapping is in service_units.bzl.
+# -----------------------------------------------------------------------------
+[
+    genrule(
+        name = "svc_" + unit.replace("@", "at").replace(".", "_").replace("-", "_"),
+        srcs = [template],
+        outs = ["svc/" + unit],
+        cmd = ("$(execpath @sonic_build_infra//jinja2:render) " +
+               "$(execpath " + template + ") $@ " +
+               "docker_container_name=" + container + " " +
+               "multi_instance=" + multi_instance + " " +
+               "sonic_asic_platform=" + SONIC_ASIC_PLATFORM + " " +
+               "sonicadmin_user=" + SONICADMIN_USER),
+        tools = ["@sonic_build_infra//jinja2:render"],
+    )
+    for unit, (template, container, multi_instance) in SERVICE_UNITS.items()
+]
+
 tar(
     name = "rendered_layer",
     srcs = glob(["rendered/**"]) + [
         ":ctl_" + name.replace("-", "_").replace(".", "_")
         for name in CONTAINER_CTL
+    ] + [
+        ":svc_" + unit.replace("@", "at").replace(".", "_").replace("-", "_")
+        for unit in SERVICE_UNITS
     ],
     mtree = [
         "./etc/apt/sources.list uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__apt__sources.list)",
@@ -726,41 +751,41 @@ tar(
         "./usr/bin/syncd.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_syncd)",
         "./usr/bin/sysmgr.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_sysmgr)",
         "./usr/bin/teamd.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_teamd)",
-        "./usr/lib/systemd/system/bgp.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__bgp.service)",
-        "./usr/lib/systemd/system/bgp@.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__bgp@.service)",
-        "./usr/lib/systemd/system/bmp.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__bmp.service)",
-        "./usr/lib/systemd/system/bmp@.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__bmp@.service)",
-        "./usr/lib/systemd/system/config-chassisdb.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__config-chassisdb.service)",
-        "./usr/lib/systemd/system/config-setup.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__config-setup.service)",
-        "./usr/lib/systemd/system/dash-ha.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__dash-ha.service)",
-        "./usr/lib/systemd/system/dash-ha@.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__dash-ha@.service)",
-        "./usr/lib/systemd/system/database-chassis.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__database-chassis.service)",
-        "./usr/lib/systemd/system/database.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__database.service)",
-        "./usr/lib/systemd/system/database@.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__database@.service)",
+        "./usr/lib/systemd/system/bgp.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_bgp_service)",
+        "./usr/lib/systemd/system/bgp@.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_bgpat_service)",
+        "./usr/lib/systemd/system/bmp.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_bmp_service)",
+        "./usr/lib/systemd/system/bmp@.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_bmpat_service)",
+        "./usr/lib/systemd/system/config-chassisdb.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_config_chassisdb_service)",
+        "./usr/lib/systemd/system/config-setup.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_config_setup_service)",
+        "./usr/lib/systemd/system/dash-ha.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_dash_ha_service)",
+        "./usr/lib/systemd/system/dash-ha@.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_dash_haat_service)",
+        "./usr/lib/systemd/system/database-chassis.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_database_chassis_service)",
+        "./usr/lib/systemd/system/database.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_database_service)",
+        "./usr/lib/systemd/system/database@.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_databaseat_service)",
         "./usr/lib/systemd/system/dhcp_relay.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__dhcp_relay.service)",
-        "./usr/lib/systemd/system/eventd.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__eventd.service)",
-        "./usr/lib/systemd/system/gbsyncd.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__gbsyncd.service)",
-        "./usr/lib/systemd/system/gbsyncd@.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__gbsyncd@.service)",
-        "./usr/lib/systemd/system/gnmi.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__gnmi.service)",
-        "./usr/lib/systemd/system/lldp.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__lldp.service)",
-        "./usr/lib/systemd/system/lldp@.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__lldp@.service)",
+        "./usr/lib/systemd/system/eventd.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_eventd_service)",
+        "./usr/lib/systemd/system/gbsyncd.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_gbsyncd_service)",
+        "./usr/lib/systemd/system/gbsyncd@.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_gbsyncdat_service)",
+        "./usr/lib/systemd/system/gnmi.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_gnmi_service)",
+        "./usr/lib/systemd/system/lldp.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_lldp_service)",
+        "./usr/lib/systemd/system/lldp@.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_lldpat_service)",
         "./usr/lib/systemd/system/macsec.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__macsec.service)",
         "./usr/lib/systemd/system/macsec@.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__macsec@.service)",
-        "./usr/lib/systemd/system/mgmt-framework.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__mgmt-framework.service)",
-        "./usr/lib/systemd/system/mux.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__mux.service)",
-        "./usr/lib/systemd/system/nat.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__nat.service)",
-        "./usr/lib/systemd/system/otel.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__otel.service)",
-        "./usr/lib/systemd/system/pmon.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__pmon.service)",
-        "./usr/lib/systemd/system/radv.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__radv.service)",
-        "./usr/lib/systemd/system/sflow.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__sflow.service)",
-        "./usr/lib/systemd/system/snmp.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__snmp.service)",
-        "./usr/lib/systemd/system/swss.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__swss.service)",
-        "./usr/lib/systemd/system/swss@.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__swss@.service)",
-        "./usr/lib/systemd/system/syncd.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__syncd.service)",
-        "./usr/lib/systemd/system/syncd@.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__syncd@.service)",
-        "./usr/lib/systemd/system/sysmgr.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__sysmgr.service)",
-        "./usr/lib/systemd/system/teamd.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__teamd.service)",
-        "./usr/lib/systemd/system/teamd@.service uid=0 gid=0 mode=0644 type=file content=$(location rendered/usr__lib__systemd__system__teamd@.service)",
+        "./usr/lib/systemd/system/mgmt-framework.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_mgmt_framework_service)",
+        "./usr/lib/systemd/system/mux.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_mux_service)",
+        "./usr/lib/systemd/system/nat.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_nat_service)",
+        "./usr/lib/systemd/system/otel.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_otel_service)",
+        "./usr/lib/systemd/system/pmon.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_pmon_service)",
+        "./usr/lib/systemd/system/radv.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_radv_service)",
+        "./usr/lib/systemd/system/sflow.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_sflow_service)",
+        "./usr/lib/systemd/system/snmp.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_snmp_service)",
+        "./usr/lib/systemd/system/swss.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_swss_service)",
+        "./usr/lib/systemd/system/swss@.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_swssat_service)",
+        "./usr/lib/systemd/system/syncd.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_syncd_service)",
+        "./usr/lib/systemd/system/syncd@.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_syncdat_service)",
+        "./usr/lib/systemd/system/sysmgr.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_sysmgr_service)",
+        "./usr/lib/systemd/system/teamd.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_teamd_service)",
+        "./usr/lib/systemd/system/teamd@.service uid=0 gid=0 mode=0644 type=file content=$(location :svc_teamdat_service)",
         "./var/lib/sonic-package-manager/packages.json uid=0 gid=0 mode=0644 type=file content=$(location rendered/var__lib__sonic-package-manager__packages.json)",
     ],
     visibility = ["//platform:__subpackages__"],
