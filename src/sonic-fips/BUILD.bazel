@@ -11,10 +11,12 @@ package(default_visibility = ["//visibility:public"])
 # files from https://packages.trafficmanager.net/public/fips/trixie/1.9.4/amd64
 # and `dpkg -i` them into the host filesystem. Only the files in
 # FIPS_BASEIMAGE_INSTALLERS are actually installed in the default build;
-# the remaining derived packages (FIPS_PYTHON_ALL, FIPS_GOLANG_ALL, the
+# the remaining derived packages (FIPS_GOLANG_ALL, the
 # rest of FIPS_KRB5_ALL like krb5-multidev/libkrb5-dev) are declared as
 # `add_extra_package` derivations for completeness but are NOT in the base
 # image. See sonic-fips_bazelmig.md for the exclusion rationale.
+# FIPS_PYTHON_ALL, however, IS in the base image
+# (FIPS_BASEIMAGE_PYTHON_INSTALLERS) and is packaged below.
 #
 # Bazel: each .deb is downloaded via http_file in MODULE.bazel, then
 # `external_fips_deb` (this package's local macro) emits the standard
@@ -58,6 +60,40 @@ external_fips_deb(
     name = "symcrypt-openssl_1.9.4.deb",
     src = "@fips_symcrypt_openssl//file",
     package_name = "symcrypt-openssl",
+)
+
+# CPython 3.13 FIPS family ---------------------------------------------------
+# All five are in FIPS_BASEIMAGE_PYTHON_INSTALLERS, replacing trixie's stock
+# CPython so the interpreter's hashlib/ssl route through SymCrypt.
+
+external_fips_deb(
+    name = "libpython3.13-minimal_3.13.5-2+fips.deb",
+    src = "@fips_libpython3_13_minimal//file",
+    package_name = "libpython3.13-minimal",
+)
+
+external_fips_deb(
+    name = "libpython3.13-stdlib_3.13.5-2+fips.deb",
+    src = "@fips_libpython3_13_stdlib//file",
+    package_name = "libpython3.13-stdlib",
+)
+
+external_fips_deb(
+    name = "libpython3.13_3.13.5-2+fips.deb",
+    src = "@fips_libpython3_13//file",
+    package_name = "libpython3.13",
+)
+
+external_fips_deb(
+    name = "python3.13-minimal_3.13.5-2+fips.deb",
+    src = "@fips_python3_13_minimal//file",
+    package_name = "python3.13-minimal",
+)
+
+external_fips_deb(
+    name = "python3.13_3.13.5-2+fips.deb",
+    src = "@fips_python3_13//file",
+    package_name = "python3.13",
 )
 
 # OpenSSH 10.0 FIPS family -----------------------------------------------------
@@ -128,6 +164,11 @@ filegroup(
         ":libssl-doc_3.5.4-1+fips_all.deb",
         ":openssl_3.5.4-1+fips.deb",
         ":symcrypt-openssl_1.9.4.deb",
+        ":libpython3.13-minimal_3.13.5-2+fips.deb",
+        ":libpython3.13-stdlib_3.13.5-2+fips.deb",
+        ":libpython3.13_3.13.5-2+fips.deb",
+        ":python3.13-minimal_3.13.5-2+fips.deb",
+        ":python3.13_3.13.5-2+fips.deb",
         ":openssh-client_10.0p1-7+fips.deb",
         ":ssh_10.0p1-7+fips_all.deb",
         ":openssh-sftp-server_10.0p1-7+fips.deb",

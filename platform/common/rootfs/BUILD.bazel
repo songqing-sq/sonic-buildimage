@@ -3,7 +3,7 @@ load("@rules_deb//distroless:defs.bzl", "flatten")
 load("@tar.bzl", "tar")
 load("@sonic_build_infra//python:site_packages.bzl", "site_packages")
 load("//platform/common/rootfs:host_packages.bzl", "HOST_PACKAGES")
-load("//platform/common/rootfs:sonic_host_debs.bzl", "HERMETIC_HOST_DEBS", "HERMETIC_HOST_DEB_DATA_TARS")
+load("//platform/common/rootfs:sonic_host_debs.bzl", "FIPS_HOST_DEBS", "HERMETIC_HOST_DEBS", "HERMETIC_HOST_DEB_DATA_TARS")
 
 # =============================================================================
 # Host (vs) rootfs layers for the Bazel-built sonic-vs.bin.
@@ -100,10 +100,9 @@ flatten(
 # Make artifact.
 #
 # The set of packages the host fs needs comes from the Make fsroot-vs dpkg
-# status; sonic_host_debs.bzl records, per package, whether it is already
-# hermetic (HERMETIC_HOST_DEBS), equivalent to the pinned Debian binary and
-# therefore shipped via base_layer (DEBIAN_EQUIVALENT), or still awaiting a
-# hermetic sonic_deb (TODO_HERMETIC).
+# status; sonic_host_debs.bzl records, per package, whether it is built from
+# source here (HERMETIC_HOST_DEBS), fetched prebuilt from the SONiC FIPS mirror
+# (FIPS_HOST_DEBS), or still awaiting migration (TODO_HERMETIC).
 # -----------------------------------------------------------------------------
 exports_files(["BUILD.bazel"])
 
@@ -112,6 +111,8 @@ flatten(
     deduplicate = True,
     tars = [d + "_data" for d in HERMETIC_HOST_DEBS.values()] +
            [d + "_statusd" for d in HERMETIC_HOST_DEBS.values()] +
+           [d + "_data" for d in FIPS_HOST_DEBS.values()] +
+           [d + "_statusd" for d in FIPS_HOST_DEBS.values()] +
            [t for pair in HERMETIC_HOST_DEB_DATA_TARS.values() for t in pair],
     visibility = ["//platform:__subpackages__"],
 )

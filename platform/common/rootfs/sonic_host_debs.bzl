@@ -9,8 +9,11 @@ HERMETIC_HOST_DEBS maps package -> the sonic_deb base target name. The macro
 generates `<name>_data` (the deb's data tar, laid into the rootfs) and
 `<name>_statusd` (registers the package in /var/lib/dpkg/status.d).
 
-Packages not yet migrated are listed explicitly so the gap is visible rather
-than silently bridged from Make output.
+FIPS_HOST_DEBS is the same shape but for the INCLUDE_FIPS family, which upstream
+publishes prebuilt rather than as source.
+
+Packages not yet migrated are listed in TODO_HERMETIC so the gap is visible
+rather than silently bridged from Make output.
 """
 
 # Produced by a hermetic sonic_deb elsewhere in the workspace.
@@ -42,35 +45,42 @@ HERMETIC_HOST_DEBS = {
     "sonic-host-services-rs": "@sonic-host-services//:sonic-host-services-rs_1.0.0.deb",
     "sonic-nettools": "@sonic-nettools//:sonic-nettools_0.0.1-0.deb",
     "syslog-counter": "@syslog-counter//:syslog-counter_1.0.0.deb",
+    # SONiC's libnl3 carries a version suffix of its own (`+b1sonic1`): the
+    # RTA_NH_ID / nexthop-group patches are not in trixie's 3.7.0-0.2, so the
+    # stock package is NOT equivalent.
+    "libnl-3-200": "@libnl3//:libnl-3-200_3.7.0-0.2+b1sonic1.deb",
+    "libnl-cli-3-200": "@libnl3//:libnl-cli-3-200_3.7.0-0.2+b1sonic1.deb",
+    "libnl-genl-3-200": "@libnl3//:libnl-genl-3-200_3.7.0-0.2+b1sonic1.deb",
+    "libnl-nf-3-200": "@libnl3//:libnl-nf-3-200_3.7.0-0.2+b1sonic1.deb",
+    "libnl-route-3-200": "@libnl3//:libnl-route-3-200_3.7.0-0.2+b1sonic1.deb",
 }
 
-# Packages SONiC merely REBUILDS from Debian source at the same upstream
-# version, with no patch that changes shipped behaviour: the binary from the
-# pinned @trixie snapshot is equivalent, so they ship via base_layer
-# (HOST_PACKAGES) rather than as a SONiC deb.
-DEBIAN_EQUIVALENT = [
-    "bash",
-    "monit",
-    "rasdaemon",
-    "makedumpfile",
-    "kdump-tools",
-    "ifupdown2",
-    "grub-common",
-    "grub2-common",
-    "sedutil",
-    "libpam-radius-auth",
-    "libnl-3-200",
-    "libnl-cli-3-200",
-    "libnl-genl-3-200",
-    "libnl-nf-3-200",
-    "libnl-route-3-200",
-]
+# The FIPS stack (INCLUDE_FIPS=y, the Makefile.work default): OpenSSL, CPython,
+# OpenSSH and krb5 rebuilt against Microsoft's SymCrypt provider. Upstream
+# publishes them prebuilt on packages.trafficmanager.net; src/sonic-fips fetches
+# each via a sha256-pinned http_file, exactly as Make's src/sonic-fips/Makefile
+# curls them, so these are as hermetic as the source they come from. Their
+# `+fips` versions mean the stock @trixie packages are NOT interchangeable.
+FIPS_HOST_DEBS = {
+    "libssl3t64": "@sonic-fips//:libssl3t64_3.5.4-1+fips.deb",
+    "libssl-dev": "@sonic-fips//:libssl-dev_3.5.4-1+fips.deb",
+    "openssl": "@sonic-fips//:openssl_3.5.4-1+fips.deb",
+    "symcrypt-openssl": "@sonic-fips//:symcrypt-openssl_1.9.4.deb",
+    "libpython3.13-minimal": "@sonic-fips//:libpython3.13-minimal_3.13.5-2+fips.deb",
+    "libpython3.13-stdlib": "@sonic-fips//:libpython3.13-stdlib_3.13.5-2+fips.deb",
+    "libpython3.13": "@sonic-fips//:libpython3.13_3.13.5-2+fips.deb",
+    "python3.13-minimal": "@sonic-fips//:python3.13-minimal_3.13.5-2+fips.deb",
+    "python3.13": "@sonic-fips//:python3.13_3.13.5-2+fips.deb",
+    "openssh-client": "@sonic-fips//:openssh-client_10.0p1-7+fips.deb",
+    "openssh-server": "@sonic-fips//:openssh-server_10.0p1-7+fips.deb",
+    "openssh-sftp-server": "@sonic-fips//:openssh-sftp-server_10.0p1-7+fips.deb",
+    "ssh": "@sonic-fips//:ssh_10.0p1-7+fips_all.deb",
+    "libk5crypto3": "@sonic-fips//:libk5crypto3_1.21.3-5+fips.deb",
+    "libkrb5support0": "@sonic-fips//:libkrb5support0_1.21.3-5+fips.deb",
+    "libkrb5-3": "@sonic-fips//:libkrb5-3_1.21.3-5+fips.deb",
+    "libgssapi-krb5-2": "@sonic-fips//:libgssapi-krb5-2_1.21.3-5+fips.deb",
+}
 
-# Awaiting a hermetic sonic_deb. No Make bridge is used for these — until each
-# lands the image simply lacks it, which is visible rather than papered over.
-#
-# What remains is the FIPS stack: symcrypt-openssl first, then OpenSSL, CPython,
-# OpenSSH and krb5 rebuilt against it.
 # sonic-device-data is built with sonic_deb's `data =` shortcut (its payload is
 # a ~20k-file tree packed directly), so it has no `_data` sibling — the tar IS
 # the data tar. Listed separately from HERMETIC_HOST_DEBS, whose entries follow
@@ -83,21 +93,29 @@ HERMETIC_HOST_DEB_DATA_TARS = {
 }
 
 TODO_HERMETIC = [
-    "symcrypt-openssl",
-    "openssl",
-    "libssl3t64",
-    "libssl-dev",
-    "python3.13",
-    "python3.13-minimal",
-    "libpython3.13",
-    "libpython3.13-minimal",
-    "libpython3.13-stdlib",
-    "openssh-client",
-    "openssh-server",
-    "openssh-sftp-server",
-    "ssh",
-    "libkrb5-3",
-    "libk5crypto3",
-    "libkrb5support0",
-    "libgssapi-krb5-2",
+    # SONiC builds these from source with its own patches, so the stock trixie
+    # package is not a substitute:
+    #   bash              +0001-Add-plugin-support-to-bash.patch (bash-tacplus
+    #                     loads /usr/lib/bash-tacplus.so through it)
+    #   monit             MemAvailable accounting + alert-log changes
+    #   ifupdown2         5 patches incl. python 3.12 compatibility
+    #   kdump-tools       kdump core prefix, initrd generated at build time
+    #   grub-common       cpio ustar large-uid handling
+    #   grub2-common      (same source package as grub-common)
+    #   rasdaemon         "Check CPUs online not configured"
+    #   makedumpfile      plain Debian rebuild, but pinned to 1.7.7-1 which
+    #                     trixie does not carry
+    #   sedutil           1.15-5ad84d8, a git snapshot with no Debian release
+    #   libpam-radius-auth  pam_radius git snapshot + CHAP / PEAP-MSCHAPv2 and
+    #                     nas-ip-address patches
+    "bash",
+    "monit",
+    "rasdaemon",
+    "makedumpfile",
+    "kdump-tools",
+    "ifupdown2",
+    "grub-common",
+    "grub2-common",
+    "sedutil",
+    "libpam-radius-auth",
 ]

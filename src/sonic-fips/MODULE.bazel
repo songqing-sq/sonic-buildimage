@@ -35,7 +35,7 @@ use_repo(tar_toolchains, "bsd_tar_toolchains")
 # at build time. We replace that with `http_file` so Bazel can fetch them
 # hermetically with sha256 integrity verification.
 #
-# 13 files listed:
+# 18 files listed:
 #   - FIPS_BASEIMAGE_INSTALLERS (12 files): libssl3t64/libssl-dev/openssl,
 #     symcrypt-openssl, openssh 4-tuple (client/ssh/sftp/server), krb5 4-tuple
 #     (libk5crypto3/libkrb5support0/libkrb5-3/libgssapi-krb5-2).
@@ -43,11 +43,13 @@ use_repo(tar_toolchains, "bsd_tar_toolchains")
 #     FIPS_BASEIMAGE_INSTALLERS; kept here to match legacy FIPS_PACKAGE_ALL
 #     fetch set for image-composer flexibility.
 #
-# NOT included (Python/Golang FIPS derivations):
-#   - FIPS_PYTHON_ALL / FIPS_GOLANG_ALL packages are declared as
-#     `add_extra_package(SYMCRYPT_OPENSSL, ...)` derivations in the legacy
-#     build but are NOT installed into the sonic-vs.bin base image — see
-#     port_plan_sonic-fips.md exclusion rationale (inherited from sonic-bazel).
+# NOT included (Golang FIPS derivations):
+#   - FIPS_GOLANG_ALL is declared as an `add_extra_package(SYMCRYPT_OPENSSL, ...)`
+#     derivation in the legacy build but is NOT installed into the sonic-vs.bin
+#     base image.
+#   - FIPS_PYTHON_ALL, by contrast, IS installed: rules/sonic-fips.mk lists all
+#     five CPython debs in FIPS_BASEIMAGE_PYTHON_INSTALLERS, and
+#     fsroot-vs/var/lib/dpkg/status confirms 3.13.5-2+fips on the host.
 # =============================================================================
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
@@ -117,6 +119,45 @@ http_file(
     urls = [_FIPS_URL_PREFIX + "/openssh-server_10.0p1-7+fips_amd64.deb"],
     sha256 = "d0abb08b871cfa4c20000f6e09e2a8cd3883ce62e42b2d2121741de78b3e969b",
     downloaded_file_path = "openssh-server_10.0p1-7+fips_amd64.deb",
+)
+
+# --- CPython 3.13 FIPS family ---
+# FIPS_BASEIMAGE_PYTHON_INSTALLERS (rules/sonic-fips.mk): the base image
+# installs all five, replacing trixie's stock CPython so the interpreter's
+# hashlib/ssl go through the SymCrypt provider.
+http_file(
+    name = "fips_libpython3_13_minimal",
+    urls = [_FIPS_URL_PREFIX + "/libpython3.13-minimal_3.13.5-2+fips_amd64.deb"],
+    sha256 = "3fb38979f49f3793bf0f8ab55735d2178bc0d91a62d97a03d91750bcfbabb8fb",
+    downloaded_file_path = "libpython3.13-minimal_3.13.5-2+fips_amd64.deb",
+)
+
+http_file(
+    name = "fips_libpython3_13_stdlib",
+    urls = [_FIPS_URL_PREFIX + "/libpython3.13-stdlib_3.13.5-2+fips_amd64.deb"],
+    sha256 = "5588f326a10531f4683ba7912f8779a5fe6cca73070e6d5fffec850b4d86a15b",
+    downloaded_file_path = "libpython3.13-stdlib_3.13.5-2+fips_amd64.deb",
+)
+
+http_file(
+    name = "fips_libpython3_13",
+    urls = [_FIPS_URL_PREFIX + "/libpython3.13_3.13.5-2+fips_amd64.deb"],
+    sha256 = "ad128a297f25ab2781448cd61871cb9811a7066791d4ddfc54d57b07bdb970b5",
+    downloaded_file_path = "libpython3.13_3.13.5-2+fips_amd64.deb",
+)
+
+http_file(
+    name = "fips_python3_13_minimal",
+    urls = [_FIPS_URL_PREFIX + "/python3.13-minimal_3.13.5-2+fips_amd64.deb"],
+    sha256 = "0fc75448810899fa03b0b3b6ca0ff6ec930e9c7ae8274795d3f8f17bc7d50f07",
+    downloaded_file_path = "python3.13-minimal_3.13.5-2+fips_amd64.deb",
+)
+
+http_file(
+    name = "fips_python3_13",
+    urls = [_FIPS_URL_PREFIX + "/python3.13_3.13.5-2+fips_amd64.deb"],
+    sha256 = "7ee73602fe0c352e50f91fd6646c1b43d878d12913952956f19e472f045e4733",
+    downloaded_file_path = "python3.13_3.13.5-2+fips_amd64.deb",
 )
 
 # --- KRB5 1.21.3 FIPS family ---
