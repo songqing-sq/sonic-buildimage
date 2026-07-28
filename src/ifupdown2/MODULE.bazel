@@ -1,0 +1,42 @@
+module(
+    name = "ifupdown2",
+    version = "3.0.0-1",
+)
+
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+# =============================================================================
+# ifupdown2 — built FROM SOURCE (pure Python, so this is really "packaged from
+# source": the deb ships the .py tree verbatim under /usr/share/ifupdown2).
+#
+# SONiC applies five patches that change shipped behaviour, so trixie's
+# 3.0.0-1.3 is not a substitute:
+#   0001-fix-broadcast-addr-encoding
+#   0002-disable-checks-when-using-no-wait
+#   0003-Fix-the-return-value-of-utils._execute_subprocess-me
+#   bug-296-python-3.12-compability          (needed for the image's python3.13)
+#   0004-Ensure-etc-iproute2-rt_tables.d-directory-present-fo
+#
+# Upstream is a GitHub release tarball, not a Debian source package; the
+# packaging in debian/ comes from that same tarball. sha256 matches
+# rules/ifupdown2.mk's IFUPDOWN2_SHA256.
+# =============================================================================
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "ifupdown2_src",
+    build_file = "//:ifupdown2_src.BUILD",
+    patch_args = ["-p1"],
+    # Order is patch/series.
+    patches = [
+        "//:patch/0001-fix-broadcast-addr-encoding.patch",
+        "//:patch/0002-disable-checks-when-using-no-wait.patch",
+        "//:patch/0003-Fix-the-return-value-of-utils._execute_subprocess-me.patch",
+        "//:patch/bug-296-python-3.12-compability.patch",
+        "//:patch/0004-Ensure-etc-iproute2-rt_tables.d-directory-present-fo.patch",
+    ],
+    sha256 = "55ded1c60f720c81a5d4b5feeb48d893fd3f29d4ad0fe7d9cec508fe84b5f1b8",
+    strip_prefix = "ifupdown2-3.0.0-1",
+    urls = ["https://github.com/CumulusNetworks/ifupdown2/archive/3.0.0-1.tar.gz"],
+)

@@ -1,0 +1,139 @@
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "3.0.0-1"
+
+exports_files(["ifupdown2_src.BUILD"])
+
+# pybuild writes egg-info alongside the package. Its content is fixed for this
+# release (from setup.py's metadata), so it is emitted directly rather than by
+# running setup.py.
+EGG_INFO_DIR = "usr/share/ifupdown2-3.0.0-py3.13.egg-info"
+
+genrule(
+    name = "gen_egg_info",
+    outs = [
+        "egg-info/PKG-INFO",
+        "egg-info/dependency_links.txt",
+        "egg-info/top_level.txt",
+    ],
+    cmd = ("set -e; " +
+           "cat > $(location egg-info/PKG-INFO) <<'EOF'\n" +
+           """Metadata-Version: 2.2
+Name: ifupdown2
+Version: 3.0.0
+Summary: interface network manager
+Home-page: https://github.com/CumulusNetworks/ifupdown2
+Author: Julien Fortin
+Author-email: julien@cumulusnetworks.com
+Maintainer: Julien Fortin
+Maintainer-email: julien@cumulusnetworks.com
+License: GNU General Public License v2
+Keywords: ifupdown2
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Environment :: Console
+Classifier: Intended Audience :: System Administrators
+Classifier: License :: OSI Approved :: GNU General Public License v2 (GPLv2)
+Classifier: Natural Language :: English
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: System :: Networking
+Classifier: Topic :: System :: Systems Administration
+License-File: LICENSE
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license
+Dynamic: maintainer
+Dynamic: maintainer-email
+Dynamic: summary
+EOF\n""" +
+           "echo '' > $(location egg-info/dependency_links.txt); " +
+           "echo 'ifupdown2' > $(location egg-info/top_level.txt)"),
+)
+
+# One data tar: the Python tree keeps its directory layout, and debian's
+# ifupdown2.links symlinks have to be created as symlinks rather than copies.
+genrule(
+    name = "ifupdown2_data",
+    srcs = [
+        "@ifupdown2_src//:python_tree",
+        "@ifupdown2_src//:ifupdown2/sbin/start-networking",
+        "@ifupdown2_src//:etc/default/networking",
+        "@ifupdown2_src//:etc/network/ifupdown2/addons.conf",
+        "@ifupdown2_src//:etc/network/ifupdown2/ifupdown2.conf",
+        "@ifupdown2_src//:debian/ifup@.service",
+        "@ifupdown2_src//:debian/ifupdown2.networking.service",
+        "egg-info/PKG-INFO",
+        "egg-info/dependency_links.txt",
+        "egg-info/top_level.txt",
+    ],
+    outs = ["ifupdown2_data.tar"],
+    cmd = ("set -e; " +
+           "R=$(RULEDIR)/_root; " +
+           "mkdir -p $$R/usr/share/ifupdown2/sbin $$R/etc/default " +
+           "  $$R/etc/network/ifupdown2/policy.d $$R/etc/network/interfaces.d " +
+           "  $$R/lib/systemd/system $$R/usr/lib/systemd/system $$R/sbin " +
+           "  $$R/var/lib/ifupdown2/hooks $$R/var/lib/ifupdown2/policy.d " +
+           "  $$R/" + EGG_INFO_DIR + "; " +
+           # The .py tree, preserving the package directory structure.
+           "for f in $(locations @ifupdown2_src//:python_tree); do " +
+           "  rel=$${f#*/ifupdown2/}; " +
+           "  d=$$R/usr/share/ifupdown2/$$(dirname $$rel); " +
+           "  mkdir -p $$d; install -m0644 $$f $$d/; " +
+           "done; " +
+           "install -m0755 $(location @ifupdown2_src//:ifupdown2/sbin/start-networking) " +
+           "  $$R/usr/share/ifupdown2/sbin/start-networking; " +
+           "install -m0644 $(location @ifupdown2_src//:etc/default/networking) " +
+           "  $$R/etc/default/networking; " +
+           "install -m0644 $(location @ifupdown2_src//:etc/network/ifupdown2/addons.conf) " +
+           "  $$R/etc/network/ifupdown2/addons.conf; " +
+           "install -m0644 $(location @ifupdown2_src//:etc/network/ifupdown2/ifupdown2.conf) " +
+           "  $$R/etc/network/ifupdown2/ifupdown2.conf; " +
+           "install -m0644 '$(location @ifupdown2_src//:debian/ifup@.service)' " +
+           "  $$R/'lib/systemd/system/ifup@.service'; " +
+           "install -m0644 $(location @ifupdown2_src//:debian/ifupdown2.networking.service) " +
+           "  $$R/usr/lib/systemd/system/networking.service; " +
+           "install -m0644 $(location egg-info/PKG-INFO) $$R/" + EGG_INFO_DIR + "/PKG-INFO; " +
+           "install -m0644 $(location egg-info/dependency_links.txt) " +
+           "  $$R/" + EGG_INFO_DIR + "/dependency_links.txt; " +
+           "install -m0644 $(location egg-info/top_level.txt) " +
+           "  $$R/" + EGG_INFO_DIR + "/top_level.txt; " +
+           # dh_installdeb's py3 rtupdate hook (dh --with=python3): recompiles
+           # the .pyc files when the default python3 changes.
+           "mkdir -p $$R/usr/share/python3/runtime.d; " +
+           "{ echo '#! /bin/sh'; echo 'set -e'; echo ''; " +
+           "  echo 'if [ \"$$1\" = rtupdate ]; then'; " +
+           "  printf '\\tpy3clean -p ifupdown2 /usr/share/ifupdown2\\n'; " +
+           "  printf '\\tpy3compile -p ifupdown2  /usr/share/ifupdown2\\n'; " +
+           "  echo 'fi'; } > $$R/usr/share/python3/runtime.d/ifupdown2.rtupdate; " +
+           "chmod 0755 $$R/usr/share/python3/runtime.d/ifupdown2.rtupdate; " +
+           # debian/ifupdown2.links. This one is relative in Make's deb.
+           "ln -s __main__.py $$R/usr/share/ifupdown2/ifupdown2; " +
+           "for t in ifup ifdown ifquery ifreload; do " +
+           "  ln -s /usr/share/ifupdown2/ifupdown2 $$R/sbin/$$t; " +
+           "done; " +
+           "tar -cf $@ --owner=0 --group=0 --numeric-owner -C $$R ."),
+)
+
+sonic_deb(
+    name = "ifupdown2_{}.deb".format(VERSION),
+    package = "ifupdown2",
+    version = VERSION,
+    architecture = "all",
+    content = {},
+    data = ":ifupdown2_data",
+    depends = [
+        "python3",
+        "python3-argcomplete",
+        "iproute2",
+    ],
+    maintainer = "Julien Fortin <julien@cumulusnetworks.com>",
+    description = "Network Interface Management tool similar to ifupdown\n ifupdown2 is a python implementation of ifupdown, the debian network\n interface manager. It is a drop-in replacement for ifupdown.",
+    homepage = "https://github.com/CumulusNetworks/ifupdown2",
+    section = "admin",
+    priority = "optional",
+)

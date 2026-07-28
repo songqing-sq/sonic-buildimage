@@ -67,6 +67,9 @@ HERMETIC_HOST_DEBS = {
     "rasdaemon": "@rasdaemon//:rasdaemon_0.6.8-1.deb",
 }
 
+# Packages whose payload is a pre-built data tar (sonic_deb's `data =`), so they
+# have no `_data` sibling — the tar IS the data tar.
+
 # The FIPS stack (INCLUDE_FIPS=y, the Makefile.work default): OpenSSL, CPython,
 # OpenSSH and krb5 rebuilt against Microsoft's SymCrypt provider. Upstream
 # publishes them prebuilt on packages.trafficmanager.net; src/sonic-fips fetches
@@ -98,6 +101,12 @@ FIPS_HOST_DEBS = {
 # the data tar. Listed separately from HERMETIC_HOST_DEBS, whose entries follow
 # the <name>_data / <name>_statusd convention.
 HERMETIC_HOST_DEB_DATA_TARS = {
+    # Pure Python; five patches incl. the python 3.12 compatibility fix the
+    # image's python3.13 needs, so trixie's 3.0.0-1.3 is not a substitute.
+    "ifupdown2": (
+        "@ifupdown2//:ifupdown2_data",
+        "@ifupdown2//:ifupdown2_3.0.0-1.deb_statusd",
+    ),
     # Built from source for its plugin-support patch: bash-tacplus is dlopen'd
     # through the hook that patch adds (and needs bash linked -rdynamic), so
     # trixie's stock bash is not a substitute. Uses sonic_deb's `data =`
@@ -115,7 +124,6 @@ HERMETIC_HOST_DEB_DATA_TARS = {
 TODO_HERMETIC = [
     # SONiC builds these from source with its own patches, so the stock trixie
     # package is not a substitute:
-    #   ifupdown2         5 patches incl. python 3.12 compatibility
     #   kdump-tools       kdump core prefix, initrd generated at build time
     #   grub-common       cpio ustar large-uid handling
     #   grub2-common      (same source package as grub-common)
@@ -124,7 +132,6 @@ TODO_HERMETIC = [
     #   sedutil           1.15-5ad84d8, a git snapshot with no Debian release
     "makedumpfile",
     "kdump-tools",
-    "ifupdown2",
     "grub-common",
     "grub2-common",
     "sedutil",

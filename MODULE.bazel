@@ -428,6 +428,12 @@ local_path_override(
     path = "src/sonic-nettools",
 )
 
+bazel_dep(name = "ifupdown2", version = "3.0.0-1")
+local_path_override(
+    module_name = "ifupdown2",
+    path = "src/ifupdown2",
+)
+
 bazel_dep(name = "rasdaemon", version = "0.6.8-1")
 local_path_override(
     module_name = "rasdaemon",
