@@ -1,0 +1,79 @@
+module(
+    name = "pam-tacplus",
+    version = "1.4.1-1",
+)
+
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# Upstream pam_tacplus v1.4.1 with SONiC's 10 patches, applied in the order
+# src/tacacs/pam/Makefile applies them. The Makefile git-clones the tag; the
+# GitHub tarball of the same tag is byte-stable and sha256-pinnable, so use it.
+http_archive(
+    name = "pam_tacplus_src",
+    build_file = "//:pam_tacplus_src.BUILD",
+    # GNU patch, not Bazel's builtin implementation: patch 0010's hunks are
+    # accepted by patch(1) (what the Makefile uses via git apply/quilt) but the
+    # builtin parser rejects them ("Expecting more chunk line").
+    patch_args = ["-p1"],
+    patch_tool = "patch",
+    patches = [
+        "//:0001-Don-t-init-declarations-in-a-for-loop.patch",
+        "//:0002-Fix-libtac2-bin-install-directory-error.patch",
+        "//:0003-Obfuscate-key-before-printing-to-syslog.patch",
+        "//:0004-management-vrf-support.patch",
+        "//:0005-pam-Modify-parsing-of-IP-address-and-port-number-to-.patch",
+        "//:0006-Add-support-for-source-ip-address.patch",
+        "//:0007-Fix-memory-leak-when-parse-configuration.patch",
+        "//:0008-Extract-tacacs-support-functions-into-library.patch",
+        "//:0009-Add-setting-flag-for-authorization-and-accounting.patch",
+        "//:0010-handle-bad-password-set-by-sshd.patch",
+    ],
+    sha256 = "2e5db9bb9c4b3accd737352e788e620f629dc36e3d22093502d05d1938a67cb9",
+    strip_prefix = "pam_tacplus-1.4.1",
+    urls = ["https://github.com/jeroennijhof/pam_tacplus/archive/refs/tags/v1.4.1.tar.gz"],
+)
+
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(
+    architectures = [
+        "amd64",
+        "arm64",
+    ],
+    components = ["main"],
+    suites = [
+        "trixie",
+        "trixie-updates",
+    ],
+    uris = ["https://snapshot.debian.org/archive/debian/20260409T202916Z"],
+)
+apt.sources_list(
+    architectures = [
+        "amd64",
+        "arm64",
+    ],
+    components = ["main"],
+    suites = ["trixie-security"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
+)
+
+# configure.ac checks for libpam (pam_start) and libcrypto (MD5_Init);
+# pam_tacplus.so links against both.
+apt.install(
+    dependency_set = "pam_tacplus_deps",
+    packages = [
+        "libpam0g-dev",
+        "libssl-dev",
+    ],
+    suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
+)
+use_repo(apt, "pam_tacplus_deps")

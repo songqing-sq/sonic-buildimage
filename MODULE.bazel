@@ -356,6 +356,12 @@ local_path_override(
     path = "src/sonic-linux-kernel",
 )
 
+bazel_dep(name = "pam-tacplus", version = "1.4.1-1")
+local_path_override(
+    module_name = "pam-tacplus",
+    path = "src/tacacs/pam",
+)
+
 bazel_dep(name = "systemd-sonic-generator", version = "1.0.0")
 local_path_override(
     module_name = "systemd-sonic-generator",

@@ -28,8 +28,9 @@ cc_binary(
     copts = [
         "-std=c++20",
         "-D_GNU_SOURCE",
-        "-I.",
     ],
+    # The .cpp includes its header unqualified (Makefile CXXFLAGS had -I ./).
+    includes = ["."],
     # json-c only. The legacy Makefile's LDFLAGS also name boost and gtest,
     # but the source includes neither — Make links with --as-needed, so they
     # never end up in the binary's NEEDED either (verified against the Make

@@ -1,0 +1,234 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sonic_build_infra//shared_library:shared_library.bzl", "sonic_shared_library", "sonic_shared_library_versioned")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(glob([
+    "*.patch",
+    "pam_tacplus_src.BUILD",
+]))
+
+VERSION = "1.4.1-1"
+
+# =============================================================================
+# pam_tacplus — TACACS+ PAM module, client library and CLI.
+#
+# Upstream is autotools, but nothing here runs configure or make: the sources
+# are compiled by native cc rules and config.h is written below with exactly
+# the results configure would produce on glibc/trixie (every header and
+# function it probes for is present there). That keeps the build hermetic and
+# free of host autotools.
+#
+# The four binary packages the legacy build emits:
+#   libtac2         libtac.so.2 + libtacsupport.so.2   (TACACS+ protocol lib)
+#   libpam-tacplus  /lib/<multiarch>/security/pam_tacplus.so + sample.pam
+#   libtac2-bin     /usr/bin/tacc                       (client program)
+#   libtac-dev      headers                             (not installed in the image)
+# =============================================================================
+
+write_file(
+    name = "config_h",
+    out = "config.h",
+    content = [
+        "/* Bazel-generated config.h for pam_tacplus 1.4.1 on glibc/trixie.",
+        "   Mirrors what configure.ac's AC_CHECK_HEADERS / AC_CHECK_FUNCS",
+        "   resolve to on this platform — all of them are present. */",
+        "#define PACKAGE \"pam_tacplus\"",
+        "#define PACKAGE_NAME \"pam_tacplus\"",
+        "#define PACKAGE_VERSION \"1.4.1\"",
+        "#define PACKAGE_STRING \"pam_tacplus 1.4.1\"",
+        "#define PACKAGE_TARNAME \"pam_tacplus\"",
+        "#define VERSION \"1.4.1\"",
+        "#define HAVE_ARPA_INET_H 1",
+        "#define HAVE_FCNTL_H 1",
+        "#define HAVE_NETDB_H 1",
+        "#define HAVE_NETINET_IN_H 1",
+        "#define HAVE_STDLIB_H 1",
+        "#define HAVE_STRING_H 1",
+        "#define HAVE_STRINGS_H 1",
+        "#define HAVE_SYS_SOCKET_H 1",
+        "#define HAVE_SYS_TIME_H 1",
+        "#define HAVE_SYSLOG_H 1",
+        "#define HAVE_UNISTD_H 1",
+        "#define HAVE_OPENSSL_MD5_H 1",
+        "#define HAVE_OPENSSL_RAND_H 1",
+        "#define HAVE_LINUX_RANDOM_H 1",
+        "#define HAVE_SYS_RANDOM_H 1",
+        "#define HAVE_BZERO 1",
+        "#define HAVE_GETHOSTBYNAME 1",
+        "#define HAVE_GETTIMEOFDAY 1",
+        "#define HAVE_INET_NTOA 1",
+        "#define HAVE_SELECT 1",
+        "#define HAVE_SOCKET 1",
+        "#define HAVE_LOGWTMP 1",
+        "#define HAVE_GETRANDOM 1",
+        "/* AC_CHECK_LIB(crypto, ...) succeeds here, so header.c seeds session",
+        "   ids through openssl/rand.h rather than getrandom(). */",
+        "#define HAVE_LIBCRYPTO 1",
+        "#define STDC_HEADERS 1",
+    ],
+)
+
+cc_library(
+    name = "config",
+    hdrs = [":config_h"],
+    includes = ["."],
+)
+
+_COPTS = [
+    "-std=gnu17",
+    "-D_GNU_SOURCE",
+    "-DHAVE_CONFIG_H",
+    "-Wno-unused-parameter",
+    "-Wno-sign-compare",
+]
+
+# libtac: the TACACS+ protocol library (libtac_la_SOURCES in Makefile.am).
+sonic_shared_library_versioned(
+    name = "libtac",
+    srcs = ["@pam_tacplus_src//:libtac_srcs"],
+    copts = _COPTS,
+    output_name = "libtac",
+    # libtac_la_LDFLAGS = -version-info 2:0:0
+    soversion = "2",
+    version = "2.0.0",
+    deps = [
+        ":config",
+        "@pam_tacplus_src//:libtac_headers",
+        "@pam_tacplus_src//:libtac_private_headers",
+        "@pam_tacplus_deps//libssl-dev:crypto",
+    ],
+)
+
+# libtacsupport: the configuration/support helpers patch 0008 split out of the
+# PAM module so tacc and pam_tacplus can share them.
+sonic_shared_library_versioned(
+    name = "libtacsupport",
+    srcs = ["@pam_tacplus_src//:support.c"],
+    copts = _COPTS,
+    output_name = "libtacsupport",
+    soversion = "2",
+    version = "2.0.0",
+    # libtac is linked DYNAMICALLY here (upstream's libtacsupport_la links
+    # against libtac.la, i.e. the shared lib). Listing it under deps instead
+    # would fold libtac's objects into both shared libraries, which the
+    # cc_shared_library link-once check rejects.
+    dynamic_deps = [":libtac_shared"],
+    deps = [
+        ":config",
+        ":libtac",
+        "@pam_tacplus_src//:libtac_headers",
+        "@pam_tacplus_src//:top_headers",
+        # support.h includes <security/pam_modules.h>.
+        "@pam_tacplus_deps//libpam0g-dev:pam",
+    ],
+)
+
+# pam_tacplus.so: the PAM module (module_LTLIBRARIES with -module
+# -avoid-version, so it carries no SONAME/version suffix).
+sonic_shared_library(
+    name = "pam_tacplus",
+    srcs = [
+        "@pam_tacplus_src//:pam_tacplus.c",
+        "@pam_tacplus_src//:support.c",
+    ],
+    copts = _COPTS,
+    output_name = "pam_tacplus",
+    deps = [
+        ":config",
+        ":libtac",
+        "@pam_tacplus_src//:libtac_headers",
+        "@pam_tacplus_src//:top_headers",
+        "@pam_tacplus_deps//libpam0g-dev:pam",
+    ],
+)
+
+# tacc: the TACACS+ client program (bin_PROGRAMS).
+cc_binary(
+    name = "tacc",
+    srcs = ["@pam_tacplus_src//:tacc.c"],
+    copts = _COPTS,
+    dynamic_deps = [
+        ":libtac_shared",
+        ":libtacsupport_shared",
+    ],
+    deps = [
+        ":config",
+        ":libtac",
+        ":libtacsupport",
+        "@pam_tacplus_src//:libtac_headers",
+        "@pam_tacplus_src//:top_headers",
+    ],
+)
+
+# =============================================================================
+# The binary packages (debian/*.install + debian/rules).
+# =============================================================================
+sonic_deb(
+    name = "libtac2_{}.deb".format(VERSION),
+    architecture = "amd64",
+    content = {
+        # The macro's <name>_files target carries the .so plus its SONAME
+        # symlinks; the bare label is the cc_library (static archives).
+        "/usr/lib/x86_64-linux-gnu:*:0644": [
+            ":libtac_files",
+            ":libtacsupport_files",
+        ],
+    },
+    depends = [
+        "libc6 (>= 2.38)",
+        "libssl3t64 (>= 3.0.0)",
+    ],
+    description = "TACACS+ protocol library",
+    maintainer = "Sonic <sonic@microsoft.com>",
+    package = "libtac2",
+    priority = "optional",
+    section = "libs",
+    version = VERSION,
+)
+
+sonic_deb(
+    name = "libpam-tacplus_{}.deb".format(VERSION),
+    architecture = "amd64",
+    content = {
+        # PAM loads modules from /lib/<multiarch>/security.
+        # -module -avoid-version: an unversioned .so, so the
+        # cc_shared_library target (_shared) IS the payload; the
+        # non-versioned macro emits no _files sibling.
+        "/lib/x86_64-linux-gnu/security:*:0644": [":pam_tacplus_shared"],
+        # debian/rules copies debian/tacplus into usr/share/pam-configs.
+        "/usr/share/pam-configs:*:0644": ["@pam_tacplus_src//:debian/tacplus"],
+        "/usr/share/doc/libpam-tacplus:*:0644": ["@pam_tacplus_src//:sample.pam"],
+    },
+    depends = [
+        "libc6 (>= 2.38)",
+        "libpam0g (>= 0.99.7.1)",
+        "libpam-runtime",
+        "libtac2",
+    ],
+    description = "PAM module for using TACACS+ as an authentication service",
+    maintainer = "Sonic <sonic@microsoft.com>",
+    package = "libpam-tacplus",
+    priority = "optional",
+    section = "admin",
+    version = VERSION,
+)
+
+sonic_deb(
+    name = "libtac2-bin_{}.deb".format(VERSION),
+    architecture = "amd64",
+    content = {"/usr/bin:*:0755": [":tacc"]},
+    depends = [
+        "libc6 (>= 2.38)",
+        "libtac2",
+    ],
+    description = "TACACS+ client program",
+    maintainer = "Sonic <sonic@microsoft.com>",
+    package = "libtac2-bin",
+    priority = "optional",
+    section = "net",
+    version = VERSION,
+)
