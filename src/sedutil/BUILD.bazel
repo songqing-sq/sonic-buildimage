@@ -1,0 +1,20 @@
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.15-5ad84d8"
+
+exports_files(["sedutil_cli.BUILD"])
+
+# Mirrors src/sedutil/Makefile's hand-rolled dpkg-deb: one prebuilt binary at
+# /usr/local/bin, and a control file with just these five fields.
+sonic_deb(
+    name = "sedutil_{}.deb".format(VERSION),
+    package = "sedutil",
+    version = VERSION,
+    content = {
+        "/usr/local/bin:*:0755": ["@sedutil_cli//:sedutil-cli"],
+    },
+    maintainer = "SONiC Team",
+    description = "SED management utility",
+)

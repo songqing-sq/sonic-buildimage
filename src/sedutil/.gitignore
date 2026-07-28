@@ -1,0 +1,6 @@
+*
+!.gitignore
+!Makefile
+!MODULE.bazel
+!BUILD.bazel
+!*.BUILD

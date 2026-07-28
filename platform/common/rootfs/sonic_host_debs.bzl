@@ -71,6 +71,9 @@ HERMETIC_HOST_DEBS = {
     # Built from source: four patches change crashdump behaviour (kdump- file
     # prefix, MODULES dep revert, load-check skip, build-time initrd).
     "kdump-tools": "@kdump-tools//:kdump-tools_1.10.7.deb",
+    # A prebuilt upstream binary (the Make recipe wgets the same release zip and
+    # wraps it with dpkg-deb); 1.15-5ad84d8 has no Debian release at all.
+    "sedutil": "@sedutil//:sedutil_1.15-5ad84d8.deb",
 }
 
 # Packages whose payload is a pre-built data tar (sonic_deb's `data =`), so they
@@ -132,8 +135,6 @@ TODO_HERMETIC = [
     # package is not a substitute:
     #   grub-common       cpio ustar large-uid handling
     #   grub2-common      (same source package as grub-common)
-    #   sedutil           1.15-5ad84d8, a git snapshot with no Debian release
     "grub-common",
     "grub2-common",
-    "sedutil",
 ]
