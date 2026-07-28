@@ -35,6 +35,7 @@ HERMETIC_HOST_DEBS = {
     "libnss-tacplus": "@libnss-tacplus//:libnss-tacplus_1.0.4-1.deb",
     "audisp-tacplus": "@audisp-tacplus//:audisp-tacplus_1.0.2.deb",
     "bash-tacplus": "@bash-tacplus//:bash-tacplus_1.0.0.deb",
+    "libnss-radius": "@libnss-radius//:libnss-radius_1.0.1-1.deb",
     "sonic-host-services-data": "@sonic-host-services//:sonic-host-services-data_1.0-1_all.deb",
     "sonic-utilities-data": "@sonic-utilities//:sonic-utilities-data_1.0-1_all.deb",
 }
@@ -79,7 +80,6 @@ HERMETIC_HOST_DEB_DATA_TARS = {
 }
 
 TODO_HERMETIC = [
-    "libnss-radius",
     "sonic-ctrmgrd-rs",
     "sonic-host-services-rs",
     "sonic-nettools",

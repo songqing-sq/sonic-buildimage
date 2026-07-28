@@ -1,0 +1,70 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sonic_build_infra//shared_library:shared_library.bzl", "sonic_shared_library_versioned")
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+
+package(default_visibility = ["//visibility:public"])
+
+VERSION = "1.0.1-1"
+
+# =============================================================================
+# libnss-radius — the NSS module that resolves RADIUS users, plus the
+# cache_radius helper.
+#
+# Upstream is a plain Makefile (no autotools) building two artifacts from three
+# sources; both are expressed as native cc rules here. The .so keeps its
+# version script so only _nss_radius_getpwnam_r is exported, and its SONAME is
+# libnss_radius.so.2 to match the NSS module ABI version.
+# =============================================================================
+_COPTS = [
+    "-std=gnu17",
+    "-D_GNU_SOURCE",
+    "-Wno-unused-parameter",
+    "-Wno-sign-compare",
+]
+
+cc_library(
+    name = "nss_radius_common",
+    srcs = ["libnss-radius/nss_radius_common.c"],
+    hdrs = ["libnss-radius/nss_radius_common.h"],
+    copts = _COPTS,
+    strip_include_prefix = "libnss-radius",
+)
+
+# soversion 2 gives libnss_radius.so.2, the name NSS loads (upstream's Makefile
+# sets that SONAME by hand). output_name carries no .so suffix — the macro
+# appends it.
+sonic_shared_library_versioned(
+    name = "libnss_radius",
+    srcs = ["libnss-radius/nss_radius.c"],
+    copts = _COPTS,
+    output_name = "libnss_radius",
+    soversion = "2",
+    version = "2.0.0",
+    version_script = "libnss-radius/libnss_radius_vs.txt",
+    deps = [":nss_radius_common"],
+)
+
+cc_binary(
+    name = "cache_radius",
+    srcs = ["libnss-radius/cache_radius.c"],
+    copts = _COPTS,
+    deps = [":nss_radius_common"],
+)
+
+sonic_deb(
+    name = "libnss-radius_{}.deb".format(VERSION),
+    architecture = "amd64",
+    content = {
+        # NSS modules live in /lib/<multiarch>.
+        "/lib/x86_64-linux-gnu:*:0644": [":libnss_radius_files"],
+        "/usr/sbin:*:0755": [":cache_radius"],
+    },
+    depends = ["libc6 (>= 2.38)"],
+    description = "NSS module for RADIUS user lookups",
+    maintainer = "Sonic <sonic@microsoft.com>",
+    package = "libnss-radius",
+    priority = "optional",
+    section = "admin",
+    version = VERSION,
+)

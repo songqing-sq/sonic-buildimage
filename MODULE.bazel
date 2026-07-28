@@ -356,6 +356,12 @@ local_path_override(
     path = "src/sonic-linux-kernel",
 )
 
+bazel_dep(name = "libnss-radius", version = "1.0.1-1")
+local_path_override(
+    module_name = "libnss-radius",
+    path = "src/radius/nss",
+)
+
 bazel_dep(name = "bash-tacplus", version = "1.0.0")
 local_path_override(
     module_name = "bash-tacplus",
