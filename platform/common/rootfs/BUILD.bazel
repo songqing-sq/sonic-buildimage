@@ -17,7 +17,7 @@ load("//platform/common/rootfs:sonic_host_debs.bzl", "HERMETIC_HOST_DEBS")
 #   base_layer          Debian closure (431 pkgs = fsroot dpkg status minus
 #                       SONiC debs minus docker-ce family) + dpkg status
 #   docker_engine_layer docker-ce/docker-ce-cli/containerd.io (download.docker.com)
-#   sonic_debs_layer    the 57 SONiC-built host debs from target/debs/trixie
+#   sonic_debs_layer    the SONiC-built host packages (hermetic sonic_deb)
 #   passwd/group/shadow exact fsroot-vs /etc identities
 #   host_config_layer   hostname/hosts/fstab + docker drop-ins
 #   ...                 (scripts/templates/etc/version/systemd layers follow)

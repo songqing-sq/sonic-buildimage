@@ -350,6 +350,12 @@ local_path_override(
     path = "src/sonic-swss-common",
 )
 
+bazel_dep(name = "sonic-linux-kernel", version = "6.12.41-1", repo_name = "sonic_linux_kernel")
+local_path_override(
+    module_name = "sonic-linux-kernel",
+    path = "src/sonic-linux-kernel",
+)
+
 bazel_dep(name = "initramfs-tools", version = "0.142")
 local_path_override(
     module_name = "initramfs-tools",
