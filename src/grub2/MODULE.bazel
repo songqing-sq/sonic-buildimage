@@ -51,6 +51,11 @@ apt.install(
         # usr/share/grub/{unicode,ascii,euro}.pf2 + {ascii,widthspec}.h.
         "xfonts-unifont:amd64",
         "xfonts-unifont:arm64",
+        # The runtime .so for grub-mkfont: the -dev cc_import gives headers and
+        # the link stub, but the tools carry no RUNPATH and would otherwise pick
+        # up the host libfreetype.
+        "libfreetype6:amd64",
+        "libfreetype6:arm64",
     ],
     suites = [
         "trixie",

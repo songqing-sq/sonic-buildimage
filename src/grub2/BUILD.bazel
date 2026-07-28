@@ -736,17 +736,94 @@ genrule(
 # grub-common
 # ---------------------------------------------------------------------------
 
-# KNOWN GAP: usr/share/grub/{unicode,ascii,euro}.pf2 and {ascii,widthspec}.h are
-# NOT shipped. Makefile.am generates them from unifont with grub-mkfont plus two
-# small generators, and all three build and produce byte-size-identical output to
-# Make's when run directly — but grub-mkfont links the HOST's
-# /usr/lib/x86_64-linux-gnu/libfreetype.so.6 (the apt cc_import contributes only
-# the static lib and headers), so inside the sandbox it segfaults.
+# ---------------------------------------------------------------------------
+# usr/share/grub/{unicode,ascii,euro}.pf2 + {ascii,widthspec}.h
 #
-# Closing it means making libfreetype a proper hermetic shared-library dep, which
-# is a sonic-build-infra change. Safe to defer: the vs image's grub.cfg issues no
-# `loadfont`, so nothing reads these files at boot — they exist for graphical
-# menu themes the image does not use.
+# Makefile.am generates these from FONT_SOURCE with grub-mkfont plus two small
+# generators; configure finds FONT_SOURCE by scanning for unifont.pcf in
+# /usr/share/fonts/X11/misc and friends (configure.ac:1741), which on the Make
+# side is provided by the xfonts-unifont build-dep in debian/control. Here the
+# same package supplies it through apt, so nothing is taken from the host.
+#
+# The commands and codepoint ranges are Makefile.am:114-136
+# (UNICODE_ARROWS=0x2190-0x2193, UNICODE_LINES=0x2501-0x251B).
+# ---------------------------------------------------------------------------
+[
+    cc_binary(
+        name = "grub_gen_" + n,
+        srcs = ["@sonic_build_infra//grub:src/util/grub-gen-" + n + ".c"],
+        copts = GRUB_COMMON_COPTS,
+        linkopts = ["-lm"],
+        deps = GRUB_ALL_LIB_DEPS + GRUB_COMMON_DEPS + [
+            "@grub2_deps//libfreetype-dev:freetype",
+            "@grub2_deps//libbrotli-dev:brotlidec",
+            "@grub2_deps//libbrotli-dev:brotlicommon",
+        ],
+    )
+    for n in [
+        "asciih",
+        "widthspec",
+    ]
+]
+
+# unifont ships gzipped; grub-mkfont needs it uncompressed.
+genrule(
+    name = "gen_unifont",
+    srcs = ["@grub2_deps//xfonts-unifont:data"],
+    outs = ["unifont.pcf"],
+    cmd = ("set -e; " +
+           "U=$(RULEDIR)/_unifont; mkdir -p $$U; " +
+           "tar -xzf $(location @grub2_deps//xfonts-unifont:data) -C $$U " +
+           "  ./usr/share/fonts/X11/misc/unifont.pcf.gz; " +
+           "gzip -dc $$U/usr/share/fonts/X11/misc/unifont.pcf.gz > $@"),
+)
+
+# The three tools all link libfreetype dynamically but carry no RUNPATH, so
+# without this they resolve libfreetype.so.6 from the HOST — which silently
+# worked outside the sandbox and segfaulted inside it. Staging the .so from the
+# apt import under its plain soname and pointing LD_LIBRARY_PATH at it keeps the
+# hermetic library in play. (Bazel's own _solib symlink chain is not usable here:
+# the genrule sees the runfiles tree, not the solib dir.)
+genrule(
+    name = "gen_fonts",
+    outs = [
+        "fonts/unicode.pf2",
+        "fonts/ascii.pf2",
+        "fonts/euro.pf2",
+        "fonts/ascii.h",
+        "fonts/widthspec.h",
+    ],
+    cmd = ("set -e; " +
+           "L=$$(realpath $(RULEDIR))/_ftlib; mkdir -p $$L; " +
+           "tar -xzf $(location @grub2_deps//libfreetype6:data) -C $$L; " +
+           "cp $$L/usr/lib/x86_64-linux-gnu/libfreetype.so.6.* " +
+           "  $$L/libfreetype.so.6; " +
+           "export LD_LIBRARY_PATH=$$L; " +
+           "$(location :grub_mkfont) -o $(location fonts/unicode.pf2) " +
+           "  $(location :gen_unifont); " +
+           "$(location :grub_mkfont) -o $(location fonts/ascii.pf2) " +
+           "  $(location :gen_unifont) " +
+           "  -r 0x0-0x7f,0x2190-0x2193,0x2501-0x251B; " +
+           "$(location :grub_mkfont) -o $(location fonts/euro.pf2) " +
+           "  $(location :gen_unifont) " +
+           "  -r 0x0-0x4ff,0x1e00-0x1fff,0x2190-0x2193,0x2501-0x251B; " +
+           "$(location :grub_gen_asciih) $(location :gen_unifont) " +
+           "  $(location fonts/ascii.h); " +
+           "$(location :grub_gen_widthspec) $(location :gen_unifont) " +
+           "  $(location fonts/widthspec.h)"),
+    # NOTE: in `srcs`, not `tools`. A genrule's `tools` are built in the exec
+    # configuration, where these come out 93KB instead of 1076KB and segfault —
+    # the exec config does not carry this project's sysroot/toolchain setup.
+    # Listing them as srcs builds them in the target configuration instead, which
+    # is valid here because the build and target platforms are both x86_64 linux.
+    srcs = [
+        ":gen_unifont",
+        ":grub_gen_asciih",
+        ":grub_gen_widthspec",
+        ":grub_mkfont",
+        "@grub2_deps//libfreetype6:data",
+    ],
+)
 
 genrule(
     name = "grub_common_data",
@@ -755,6 +832,11 @@ genrule(
         ":gen_grub_kbdcomp",
         ":gen_grub_mkconfig",
         ":gen_grub_mkconfig_lib",
+        "fonts/ascii.h",
+        "fonts/ascii.pf2",
+        "fonts/euro.pf2",
+        "fonts/unicode.pf2",
+        "fonts/widthspec.h",
         ":bin_grub_editenv",
         ":bin_grub_file",
         ":bin_grub_fstest",
@@ -818,6 +900,9 @@ genrule(
            "install -m0755 $(location :gen_grub_mkconfig) $$R/usr/sbin/grub-mkconfig; " +
            "install -m0644 $(location :gen_grub_mkconfig_lib) " +
            "  $$R/usr/share/grub/grub-mkconfig_lib; " +
+           "for f in ascii.h ascii.pf2 euro.pf2 unicode.pf2 widthspec.h; do " +
+           "  install -m0644 $(RULEDIR)/fonts/$$f $$R/usr/share/grub/$$f; " +
+           "done; " +
            "install -m0755 $(location :gen_grubd_00_header) $$R/etc/grub.d/00_header; " +
            "install -m0755 $(location :gen_grubd_10_linux) $$R/etc/grub.d/10_linux; " +
            "install -m0755 $(location :gen_grubd_20_linux_xen) $$R/etc/grub.d/20_linux_xen; " +
