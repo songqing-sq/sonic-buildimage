@@ -23,6 +23,8 @@ sonic_onie_image(
     rootfs_layers = [
         "//platform/common/rootfs:base_layer",
         "//platform/common/rootfs:docker_engine_layer",
+        "//platform/common/rootfs:dpkg_info_layer",
+        "//platform/common/rootfs:sonic_dpkg_info_files",
         "//platform/common/rootfs:sonic_debs_layer",
         "//platform/common/rootfs:sonic_wheels_layer",
         "//platform/common/rootfs:passwd",

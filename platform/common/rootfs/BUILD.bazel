@@ -35,6 +35,111 @@ dpkg_status(
     controls = ["@trixie//{}:control".format(p) for p in HOST_PACKAGES],
 )
 
+# /var/lib/dpkg/info/<pkg>[:<arch>].{list,md5sums} plus the maintainer scripts
+# and control-tar metadata dpkg records at unpack time. Without them `dpkg -L`
+# returns nothing for any Debian package and `debsums` cannot verify anything.
+#
+# All of it is already in the debs: .list is the data tar's path listing
+# normalized to dpkg's form (absolute, no trailing slash, "/." for the root),
+# and md5sums / triggers / shlibs / symbols / conffiles / {pre,post}{inst,rm}
+# are control-tar members copied verbatim.
+#
+# The name carries a `:<arch>` suffix exactly when the package is
+# `Multi-Arch: same` (dpkg needs to keep per-arch instances apart); `foreign`
+# and unset get the bare name. That is read from each package's own control.
+genrule(
+    name = "dpkg_info_files",
+    srcs = ["@trixie//{}:control".format(p) for p in HOST_PACKAGES] +
+           ["@trixie//{}:data".format(p) for p in HOST_PACKAGES],
+    outs = ["dpkg_info.tar"],
+    # The control tar and the data tar of one package do NOT live in the same
+    # directory in the sandbox (control.tar.xz is staged under external/, the
+    # data tar under bazel-out/), so they are emitted as explicit
+    # "<control> <data>" pairs rather than paired by dirname at runtime.
+    cmd = ("set -euo pipefail; " +
+           "OUT=$$(realpath $(RULEDIR))/$$(basename $@); " +
+           "W=$$(mktemp -d); trap 'rm -rf $$W' EXIT; " +
+           "I=$$W/var/lib/dpkg/info; mkdir -p $$I; " +
+           "while read -r ctl dat; do " +
+           "  [ -n \"$$ctl\" ] || continue; " +
+           "  C=$$W/_c; rm -rf $$C; mkdir -p $$C; " +
+           "  tar -xf $$ctl -C $$C; " +
+           "  pkg=$$(sed -n 's/^Package: //p' $$C/control | head -1); " +
+           "  ma=$$(sed -n 's/^Multi-Arch: //p' $$C/control | head -1); " +
+           "  arch=$$(sed -n 's/^Architecture: //p' $$C/control | head -1); " +
+           "  n=$$pkg; " +
+           "  if [ \"$$ma\" = same ]; then n=\"$$pkg:$$arch\"; fi; " +
+           # .list in dpkg's own form: "/." for the root, absolute paths, no
+           # trailing slash on directories.
+           # --quoting-style=literal: without it tar octal-escapes non-ASCII
+           # names (the ca-certificates mozilla bundle has several).
+           "  tar --quoting-style=literal -tf $$dat " +
+           "    | sed -e 's|^\\./$$|/.|' -e 's|^\\./|/|' -e 's|\\(.\\)/$$|\\1|' " +
+           "    > $$I/$$n.list; " +
+           "  for m in md5sums triggers shlibs symbols conffiles " +
+           "           preinst postinst prerm postrm; do " +
+           "    if [ -f $$C/$$m ]; then cp $$C/$$m $$I/$$n.$$m; fi; " +
+           "  done; " +
+           "done <<'PAIRS'\n" +
+           "".join([
+               "$(location @trixie//{p}:control) $(location @trixie//{p}:data)\n".format(p = p)
+               for p in HOST_PACKAGES
+           ]) +
+           "PAIRS\n" +
+           "chmod 644 $$I/*; " +
+           "chmod 755 $$I/*.preinst $$I/*.postinst $$I/*.prerm $$I/*.postrm " +
+           "  2>/dev/null || true; " +
+           "tar -cf $$OUT --owner=0 --group=0 --numeric-owner --sort=name " +
+           "  -C $$W var"),
+)
+
+# Same treatment for the SONiC-built and FIPS host debs. Their control tars are
+# exposed under three different target names depending on which macro built the
+# deb (sonic_deb: `_control`, external_fips_deb: `_extract_control`, some: none
+# at all), so read the .deb itself with `dpkg-deb` -- every one of them is a
+# plain deb file target, which is the one thing they all have in common.
+genrule(
+    name = "sonic_dpkg_info_files",
+    srcs = list(HERMETIC_HOST_DEBS.values()) + list(FIPS_HOST_DEBS.values()),
+    outs = ["sonic_dpkg_info.tar"],
+    cmd = ("set -euo pipefail; " +
+           "OUT=$$(realpath $(RULEDIR))/$$(basename $@); " +
+           "W=$$(mktemp -d); trap 'rm -rf $$W' EXIT; " +
+           "I=$$W/var/lib/dpkg/info; mkdir -p $$I; " +
+           "for deb in $(SRCS); do " +
+           "  C=$$W/_c; rm -rf $$C; mkdir -p $$C; " +
+           "  dpkg-deb --control $$deb $$C; " +
+           "  pkg=$$(sed -n 's/^Package: //p' $$C/control | head -1); " +
+           "  ma=$$(sed -n 's/^Multi-Arch: //p' $$C/control | head -1); " +
+           "  arch=$$(sed -n 's/^Architecture: //p' $$C/control | head -1); " +
+           "  n=$$pkg; " +
+           "  if [ \"$$ma\" = same ]; then n=\"$$pkg:$$arch\"; fi; " +
+           # dpkg always records "/." first. sonic_deb's data tars omit the
+           # "./" root member, so emit it unconditionally and drop any that the
+           # tar does carry, rather than relying on the member being present.
+           "  { echo '/.'; dpkg-deb --fsys-tarfile $$deb " +
+           "      | tar --quoting-style=literal -tf - " +
+           "      | sed -e '/^\\.\\/$$/d' -e 's|^\\./|/|' -e 's|\\(.\\)/$$|\\1|'; " +
+           "  } > $$I/$$n.list; " +
+           "  for m in md5sums triggers shlibs symbols conffiles " +
+           "           preinst postinst prerm postrm; do " +
+           "    if [ -f $$C/$$m ]; then cp $$C/$$m $$I/$$n.$$m; fi; " +
+           "  done; " +
+           "done; " +
+           "chmod 644 $$I/*; " +
+           "chmod 755 $$I/*.preinst $$I/*.postinst $$I/*.prerm $$I/*.postrm " +
+           "  2>/dev/null || true; " +
+           "tar -cf $$OUT --owner=0 --group=0 --numeric-owner --sort=name " +
+           "  -C $$W var"),
+    visibility = ["//platform:__subpackages__"],
+)
+
+alias(
+    name = "dpkg_info_layer",
+    actual = ":dpkg_info_files",
+    visibility = ["//platform:__subpackages__"],
+)
+
 # vim + apt-transport-https: bridged as http_file debs (see MODULE.bazel —
 # trixie virtual providers shadow the real packages in the apt resolver).
 [
