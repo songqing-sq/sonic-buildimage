@@ -1,7 +1,69 @@
+load("@tar.bzl", "tar")
+
 exports_files(
     [
         "readiness_probe.sh",
         "container_startup.py",
     ],
+    visibility = ["//visibility:public"],
+)
+
+# setup.py's `scripts=`. setuptools rewrites the `#!/usr/bin/env python3`
+# shebang to the absolute interpreter on install, so reproduce that; without
+# these, ctrmgrd.service has no ExecStart and `container` (the kube container
+# wrapper every *.sh ctl script calls in kube mode) does not exist.
+_SCRIPTS = [
+    "container",
+    "ctrmgr_tools.py",
+    "kube_commands.py",
+    "ctrmgrd.py",
+    "docker-wait-any",
+]
+
+genrule(
+    name = "scripts_shebang",
+    srcs = _SCRIPTS,
+    outs = ["scripts.tar"],
+    cmd = ("set -euo pipefail; W=$$(mktemp -d); trap 'rm -rf $$W' EXIT; " +
+           "for f in $(SRCS); do " +
+           "  sed -E '1s@^#!\\s*/usr/bin/(env +)?python[0-9.]*\\s*$$@#!/usr/bin/python3@' " +
+           "    \"$$f\" > $$W/$$(basename $$f); " +
+           "  chmod 755 $$W/$$(basename $$f); " +
+           "done; " +
+           "tar -cf $@ --owner=0 --group=0 --numeric-owner --sort=name -C $$W ."),
+)
+
+# find_packages() picks up the ctrmgr package itself, which lands unmodified
+# (shebangs and all) under dist-packages.
+_PACKAGE_SRCS = [
+    "__init__.py",
+    "container",
+    "container_startup.py",
+    "ctrmgr_iptables.py",
+    "ctrmgr_tools.py",
+    "ctrmgrd.py",
+    "docker-wait-any",
+    "kube_commands.py",
+    "remote_ctr.config.json",
+]
+
+tar(
+    name = "package_files",
+    srcs = _PACKAGE_SRCS,
+    mtree = [
+        "./usr/lib/python3/dist-packages/ctrmgr/{} uid=0 gid=0 mode=0644 type=file content=$(location {})".format(f, f)
+        for f in _PACKAGE_SRCS
+    ],
+)
+
+genrule(
+    name = "install",
+    srcs = [":package_files", ":scripts_shebang"],
+    outs = ["install.tar.gz"],
+    cmd = ("set -euo pipefail; W=$$(mktemp -d); trap 'rm -rf $$W' EXIT; " +
+           "mkdir -p $$W/usr/local/bin; " +
+           "tar -xzf $(location :package_files) -C $$W; " +
+           "tar -xf $(location :scripts_shebang) -C $$W/usr/local/bin; " +
+           "tar -czf $@ --owner=0 --group=0 --numeric-owner --sort=name -C $$W ."),
     visibility = ["//visibility:public"],
 )

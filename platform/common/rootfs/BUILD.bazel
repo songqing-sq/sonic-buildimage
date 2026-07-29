@@ -1152,6 +1152,34 @@ genrule(
     tools = ["@sonic_build_infra//jinja2:render"],
 )
 
+# sonic-package-manager's ServiceCreator renders service_mgmt.sh.j2 into
+# /usr/local/bin/<service>.sh for each installed package. Only dhcp_relay and
+# macsec end up with one in Make's image (the other 25 containers get the static
+# files/scripts/<name>.sh instead), so those two are reproduced here from the
+# same template and the same manifest values. `source` is the path the comment
+# header records, i.e. where the template lives in the booted image.
+[
+    genrule(
+        name = "spm_mgmt_" + svc,
+        srcs = ["@sonic-utilities//:sonic-utilities-data/templates/service_mgmt.sh.j2"],
+        outs = ["spm_mgmt/" + svc + ".sh"],
+        cmd = ("set -euo pipefail; C=$(RULEDIR)/spm_mgmt_ctx_" + svc + ".json; " +
+               "mkdir -p $$(dirname $$C); " +
+               "printf '%s' '{\"manifest\": {\"service\": {\"name\": \"" + svc +
+               "\", \"dependent\": [], \"post-start-action\": null, " +
+               "\"pre-shutdown-action\": null}}, " +
+               "\"multi_instance_services\": [], " +
+               "\"source\": \"/usr/share/sonic/templates/service_mgmt.sh.j2\"}' > $$C; " +
+               "$(execpath @sonic_build_infra//jinja2:render) --context-json $$C " +
+               "$(execpath @sonic-utilities//:sonic-utilities-data/templates/service_mgmt.sh.j2) $@"),
+        tools = ["@sonic_build_infra//jinja2:render"],
+    )
+    for svc in [
+        "dhcp_relay",
+        "macsec",
+    ]
+]
+
 tar(
     name = "rendered_layer",
     srcs = glob(["rendered/**"]) + [
@@ -1163,6 +1191,8 @@ tar(
     ] + [
         ":cfg_constants_yml",
         ":cfg_init_cfg_json",
+        ":spm_mgmt_dhcp_relay",
+        ":spm_mgmt_macsec",
     ],
     mtree = [
         "./etc/apt/sources.list uid=0 gid=0 mode=0644 type=file content=$(location rendered/etc__apt__sources.list)",
@@ -1197,6 +1227,8 @@ tar(
         "./usr/bin/radv.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_radv)",
         "./usr/bin/restapi-sidecar.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_restapi_sidecar)",
         "./usr/bin/sflow.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_sflow)",
+        "./usr/local/bin/dhcp_relay.sh uid=0 gid=0 mode=0744 type=file content=$(location :spm_mgmt_dhcp_relay)",
+        "./usr/local/bin/macsec.sh uid=0 gid=0 mode=0744 type=file content=$(location :spm_mgmt_macsec)",
         "./usr/bin/snmp.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_snmp)",
         "./usr/bin/swss.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_swss)",
         "./usr/bin/syncd.sh uid=0 gid=0 mode=0755 type=file content=$(location :ctl_syncd)",
@@ -1622,6 +1654,11 @@ flatten(
         "@sonic-yang-mgmt//:install",
         "@sonic-host-services//:install",
         "@sonic-utilities//:install",
+        # healthd — system-health.service's ExecStart.
+        "@system-health//:install",
+        # ctrmgrd.py / container / kube_commands.py / docker-wait-any: the kube
+        # container management scripts every ctl script calls in kube mode.
+        "//src/sonic-ctrmgrd/ctrmgr:install",
     ],
     visibility = ["//platform:__subpackages__"],
 )
@@ -1649,6 +1686,13 @@ site_packages(
         "@pip_pmon9//click",
         "@pip_pmon9//toposort",
         "@pip_pmon9//requests",
+        # These three carry console_scripts that Make's image has under
+        # /usr/local/bin: pyang -> pyang/yang2dsdl/yang2html, jsonschema ->
+        # jsonschema, pyroute2 -> pyroute2-{decoder,dhcp-client,test-platform}
+        # and ss2. They resolve in the hub, so there is no reason to be missing.
+        "@pip_pmon9//pyang",
+        "@pip_pmon9//jsonschema",
+        "@pip_pmon9//pyroute2",
     ],
     venv = "docker-base-trixie",
     visibility = ["//platform:__subpackages__"],
