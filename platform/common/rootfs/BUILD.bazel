@@ -1792,6 +1792,11 @@ flatten(
         # ctrmgrd.py / container / kube_commands.py / docker-wait-any: the kube
         # container management scripts every ctl script calls in kube mode.
         "//src/sonic-ctrmgrd/ctrmgr:install",
+        # redisdl + the redis-dump / redis-load entry points.
+        "@redis-dump-load-py3//:install",
+        # sonic_platform_pddf_base: the PDDF platform API base classes vendor
+        # sonic_platform packages subclass.
+        "@sonic-platform-pddf-common//:install",
     ],
     visibility = ["//platform:__subpackages__"],
 )
@@ -1852,6 +1857,7 @@ site_packages(
         # sonic-utilities directly).
         "@pip_util1//blkinfo",
         "@pip_util1//grpcio",
+        "@pip_util1//grpcio_tools",
         "@pip_util1//libpci",
         "@pip_util1//protobuf",
         "@pip_util1//pyangbind",
