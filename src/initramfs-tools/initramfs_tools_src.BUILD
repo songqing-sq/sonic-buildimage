@@ -25,3 +25,15 @@ filegroup(
     name = "core_hooks",
     srcs = glob(["hooks/**"]),
 )
+
+# `kernel  etc` in debian/initramfs-tools.install: the kernel/{postinst,postrm}.d
+# hooks that rebuild/remove the initrd when a kernel package is (un)installed.
+filegroup(
+    name = "kernel_postinst_d",
+    srcs = glob(["kernel/postinst.d/*"]),
+)
+
+filegroup(
+    name = "kernel_postrm_d",
+    srcs = glob(["kernel/postrm.d/*"]),
+)

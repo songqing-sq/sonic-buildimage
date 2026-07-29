@@ -79,6 +79,27 @@ sonic_deb(
             "@initramfs_tools_src//:conf/initramfs.conf",
         ],
     },
+    # debian/initramfs-tools-core.dirs: the run-parts drop-in dirs /init and
+    # mkinitramfs iterate over, plus usr/share's conf.d / conf-hooks.d /
+    # modules.d. Empty but load-bearing — mkinitramfs errors out on a missing
+    # /etc/initramfs-tools/hooks, and local admin scripts land in these.
+    empty_dirs = [
+        "/etc/initramfs-tools/scripts/init-bottom",
+        "/etc/initramfs-tools/scripts/init-premount",
+        "/etc/initramfs-tools/scripts/init-top",
+        "/etc/initramfs-tools/scripts/local-bottom",
+        "/etc/initramfs-tools/scripts/local-premount",
+        "/etc/initramfs-tools/scripts/local-top",
+        "/etc/initramfs-tools/scripts/nfs-bottom",
+        "/etc/initramfs-tools/scripts/nfs-premount",
+        "/etc/initramfs-tools/scripts/nfs-top",
+        "/etc/initramfs-tools/scripts/panic",
+        "/etc/initramfs-tools/hooks",
+        "/etc/initramfs-tools/conf.d",
+        "/usr/share/initramfs-tools/conf.d",
+        "/usr/share/initramfs-tools/conf-hooks.d",
+        "/usr/share/initramfs-tools/modules.d",
+    ],
     depends = [
         "klibc-utils (>= 2.0.4-8~)",
         "cpio (>= 2.12)",
@@ -104,7 +125,13 @@ sonic_deb(
         "/etc/initramfs-tools:*:0644": [
             "@initramfs_tools_src//:conf/update-initramfs.conf",
         ],
+        # `kernel  etc` in debian/initramfs-tools.install: the hooks that
+        # rebuild / delete the initrd on kernel package (un)install.
+        "/etc/kernel/postinst.d:*:0755": ["@initramfs_tools_src//:kernel_postinst_d"],
+        "/etc/kernel/postrm.d:*:0755": ["@initramfs_tools_src//:kernel_postrm_d"],
     },
+    # debian/initramfs-tools.dirs.
+    empty_dirs = ["/etc/initramfs-tools/conf.d"],
     depends = [
         "initramfs-tools-core (= {})".format(VERSION),
         "linux-base",
@@ -116,4 +143,12 @@ sonic_deb(
     priority = "optional",
     section = "utils",
     version = VERSION,
+)
+
+# The upstream conf/modules template, re-exposed so the rootfs layer can build
+# /etc/initramfs-tools/modules from it (dh_installinitramfs installs it minus
+# the leading '###' template markers; build_debian.sh appends SONiC's list).
+alias(
+    name = "conf_modules",
+    actual = "@initramfs_tools_src//:conf/modules",
 )
