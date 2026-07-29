@@ -303,7 +303,7 @@ tar(
 # -----------------------------------------------------------------------------
 tar(
     name = "pam_layer",
-    srcs = glob(["files/pam.d/common-*"]),
+    srcs = glob(["files/pam.d/common-*"]) + glob(["files/pam_state/*"]),
     mtree = [
         "./etc/pam.d/{0} uid=0 gid=0 mode=0644 type=file content=$(location files/pam.d/{0})".format(f)
         for f in [
@@ -312,6 +312,22 @@ tar(
             "common-password",
             "common-session",
             "common-session-noninteractive",
+        ]
+    ] + [
+        # pam-auth-update's own state: which profile supplied each line of the
+        # merged files, plus `seen` (the profiles it has already offered). On the
+        # next run it diffs against this to detect local edits -- without it a
+        # later `pam-auth-update` treats the merged files as hand-written and
+        # refuses to touch them, so enabling TACACS+/LDAP at runtime silently
+        # does nothing.
+        "./var/lib/pam/{0} uid=0 gid=0 mode=0644 type=file content=$(location files/pam_state/{0})".format(f)
+        for f in [
+            "account",
+            "auth",
+            "password",
+            "session",
+            "session-noninteractive",
+            "seen",
         ]
     ],
     visibility = ["//visibility:public"],
@@ -1581,6 +1597,28 @@ genrule(
            "  printf '%s  %s\\n' $$(md5sum $$src | cut -d' ' -f1) $$path >> $$H; " +
            "done < $$R; " +
            "head -4 $$H > $$H.0; " +
+           # /var/lib/ucf/cache/<mangled-path>: ucf keeps the DISTRIBUTOR's
+           # version of each conffile here (path with / -> :), and diffs the
+           # live file against it on the next upgrade to decide whether the
+           # admin edited it. Missing cache = ucf treats every file as
+           # locally modified and stops managing it.
+           "mkdir -p var/lib/ucf/cache; " +
+           "cp $$W/src/usr/share/openssh/sshd_config " +
+           "  var/lib/ucf/cache/:etc:ssh:sshd_config; " +
+           "cp $$W/src/usr/share/chrony/chrony.conf " +
+           "  var/lib/ucf/cache/:etc:chrony:chrony.conf; " +
+           "cp $$W/src/usr/share/chrony/chrony.keys " +
+           "  var/lib/ucf/cache/:etc:chrony:chrony.keys; " +
+           "cp $$KDUMP_TMPL var/lib/ucf/cache/:etc:default:kdump-tools; " +
+           # sysstat's cache is the postinst heredoc, i.e. the file we just
+           # generated -- there is no shipped template for it.
+           "cp etc/default/sysstat var/lib/ucf/cache/:etc:default:sysstat; " +
+           # ucf copies each cache entry with the source file's own mode, so
+           # sshd_config/chrony.conf/kdump-tools land 0644, chrony.keys 0640
+           # (its /etc mode) and sysstat 0600 (mktemp's).
+           "chmod 644 var/lib/ucf/cache/*; " +
+           "chmod 640 var/lib/ucf/cache/:etc:chrony:chrony.keys; " +
+           "chmod 600 var/lib/ucf/cache/:etc:default:sysstat; " +
            "chmod 644 etc/ssh/sshd_config etc/chrony/chrony.conf " +
            "  etc/default/sysstat etc/default/kdump-tools; " +
            "chmod 640 etc/chrony/chrony.keys; " +
