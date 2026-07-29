@@ -136,3 +136,8 @@ oci_load(
     image = "docker-dhcp-relay",
     repo_tags = ["docker-dhcp-relay:latest"],
 )
+
+# CLI plugins: sonic-package-manager copies these into the host's
+# {config,show,clear}/plugins/ as <package-name>.py when the package is
+# installed, which is how `config dhcp_relay` / `show macsec` etc. exist at all.
+exports_files(glob(["cli/*/plugins/*.py"]))

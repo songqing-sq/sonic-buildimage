@@ -37,6 +37,7 @@ sonic_onie_image(
         "//platform/common/rootfs:rcd_links_layer",
         "//platform/common/rootfs:ca_certificates_layer",
         "//platform/common/rootfs:ucf_layer",
+        "//platform/common/rootfs:cli_plugins_layer",
         "//platform/common/rootfs:rendered_layer",
         "//platform/common/rootfs:version_layer",
         "//platform/common/rootfs:systemd_enable_layer",

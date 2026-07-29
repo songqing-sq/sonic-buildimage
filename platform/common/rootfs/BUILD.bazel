@@ -1180,6 +1180,34 @@ genrule(
     ]
 ]
 
+# sonic-package-manager's CLI plugin install: each package's cli/{config,show,
+# clear}/plugins/*.py is copied into the host's own plugins dir, renamed to
+# <package-name>.py, which is how `config dhcp_relay` and `show macsec` become
+# subcommands at all. Only dhcp_relay and macsec ship plugins in the vs set.
+tar(
+    name = "cli_plugins_layer",
+    srcs = [
+        "//dockers/docker-dhcp-relay:cli/config/plugins/dhcp_relay.py",
+        "//dockers/docker-dhcp-relay:cli/show/plugins/show_dhcp_relay.py",
+        "//dockers/docker-dhcp-relay:cli/clear/plugins/clear_dhcp_relay.py",
+        "//dockers/docker-macsec:cli/config/plugins/macsec.py",
+        "//dockers/docker-macsec:cli/show/plugins/show_macsec.py",
+        "//dockers/docker-macsec:cli/clear/plugins/clear_macsec_counter.py",
+    ],
+    mtree = [
+        "./usr/lib/python3/dist-packages/{}/plugins/{}.py uid=0 gid=0 mode=0644 type=file content=$(location {})".format(group, pkg, label)
+        for group, pkg, label in [
+            ("config", "dhcp-relay", "//dockers/docker-dhcp-relay:cli/config/plugins/dhcp_relay.py"),
+            ("show", "dhcp-relay", "//dockers/docker-dhcp-relay:cli/show/plugins/show_dhcp_relay.py"),
+            ("clear", "dhcp-relay", "//dockers/docker-dhcp-relay:cli/clear/plugins/clear_dhcp_relay.py"),
+            ("config", "macsec", "//dockers/docker-macsec:cli/config/plugins/macsec.py"),
+            ("show", "macsec", "//dockers/docker-macsec:cli/show/plugins/show_macsec.py"),
+            ("clear", "macsec", "//dockers/docker-macsec:cli/clear/plugins/clear_macsec_counter.py"),
+        ]
+    ],
+    visibility = ["//platform:__subpackages__"],
+)
+
 tar(
     name = "rendered_layer",
     srcs = glob(["rendered/**"]) + [
