@@ -46,7 +46,7 @@ flatten(
 # requests). requests is pinned in docker-base-trixie/pyproject.toml.
 site_packages(
     name = "pip_layer",
-    srcs = ["@pip_pmon9//requests"],
+    srcs = ["@pip_util1//requests"],
     venv = "docker-base-trixie",
 )
 

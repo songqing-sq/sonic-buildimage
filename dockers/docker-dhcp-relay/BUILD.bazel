@@ -55,12 +55,12 @@ flatten(
 
 # Dockerfile.j2 line 20 `pip3 install psutil` + sonic-dhcp-utilities
 # install_requires (psutil, freezegun). Pinned in docker-base-trixie/
-# pyproject.toml, sourced from the shared @pip_pmon9 hub.
+# pyproject.toml, sourced from the shared @pip_util1 hub.
 site_packages(
     name = "pip_layer",
     srcs = [
-        "@pip_pmon9//psutil",
-        "@pip_pmon9//freezegun",
+        "@pip_util1//psutil",
+        "@pip_util1//freezegun",
     ],
     venv = "docker-base-trixie",
 )

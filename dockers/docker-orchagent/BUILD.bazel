@@ -49,7 +49,7 @@ flatten(
 #     the scapy/ package (site_packages lays it under the venv's dist-packages),
 #     and its `:install` tar ships the /usr/local/bin/scapy console script.
 #   - pyroute2: Dockerfile.j2 `pip3 install pyroute2==0.5.14` (dep of
-#     restore_neighbors.py). Resolved via the shared @pip_pmon9 hub.
+#     restore_neighbors.py). Resolved via the shared @pip_util1 hub.
 # requests / redis / sonic-py-swsssdk are NOT here: they are already present in
 # the docker-swss-layer-trixie / docker-config-engine-trixie base (confirmed via
 # the Make image package delta — they are not added by orchagent).
@@ -57,7 +57,7 @@ site_packages(
     name = "pip_layer",
     srcs = [
         "@scapy//:sources",
-        "@pip_pmon9//pyroute2",
+        "@pip_util1//pyroute2",
     ],
     venv = "docker-base-trixie",
 )

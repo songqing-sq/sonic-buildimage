@@ -1797,7 +1797,7 @@ flatten(
 )
 
 # Third-party PyPI runtime deps of the SONiC host wheels that resolve in the
-# @pip_pmon9 uv hub. Deps the hub lacks (redis/bitarray/docker/filelock/
+# @pip_util1 uv hub. Deps the hub lacks (redis/bitarray/docker/filelock/
 # pexpect/jsonpatch/click_log/lazy_object_proxy/www_authenticate/
 # semantic_version/prettyprinter/docker_image_py) are a known gap — they are
 # sonic-utilities CLI runtime deps, not boot-critical; Make pip-installs them
@@ -1806,26 +1806,58 @@ flatten(
 site_packages(
     name = "host_pip_layer",
     srcs = [
-        "@pip_pmon9//natsort",
-        "@pip_pmon9//pyyaml",
-        "@pip_pmon9//lxml",
-        "@pip_pmon9//netaddr",
-        "@pip_pmon9//jinja2",
-        "@pip_pmon9//ijson",
-        "@pip_pmon9//jsonpointer",
-        "@pip_pmon9//jsondiff",
-        "@pip_pmon9//tabulate",
-        "@pip_pmon9//psutil",
-        "@pip_pmon9//click",
-        "@pip_pmon9//toposort",
-        "@pip_pmon9//requests",
+        "@pip_util1//natsort",
+        "@pip_util1//pyyaml",
+        "@pip_util1//lxml",
+        "@pip_util1//netaddr",
+        "@pip_util1//jinja2",
+        "@pip_util1//ijson",
+        "@pip_util1//jsonpointer",
+        "@pip_util1//jsondiff",
+        "@pip_util1//tabulate",
+        "@pip_util1//psutil",
+        "@pip_util1//click",
+        "@pip_util1//toposort",
+        "@pip_util1//requests",
         # These three carry console_scripts that Make's image has under
         # /usr/local/bin: pyang -> pyang/yang2dsdl/yang2html, jsonschema ->
         # jsonschema, pyroute2 -> pyroute2-{decoder,dhcp-client,test-platform}
         # and ss2. They resolve in the hub, so there is no reason to be missing.
-        "@pip_pmon9//pyang",
-        "@pip_pmon9//jsonschema",
-        "@pip_pmon9//pyroute2",
+        "@pip_util1//pyang",
+        "@pip_util1//jsonschema",
+        "@pip_util1//pyroute2",
+        # sonic-utilities setup.py install_requires — the CLI imports these at
+        # startup, so a missing one is an immediate traceback on `show`/`config`.
+        "@pip_util1//bcrypt",
+        "@pip_util1//click_log",
+        "@pip_util1//cryptography",
+        "@pip_util1//docker",
+        "@pip_util1//docker_image_py",
+        "@pip_util1//enlighten",
+        "@pip_util1//filelock",
+        "@pip_util1//jsonpatch",
+        "@pip_util1//lazy_object_proxy",
+        "@pip_util1//paramiko",
+        "@pip_util1//pexpect",
+        "@pip_util1//prettyprinter",
+        "@pip_util1//pygments",
+        "@pip_util1//scp",
+        "@pip_util1//semantic_version",
+        "@pip_util1//six",
+        "@pip_util1//urllib3",
+        "@pip_util1//www_authenticate",
+        "@pip_util1//xmltodict",
+        # Reachable in the hub and present in Make's host rootfs (pulled in as
+        # transitive deps of the pmon/config-engine wheels rather than named by
+        # sonic-utilities directly).
+        "@pip_util1//blkinfo",
+        "@pip_util1//grpcio",
+        "@pip_util1//libpci",
+        "@pip_util1//protobuf",
+        "@pip_util1//pyangbind",
+        "@pip_util1//python_dateutil",
+        "@pip_util1//smbus2",
+        "@pip_util1//thrift",
     ],
     venv = "docker-base-trixie",
     visibility = ["//platform:__subpackages__"],
