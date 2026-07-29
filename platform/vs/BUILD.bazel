@@ -43,6 +43,7 @@ sonic_onie_image(
         "//platform/common/rootfs:rendered_layer",
         "//platform/common/rootfs:version_layer",
         "//platform/common/rootfs:systemd_enable_layer",
+        "//platform/common/rootfs:dsh_state_layer",
         "//platform/common/rootfs:dirs_layer",
         "//platform/common/rootfs:kernel_modules_layer",
         "//platform/common/rootfs:generated_services_layer",

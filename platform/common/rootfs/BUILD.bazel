@@ -1,10 +1,12 @@
 load("@rules_deb//apt:defs.bzl", "dpkg_status")
 load("@rules_deb//distroless:defs.bzl", "flatten")
 load("@tar.bzl", "tar")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@sonic_build_infra//python:site_packages.bzl", "site_packages")
 load("//platform/common/rootfs:host_packages.bzl", "HOST_PACKAGES")
 load("//platform/common/rootfs:alternatives.bzl", "ALTERNATIVES", "ALTERNATIVE_BINS")
 load("//platform/common/rootfs:rcd_links.bzl", "RCD_LINKS")
+load("//platform/common/rootfs:dsh_state.bzl", "DSH_FILES")
 load("//platform/common/rootfs:container_ctl.bzl", "COMMON_CTL_VARS", "CONTAINER_CTL", "SONIC_ASIC_PLATFORM")
 load("//platform/common/rootfs:init_cfg_flags.bzl", "INIT_CFG_FLAGS")
 load("//platform/common/rootfs:service_units.bzl", "INSTALLER_SERVICES", "SERVICE_UNITS", "SONICADMIN_USER")
@@ -1615,6 +1617,38 @@ tar(
     mtree = [
         ".{} uid=0 gid=0 type=link link={}".format(path, target)
         for path, target in RCD_LINKS
+    ],
+    visibility = ["//platform:__subpackages__"],
+)
+
+# deb-systemd-helper's enable bookkeeping (see dsh_state.bzl for why it matters
+# on upgrade). write_file rather than a printf in a genrule: the .dsh-also
+# bodies are newline-separated path lists, and `printf '%s'` does not interpret
+# escapes, so passing them through a shell string silently writes a literal
+# backslash-n.
+[
+    write_file(
+        name = "dsh_" + path.replace("/", "__").replace(".", "_").replace("-", "_"),
+        out = "dsh/" + path,
+        content = content.split("\n") if content else [],
+        newline = "unix",
+    )
+    for path, content in DSH_FILES.items()
+]
+
+tar(
+    name = "dsh_state_layer",
+    srcs = [
+        ":dsh_" + p.replace("/", "__").replace(".", "_").replace("-", "_")
+        for p in DSH_FILES
+    ],
+    mtree = [
+        ("./var/lib/systemd/deb-systemd-helper-enabled/{p} uid=0 gid=0 " +
+         "mode=0644 type=file content=$(location :dsh_{n})").format(
+            p = path,
+            n = path.replace("/", "__").replace(".", "_").replace("-", "_"),
+        )
+        for path in DSH_FILES
     ],
     visibility = ["//platform:__subpackages__"],
 )
