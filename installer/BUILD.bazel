@@ -5,3 +5,21 @@ exports_files(
     ],
     visibility = ["//visibility:public"],
 )
+
+# The rest of installer/ that onie-mk-demo.sh copies wholesale into the sharch
+# (`cp -r $installer_dir/*`): the per-platform installer.conf overrides
+# install.sh sources, the ASIC allow-list it greps, and the default fallback.
+#
+# platforms_asic is not optional: install.sh:113 runs
+# `grep -Fxq "$onie_platform" platforms_asic` with NO existence guard, so a
+# missing file makes grep fail and drops a real ONIE install into the
+# "different ASIC type" confirmation prompt.
+filegroup(
+    name = "installer_files",
+    srcs = [
+        "default_platform.conf",
+        "platforms_asic",
+        # install.sh's own unit tests; onie-mk-demo.sh's `cp -r` ships them too.
+    ] + glob(["platforms/**", "tests/**"]),
+    visibility = ["//visibility:public"],
+)

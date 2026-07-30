@@ -14,9 +14,15 @@ sonic_onie_image(
     image_version = "bazel-dev",
     initrd = "//platform/vs/rootfs:initrd",
     install_sh_template = "//installer:install.sh",
+    # The rest of installer/ that onie-mk-demo.sh copies wholesale. platforms_asic
+    # is load-bearing: install.sh greps it with no existence guard, so without it
+    # a real ONIE install stops at the "different ASIC type" prompt.
+    installer_files = ["//installer:installer_files"],
+    # Shipped as installer/platform.conf. Empty for vs (no platform-specific
+    # installer overrides), but install.sh reads it, so the file must exist.
+    platform_conf = "//platform/vs:platform.conf",
     machine = "vs",
     onie_conf = "//:onie-image.conf",
-    onie_conf_arch = "//:onie-image-arm64.conf",
     onie_image_part_size = "32768",
     platform = "x86_64-vs-r0",
     platform_tar = "//platform/vs/rootfs:platform_tar",
@@ -55,6 +61,11 @@ sonic_onie_image(
 
 # dash-engine.service: host-side unit copied by sonic_debian_extension.j2.
 exports_files(
-    ["dash-engine.service"],
+    [
+        "dash-engine.service",
+        # Empty for vs, but onie-mk-demo.sh copies it in as
+        # installer/platform.conf and install.sh sources it.
+        "platform.conf",
+    ],
     visibility = ["//visibility:public"],
 )
