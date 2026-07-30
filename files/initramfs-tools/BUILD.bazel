@@ -2,3 +2,29 @@ exports_files(
     glob(["**"]),
     visibility = ["//visibility:public"],
 )
+
+# union-mount and arista-convertfs are RENDERED here from their .j2 templates.
+#
+# The extension-less files sitting next to those templates are Make's rendered
+# output and are gitignored (.gitignore:79-80). Referencing them directly builds
+# fine on a tree where `make` has already run and fails everywhere else, so the
+# templates are the only correct input. The three substitutions are the values
+# onie-image.conf defines (FILESYSTEM_DOCKERFS / DOCKERFS_DIR /
+# DOCKER_RAMFS_SIZE), which is what sonic_debian_extension.j2 passes to j2.
+[
+    genrule(
+        name = "rendered_" + name.replace("-", "_"),
+        srcs = [name + ".j2"],
+        outs = ["rendered/" + name],
+        cmd = ("$(execpath @sonic_build_infra//jinja2:render) $< $@ " +
+               "DOCKERFS_DIR=docker " +
+               "FILESYSTEM_DOCKERFS=dockerfs.tar.gz " +
+               "DOCKER_RAMFS_SIZE=3500M"),
+        tools = ["@sonic_build_infra//jinja2:render"],
+        visibility = ["//visibility:public"],
+    )
+    for name in [
+        "union-mount",
+        "arista-convertfs",
+    ]
+]

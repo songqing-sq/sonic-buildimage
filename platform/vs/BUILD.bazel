@@ -14,10 +14,15 @@ sonic_onie_image(
     image_version = "bazel-dev",
     initrd = "//platform/vs/rootfs:initrd",
     install_sh_template = "//installer:install.sh",
-    # The rest of installer/ that onie-mk-demo.sh copies wholesale. platforms_asic
-    # is load-bearing: install.sh greps it with no existence guard, so without it
-    # a real ONIE install stops at the "different ASIC type" prompt.
-    installer_files = ["//installer:installer_files"],
+    # Static installer/ content, plus the two pieces build_image.sh generates.
+    # platforms_asic is load-bearing: install.sh greps it with no existence
+    # guard, so without it a real ONIE install stops at the "different ASIC
+    # type" prompt.
+    installer_files = [
+        "//installer:installer_files",
+        "//installer:platforms_asic_file",
+    ],
+    installer_tar = "//installer:platforms_dir",
     # Shipped as installer/platform.conf. Empty for vs (no platform-specific
     # installer overrides), but install.sh reads it, so the file must exist.
     platform_conf = "//platform/vs:platform.conf",

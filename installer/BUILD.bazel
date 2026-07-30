@@ -6,20 +6,56 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
-# The rest of installer/ that onie-mk-demo.sh copies wholesale into the sharch
-# (`cp -r $installer_dir/*`): the per-platform installer.conf overrides
-# install.sh sources, the ASIC allow-list it greps, and the default fallback.
+# installer/platforms/ and installer/platforms_asic are BUILD ARTIFACTS in the
+# Make flow -- build_image.sh:78-99 copies device/<vendor>/<platform>/installer.conf
+# into installer/platforms/<platform>, and generate_device_list() derives
+# platforms_asic from each device's platform_asic file. Both are gitignored
+# (.gitignore:52-53), so referencing them directly only builds on a tree where
+# `make` has already run.
 #
-# platforms_asic is not optional: install.sh:113 runs
-# `grep -Fxq "$onie_platform" platforms_asic` with NO existence guard, so a
-# missing file makes grep fail and drops a real ONIE install into the
-# "different ASIC type" confirmation prompt.
+# Generate them here from the real sources instead: the 207 tracked
+# device/*/x86_64-*/installer.conf files, and the tracked device/*/*/platform_asic
+# files.
+genrule(
+    name = "platforms_dir",
+    srcs = ["//device:installer_confs"],
+    outs = ["platforms.tar"],
+    visibility = ["//visibility:public"],
+    # build_image.sh: cp device/$VENDOR/$PLATFORM/installer.conf
+    #                    installer/platforms/$PLATFORM
+    cmd = ("set -euo pipefail; " +
+           "OUT=$$(realpath $(RULEDIR))/$$(basename $@); " +
+           "W=$$(mktemp -d); trap 'rm -rf $$W' EXIT; " +
+           "mkdir -p $$W/platforms; " +
+           "for f in $(SRCS); do " +
+           "  plat=$$(basename $$(dirname $$f)); " +
+           "  cp $$f $$W/platforms/$$plat; " +
+           "done; " +
+           "tar -cf $$OUT --owner=0 --group=0 --numeric-owner --sort=name -C $$W platforms"),
+)
+
+# build_image.sh's generate_device_list(): every device whose platform_asic lists
+# this machine. TARGET_MACHINE=vs, so the list is the platforms whose
+# platform_asic contains "vs" -- plus x86_64-kvm_x86_64-r0, whose own
+# platform_asic is itself generated (device/virtual/.gitignore) and therefore
+# named explicitly here.
+genrule(
+    name = "platforms_asic_file",
+    srcs = ["//device:platform_asics"],
+    outs = ["gen/platforms_asic"],
+    visibility = ["//visibility:public"],
+    cmd = ("set -euo pipefail; " +
+           "{ for f in $(SRCS); do " +
+           "    if grep -Fxq vs $$f; then basename $$(dirname $$f); fi; " +
+           "  done; " +
+           "  echo x86_64-kvm_x86_64-r0; " +
+           "} | LC_ALL=C sort -u > $@"),
+)
+
 filegroup(
     name = "installer_files",
     srcs = [
         "default_platform.conf",
-        "platforms_asic",
-        # install.sh's own unit tests; onie-mk-demo.sh's `cp -r` ships them too.
-    ] + glob(["platforms/**", "tests/**"]),
+    ] + glob(["tests/**"]),
     visibility = ["//visibility:public"],
 )

@@ -5,3 +5,6 @@
 !patch/*
 !MODULE.bazel
 !BUILD.bazel
+# BUILD.bazel loads SCRIPT_SUBST from here, so it is a source file, not a
+# build artifact -- without this the package does not even load after a clone.
+!script_subst.bzl

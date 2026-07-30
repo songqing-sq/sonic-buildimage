@@ -14,3 +14,23 @@ filegroup(
     ),
     visibility = ["//visibility:public"],
 )
+
+# The two inputs build_image.sh derives installer/platforms/ and
+# installer/platforms_asic from (see //installer:platforms_dir). Kept as narrow
+# filegroups rather than reusing :device_tree so a change to an unrelated device
+# file does not invalidate the installer targets.
+filegroup(
+    name = "installer_confs",
+    srcs = glob(
+        ["*/x86_64-*/installer.conf"],
+        allow_empty = False,
+    ),
+)
+
+filegroup(
+    name = "platform_asics",
+    srcs = glob(
+        ["*/*/platform_asic"],
+        allow_empty = False,
+    ),
+)

@@ -80,13 +80,13 @@ initramfs(
     out = "initrd.img-" + KVERSION,
     scripts = {
         # fsroot-vs /etc/initramfs-tools truth -> cpio scripts/ layout.
-        "//files/initramfs-tools:union-mount": "scripts/init-bottom/union-mount",
+        "//files/initramfs-tools:rendered_union_mount": "scripts/init-bottom/union-mount",
         "//files/initramfs-tools:varlog": "scripts/init-bottom/varlog",
         "//files/initramfs-tools:swi2bin": "scripts/init-bottom/swi2bin",
         "//files/initramfs-tools:fsck-rootfs": "scripts/init-premount/fsck-rootfs",
         "//files/initramfs-tools:resize-rootfs": "scripts/init-premount/resize-rootfs",
         "//files/initramfs-tools:ssd-upgrade": "scripts/init-premount/ssd-upgrade",
-        "//files/initramfs-tools:arista-convertfs": "scripts/init-premount/arista-convertfs",
+        "//files/initramfs-tools:rendered_arista_convertfs": "scripts/init-premount/arista-convertfs",
         "//files/initramfs-tools:arista-hook": "scripts/init-premount/arista-hook",
         "//files/initramfs-tools:arista-net": "scripts/init-premount/arista-net",
         "//files/initramfs-tools:arista-wait-blockdev": "scripts/init-premount/arista-wait-blockdev",
