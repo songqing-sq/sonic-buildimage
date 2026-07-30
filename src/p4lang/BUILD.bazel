@@ -52,9 +52,17 @@ _DEBS = {
         # files and one dies with "open: target/debs/trixie/p4lang-pi_...deb.log:
         # No such file or directory". Make is incremental, so the serialized
         # second and third invocations are nearly free.
+        # dpkg/ must exist BEFORE make parses: rules/functions'
+        # SETUP_OVERLAYFS_FOR_DPKG_ADMINDIR calls `mktemp -d -p dpkg` through
+        # $(shell ...), which Make expands at PARSE time -- before the .platform
+        # recipe that would create dpkg/ can run. On a tree that has never been
+        # built by Make those mktemps fail and the overlay mount then dies with
+        # "mount: overlay: can't find in /etc/fstab". (`make configure` also
+        # creates it, but it needs PLATFORM set and truncates .platform when it
+        # is not, so create the directory directly.)
         cmd = ("set -e; " +
                "WS=$$(dirname $$(dirname $$(dirname $$(readlink -f $(location MODULE.bazel))))); " +
-               "mkdir -p $$WS/{dir}; " +
+               "mkdir -p $$WS/{dir} $$WS/dpkg; " +
                "flock $$WS/{dir}/.bazel-make.lock make -C $$WS {dir}/{deb} 1>&2; " +
                "cp $$WS/{dir}/{deb} $@").format(
             dir = _DEBDIR,
