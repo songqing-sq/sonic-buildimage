@@ -16,6 +16,15 @@ LIBNL_COPTS = [
     "-Wno-format-truncation",
     "-Wno-maybe-uninitialized",
     "-Wno-return-type",
+    # Debian hardening: dpkg-buildflags injects these by default on trixie, so
+    # the Make-built library resolves libc calls through the _FORTIFY_SOURCE
+    # `_chk` variants (__fprintf_chk, __snprintf_chk, ...). Without them Bazel
+    # emits the plain symbols and the two .so files differ in their imports.
+    # _FORTIFY_SOURCE requires an optimizing build; `-c opt` supplies -O2.
+    "-D_FORTIFY_SOURCE=2",
+    "-fstack-protector-strong",
+    "-Wformat",
+    "-Werror=format-security",
 ]
 
 # =============================================================================

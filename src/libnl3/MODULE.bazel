@@ -10,17 +10,31 @@ bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_buil
 
 LIBNL_3_VERSION = "3.7.0"
 
-sonic_http_archive = use_repo_rule("@sonic_build_infra//sonic_http_archive:sonic_http_archive.bzl", "sonic_http_archive")
+# Debian revision of the source package (rules/libnl3.mk: LIBNL3_VERSION).
+LIBNL_3_DEBIAN_VERSION = "3.7.0-0.2"
 
-sonic_http_archive(
+# Mirrors the Make recipe (src/libnl3/Makefile): `dget <pkg>.dsc` +
+# dpkg-buildpackage unpacks orig, overlays debian/, and quilt-applies
+# debian/patches/series before the SONiC series. Three of those Debian patches
+# touch real C sources (lib/cache_mngt.c, lib/socket.c, lib/route/tc.c), so
+# skipping them silently diverges from the Debian-built library. The two
+# symbol-versioning patches (debian/no-symvers.diff and SONiC's
+# keep-symbol-versions-in-libraries.patch) only edit Makefile.am, which Bazel
+# does not consume -- symbol versioning here comes from the `version_script`
+# attrs in libnl3.BUILD, matching the net effect of that patch pair.
+debian_source = use_repo_rule("@sonic_build_infra//debian_source:debian_source.bzl", "debian_source")
+
+debian_source(
     name = "libnl3_src",
-    build_file_template = "//:libnl3.BUILD",
+    build_file = "//:libnl3.BUILD",
+    debian_sha256 = "35ae5b6ee3a56abd3ae8603fd47c3e38c9302d02a2d498fb88a3e2f2791ac2f0",
+    debian_urls = ["https://deb.debian.org/debian/pool/main/libn/libnl3/libnl3_{}.debian.tar.xz".format(LIBNL_3_DEBIAN_VERSION)],
+    orig_sha256 = "9fe43ccbeeea72c653bdcf8c93332583135cda46a79507bfd0a483bb57f65939",
+    orig_urls = ["https://deb.debian.org/debian/pool/main/libn/libnl3/libnl3_{}.orig.tar.gz".format(LIBNL_3_VERSION)],
     patches = [
         "//:patch/0003-Adding-support-for-RTA_NH_ID-attribute.patch",
     ],
-    sha256 = "9fe43ccbeeea72c653bdcf8c93332583135cda46a79507bfd0a483bb57f65939",
     strip_prefix = "libnl-{}".format(LIBNL_3_VERSION),
-    urls = ["https://deb.debian.org/debian/pool/main/libn/libnl3/libnl3_{}.orig.tar.gz".format(LIBNL_3_VERSION)],
 )
 
 bazel_dep(name = "rules_flex", version = "0.4")
