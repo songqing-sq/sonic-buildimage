@@ -44,9 +44,18 @@ _DEBS = {
         # no-sandbox, $(location MODULE.bazel) is an execroot symlink into the
         # real source tree, so readlink -f resolves to
         # <repo>/src/p4lang/MODULE.bazel and three dirnames up is <repo>.
+        #
+        # flock serializes the three bridges. Bazel is free to schedule them in
+        # parallel, but they all drive `make` in the same workspace, and
+        # slave.mk reads a sibling deb's .log to compute its dependency list
+        # (slave.mk:919). Two concurrent makes therefore race on those .log
+        # files and one dies with "open: target/debs/trixie/p4lang-pi_...deb.log:
+        # No such file or directory". Make is incremental, so the serialized
+        # second and third invocations are nearly free.
         cmd = ("set -e; " +
                "WS=$$(dirname $$(dirname $$(dirname $$(readlink -f $(location MODULE.bazel))))); " +
-               "make -C $$WS {dir}/{deb} 1>&2; " +
+               "mkdir -p $$WS/{dir}; " +
+               "flock $$WS/{dir}/.bazel-make.lock make -C $$WS {dir}/{deb} 1>&2; " +
                "cp $$WS/{dir}/{deb} $@").format(
             dir = _DEBDIR,
             deb = deb_file,
