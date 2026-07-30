@@ -1,1 +1,20 @@
 src/sonic-sysmgr/gnoi
+
+# Make's output trees. Bazel has no reason to walk them, and some are worse than
+# useless: fsroot.docker.trixie is created by the Make build as root with mode
+# 0710, so `bazel query //...` fails outright with "Failed to list directory
+# contents ... Permission denied" on any tree where `make` has run.
+fsroot-vs
+fsroot.docker.trixie
+fsroot.docker.bookworm
+target
+dpkg
+
+# p4lang's make-bridge (src/p4lang/BUILD.bazel) unpacks and builds its sources
+# in-tree. Those trees are gitignored artifacts, and the CMake _deps/ dirs under
+# them contain vendored BUILD files (protobuf's) whose labels do not resolve in
+# this workspace, so leaving them visible breaks `bazel query //...`.
+src/p4lang/p4lang-bmv2-1.15.0
+src/p4lang/p4lang-p4c-1.2.4.2
+src/p4lang/p4lang-pi-0.1.1
+
