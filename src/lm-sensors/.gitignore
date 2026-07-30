@@ -4,3 +4,4 @@
 !patch/
 !patch/*
 !*.bazel
+!*.BUILD

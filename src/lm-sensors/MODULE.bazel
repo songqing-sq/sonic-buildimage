@@ -8,6 +8,38 @@ bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_buil
 bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
 bazel_dep(name = "platforms", version = "1.1.0")
 
+# =============================================================================
+# lm-sensors source, needed for the sensord binary package.
+#
+# Trixie apt ships lm-sensors/libsensors5/fancontrol but NOT sensord (Debian
+# dropped that binary package). SONiC's patch/series re-adds it, so sensord's C
+# sources (prog/sensord/*.c) and the debian/sensord.{default,init} files that
+# the patch creates have to come from the source package.
+#
+# debian/patches/series is applied first: 15-path-max.patch adds the PATH_MAX
+# definition the tree needs on current glibc, and the rest are what the
+# Debian-built binaries carry. debian_source drives that series with
+# `patch -p1 -F 0` (quilt's --fuzz=0) before applying SONiC's patches.
+#
+# Note the orig tarball's top-level directory is `lm-sensors-3-6-0` (hyphens, an
+# upstream quirk); Make's `dget` + dpkg-source renames it to lm-sensors-3.6.0.
+# =============================================================================
+debian_source = use_repo_rule("@sonic_build_infra//debian_source:debian_source.bzl", "debian_source")
+
+debian_source(
+    name = "lm_sensors_src",
+    build_file = "//:lm-sensors.BUILD",
+    debian_sha256 = "cd9b13590870bc031de1c587d7572feb1086aafc93293d21530283c75af1cbf1",
+    debian_urls = ["https://deb.debian.org/debian/pool/main/l/lm-sensors/lm-sensors_3.6.0-7.1.debian.tar.xz"],
+    orig_sha256 = "0591f9fa0339f0d15e75326d0365871c2d4e2ed8aa1ff759b3a55d3734b7d197",
+    orig_urls = ["https://deb.debian.org/debian/pool/main/l/lm-sensors/lm-sensors_3.6.0.orig.tar.gz"],
+    patches = [
+        "//:patch/0001-patch-the-debian-package-info-to-get-sensord.patch",
+        "//:patch/0002-Patch-to-peform-dh_installinit-to-include-sensord.in.patch",
+    ],
+    strip_prefix = "lm-sensors-3-6-0",
+)
+
 apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
 apt.sources_list(
     architectures = ["amd64", "arm64"],
