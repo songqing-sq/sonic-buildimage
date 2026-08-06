@@ -32,6 +32,9 @@ sonic_onie_image(
     platform = "x86_64-vs-r0",
     platform_tar = "//platform/vs/rootfs:platform_tar",
     rootfs_layers = [
+        # MUST stay first: lays down /var/run -> /run before any deb layer can
+        # materialise /var/run as a real directory.
+        "//platform/common/rootfs:varrun_layer",
         "//platform/common/rootfs:base_layer",
         "//platform/common/rootfs:docker_engine_layer",
         "//platform/common/rootfs:dpkg_info_layer",
@@ -57,6 +60,7 @@ sonic_onie_image(
         "//platform/common/rootfs:dsh_state_layer",
         "//platform/common/rootfs:dirs_layer",
         "//platform/common/rootfs:dev_layer",
+        "//platform/common/rootfs:home_layer",
         "//platform/common/rootfs:kernel_modules_layer",
         "//platform/common/rootfs:generated_services_layer",
     ],

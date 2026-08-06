@@ -24,7 +24,11 @@ genrule(
     name = "scripts_shebang",
     srcs = _SCRIPTS,
     outs = ["scripts.tar"],
+    # chmod 0755: the tar's `./` entry becomes usr/local/bin when :install
+    # extracts it there, and mktemp -d leaves the work dir 0700 -- which would
+    # make /usr/local/bin unreadable to non-root in the final image.
     cmd = ("set -euo pipefail; W=$$(mktemp -d); trap 'rm -rf $$W' EXIT; " +
+           "chmod 0755 $$W; " +
            "for f in $(SRCS); do " +
            "  sed -E '1s@^#!\\s*/usr/bin/(env +)?python[0-9.]*\\s*$$@#!/usr/bin/python3@' " +
            "    \"$$f\" > $$W/$$(basename $$f); " +
@@ -60,8 +64,14 @@ genrule(
     name = "install",
     srcs = [":package_files", ":scripts_shebang"],
     outs = ["install.tar.gz"],
+    # chmod 0755: mktemp -d makes the work root 0700 and `mkdir -p` inherits it,
+    # so the tar would carry ./ and ./usr/local/bin at 0700. This layer is
+    # extracted after sonic_debs_layer, so that mode wins in the assembled
+    # rootfs and leaves /usr/local/bin unreadable to non-root -- every SONiC CLI
+    # entry point becomes "Permission denied" for the admin user.
     cmd = ("set -euo pipefail; W=$$(mktemp -d); trap 'rm -rf $$W' EXIT; " +
            "mkdir -p $$W/usr/local/bin; " +
+           "chmod 0755 $$W $$W/usr $$W/usr/local $$W/usr/local/bin; " +
            "tar -xzf $(location :package_files) -C $$W; " +
            "tar -xf $(location :scripts_shebang) -C $$W/usr/local/bin; " +
            "tar -czf $@ --owner=0 --group=0 --numeric-owner --sort=name -C $$W ."),

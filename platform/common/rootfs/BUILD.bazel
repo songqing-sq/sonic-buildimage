@@ -157,6 +157,39 @@ alias(
     }.items()
 ]
 
+# -----------------------------------------------------------------------------
+# /var/run -> /run and /var/lock -> /run/lock. base-files' postinst runs
+#   migrate_directory /var/run  /run
+#   migrate_directory /var/lock /run/lock
+# replacing the two directories its own data.tar ships with symlinks. Bazel
+# never runs that postinst, so without this layer /var/run stays a real
+# directory and two things break: libswsscommon's deb materialises
+# /var/run/redis/sonic-db/database_config.json as a real file that /run never
+# sees, and /var/run/docker.sock does not resolve to the socket dockerd
+# actually creates at /run/docker.sock -- so every `docker` call fails with
+# "Cannot connect to the Docker daemon" and every SONiC container service dies.
+#
+# MUST be the FIRST layer in rootfs_layers: tar --keep-directory-symlink only
+# follows a symlink that already exists, so this is what redirects the later
+# deb layers' /var/run content into /run.
+#
+# The links are relative where Debian's are absolute: the rootfs is assembled in
+# a build tmpdir, and an absolute /run target escapes it to the build host's own
+# /run (extraction then dies with "Cannot mkdir: Permission denied"). ../run
+# resolves to the same path at runtime.
+# -----------------------------------------------------------------------------
+tar(
+    name = "varrun_layer",
+    mtree = [
+        "./var uid=0 gid=0 mode=0755 type=dir",
+        "./run uid=0 gid=0 mode=0755 type=dir",
+        "./run/lock uid=0 gid=0 mode=01777 type=dir",
+        "./var/run uid=0 gid=0 type=link link=../run",
+        "./var/lock uid=0 gid=0 type=link link=../run/lock",
+    ],
+    visibility = ["//platform:__subpackages__"],
+)
+
 # The Debian host package closure. HOST_PACKAGES is already the FULL closure
 # (taken verbatim from fsroot-vs dpkg status), so `:data` tars (own package
 # contents, no transitive re-resolution) reproduce the exact Make file set and
@@ -1864,6 +1897,34 @@ tar(
         "./dev/stdout uid=0 gid=0 type=link link=/proc/self/fd/1",
         "./dev/stderr uid=0 gid=0 type=link link=/proc/self/fd/2",
     ],
+    visibility = ["//platform:__subpackages__"],
+)
+
+# -----------------------------------------------------------------------------
+# The admin user's home directory. build_debian.sh:294 runs
+#   chroot useradd -G sudo,docker admin -c ... -m -s /bin/bash
+# whose `-m` creates /home/admin (admin:admin 0700) and copies /etc/skel into
+# it. Nothing in the Bazel build runs useradd — /etc/passwd is shipped as a
+# snapshot — so without this layer /home/admin does not exist and every admin
+# login prints "change directory failed: No such file or directory" and falls
+# back to /, losing the shell dotfiles. The skel sources are taken from the bash
+# deb, which owns /etc/skel, rather than snapshotted.
+# -----------------------------------------------------------------------------
+genrule(
+    name = "home_layer",
+    srcs = ["@trixie//bash:data"],
+    outs = ["home_layer.tar"],
+    cmd = ("set -euo pipefail; " +
+           "OUTTAR=$$(realpath $(RULEDIR))/$$(basename $@); " +
+           "W=$$(realpath $(RULEDIR))/_home; rm -rf $$W; " +
+           "mkdir -p $$W/home/admin; " +
+           "chmod 0755 $$W $$W/home; chmod 0700 $$W/home/admin; " +
+           "tar -xzf $(location @trixie//bash:data) -C $$W/home/admin " +
+           "  --strip-components=3 ./etc/skel/.bash_logout ./etc/skel/.bashrc " +
+           "  ./etc/skel/.profile; " +
+           "cd $$W; " +
+           "tar -cf $$OUTTAR --owner=0 --group=0 --numeric-owner --sort=name .; " +
+           "rm -rf $$W"),
     visibility = ["//platform:__subpackages__"],
 )
 

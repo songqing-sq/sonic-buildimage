@@ -224,6 +224,14 @@ HOST_PACKAGES = [
     "libpcap0.8t64",
     "libpci3",
     "libpcre2-8-0",
+    # The Bazel-built libswsscommon / _swsscommon.so carry DT_NEEDED entries for
+    # all four pcre2 variants (Make's build links none of them directly). With
+    # only the -8 variant present, `import swsscommon` dies with
+    # "libpcre2-16.so.0: cannot open shared object file", taking the CLI,
+    # hostcfgd and the Redis alias helper down with it.
+    "libpcre2-16-0",
+    "libpcre2-32-0",
+    "libpcre2-posix3",
     "libperl5.40",
     "libpgm-5.3-0t64",
     "libpng16-16t64",
