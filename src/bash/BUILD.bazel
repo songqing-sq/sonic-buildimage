@@ -474,22 +474,43 @@ genrule(
            "UNPACK=$(RULEDIR)/_gettext; mkdir -p $$UNPACK; " +
            "for t in $(locations @bash_deps//gettext:data) " +
            "         $(locations @bash_deps//libxml2:data) " +
-           "         $(locations @bash_deps//libunistring5:data); do " +
+           "         $(locations @bash_deps//libunistring5:data) " +
+           "         $(locations @bash_deps//libc6:data) " +
+           "         $(locations @bash_deps//libacl1:data) " +
+           "         $(locations @bash_deps//libattr1:data) " +
+           "         $(locations @bash_deps//libtinfo6:data); do " +
            "  tar -xzf $$t -C $$UNPACK; done; " +
            "MSGFMT=$$(realpath $$UNPACK/usr/bin/msgfmt); " +
-           # msgfmt links against gettext's own libgettextsrc/libgettextlib,
-           # which live in the same unpacked tree rather than the sysroot.
-           "export LD_LIBRARY_PATH=$$(realpath $$UNPACK/usr/lib/x86_64-linux-gnu); " +
+           # msgfmt is a trixie binary: it needs trixie's glibc symbol versions
+           # AND gettext's own libgettextsrc/libgettextlib, none of which are in
+           # the sysroot. Setting only LD_LIBRARY_PATH would still resolve
+           # libc.so.6 against the BUILD HOST's /lib64, breaking on any host
+           # whose glibc is older than trixie's. So drive it through the
+           # UNPACKED ld.so with an explicit --library-path — the same way
+           # sonic_rules/squashfs/defs.bzl runs localedef — so nothing in this
+           # action depends on the host's libc.
+           "LIBDIR=$$(realpath $$UNPACK/usr/lib/x86_64-linux-gnu); " +
+           "LD=$$LIBDIR/ld-linux-x86-64.so.2; " +
+           # The po files are ISO-8859-1, so msgfmt calls iconv(). glibc loads
+           # its charset converters as separate gconv modules from a path baked
+           # in at compile time, which does not exist here -- point it at the
+           # unpacked copy or every non-UTF-8 po fails with "iconv() does not
+           # support this conversion".
+           "export GCONV_PATH=$$LIBDIR/gconv; " +
            "STAGE=$(RULEDIR)/_locale; " +
            "for po in $(locations @bash_src//:po_files); do " +
            "  lang=$$(basename $$po .po); " +
            "  d=$$STAGE/$$lang/LC_MESSAGES; mkdir -p $$d; " +
-           "  $$MSGFMT -o $$d/bash.mo $$po; " +
+           "  \"$$LD\" --library-path \"$$LIBDIR\" \"$$MSGFMT\" -o $$d/bash.mo $$po; " +
            "done; " +
            "tar -cf $@ --owner=0 --group=0 --numeric-owner " +
            "--transform='s,^\\./,./usr/share/locale/,' -C $$STAGE ."),
     tools = [
         "@bash_deps//gettext:data",
+        "@bash_deps//libacl1:data",
+        "@bash_deps//libattr1:data",
+        "@bash_deps//libc6:data",
+        "@bash_deps//libtinfo6:data",
         "@bash_deps//libunistring5:data",
         "@bash_deps//libxml2:data",
     ],

@@ -78,6 +78,28 @@ apt.install(
         "libxml2:arm64",
         "libunistring5:amd64",
         "libunistring5:arm64",
+        # msgfmt is a trixie binary and needs trixie's glibc symbol versions.
+        # Without libc6 here the sandbox falls back to the BUILD HOST's
+        # /lib64/libc.so.6, so the build breaks on any host whose glibc is
+        # older than trixie's ("version `GLIBC_2.38' not found"). gen_locales
+        # runs msgfmt through THIS ld.so with an explicit --library-path, so no
+        # part of the action depends on the host's libc.
+        #
+        # The rest of these complete msgfmt's DT_NEEDED closure, which must be
+        # hermetic too: any library left to the host would itself be linked
+        # against the host glibc and reintroduce the version mismatch.
+        #   msgfmt          -> libgettextsrc, libgettextlib, libunistring, libc
+        #   libgettextsrc   -> libxml2, libtextstyle
+        #   libtextstyle    -> libtinfo  (ncurses)
+        #   libgettextlib   -> libacl, libattr
+        "libc6:amd64",
+        "libc6:arm64",
+        "libacl1:amd64",
+        "libacl1:arm64",
+        "libattr1:amd64",
+        "libattr1:arm64",
+        "libtinfo6:amd64",
+        "libtinfo6:arm64",
     ],
     suites = [
         "trixie",

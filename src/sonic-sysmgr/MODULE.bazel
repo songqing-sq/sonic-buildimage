@@ -35,6 +35,19 @@ apt.install(
         "protobuf-compiler:arm64",
         "libprotoc32t64:amd64",
         "libprotoc32t64:arm64",
+        # dbusxx-xml2cpp is a trixie binary run as a genrule tool. It is driven
+        # through THIS ld.so with an explicit --library-path so the action does
+        # not resolve libc against the build host's /lib64, which breaks on any
+        # host whose glibc is older than trixie's. Its full DT_NEEDED set is
+        # libexpat / libstdc++ / libgcc_s / libc, so all four ship here.
+        "libc6:amd64",
+        "libc6:arm64",
+        "libexpat1:amd64",
+        "libexpat1:arm64",
+        "libstdc++6:amd64",
+        "libstdc++6:arm64",
+        "libgcc-s1:amd64",
+        "libgcc-s1:arm64",
     ],
     suites = ["trixie", "trixie-updates", "trixie-security"],
 )

@@ -34,10 +34,29 @@ genrule(
 set -e
 unpack=$(RULEDIR)/_dbusxx_unpack
 mkdir -p "$$unpack"
-tar -xzf $(location @sysmgr_deps//libdbus-c++-bin:data) -C "$$unpack"
-"$$unpack/usr/bin/dbusxx-xml2cpp" $(location rebootbackend/reboot.xml) --proxy=$@
+for t in $(location @sysmgr_deps//libdbus-c++-bin:data) \
+         $(location @sysmgr_deps//libc6:data) \
+         $(location @sysmgr_deps//libexpat1:data) \
+         $(location @sysmgr_deps//libstdc++6:data) \
+         $(location @sysmgr_deps//libgcc-s1:data); do
+  tar -xzf "$$t" -C "$$unpack"
+done
+# dbusxx-xml2cpp is a trixie binary. Invoking it directly would resolve
+# libc.so.6 against the BUILD HOST's /lib64 and fail wherever the host glibc is
+# older than trixie's, so drive it through the UNPACKED ld.so with an explicit
+# --library-path -- the same pattern sonic_rules/squashfs/defs.bzl uses for
+# localedef. Nothing in this action then depends on the host's libc.
+libdir=$$(realpath "$$unpack/usr/lib/x86_64-linux-gnu")
+"$$libdir/ld-linux-x86-64.so.2" --library-path "$$libdir" \
+  "$$unpack/usr/bin/dbusxx-xml2cpp" $(location rebootbackend/reboot.xml) --proxy=$@
 """,
-    tools = ["@sysmgr_deps//libdbus-c++-bin:data"],
+    tools = [
+        "@sysmgr_deps//libc6:data",
+        "@sysmgr_deps//libdbus-c++-bin:data",
+        "@sysmgr_deps//libexpat1:data",
+        "@sysmgr_deps//libgcc-s1:data",
+        "@sysmgr_deps//libstdc++6:data",
+    ],
 )
 
 # === rebootbackend daemon ===
