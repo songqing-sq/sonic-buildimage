@@ -170,12 +170,33 @@ flatten(
 # delay.py is referenced by docker-pmon.supervisord.conf.j2 (program:delay)
 # at /usr/bin/delay.py — copied here to match the legacy build, which relied on
 # the file landing in /usr/bin via the build_templates COPY pass.
+# Dockerfile.j2 lines 116-118:
+#   RUN sonic-cfggen -a '{"CONFIGURED_PLATFORM":"..."}' \
+#         -t /usr/share/sonic/templates/docker_init.j2 > /usr/bin/docker_init.sh
+#   RUN rm -f /usr/share/sonic/templates/docker_init.j2
+#   RUN chmod 755 /usr/bin/docker_init.sh
+#
+# A BUILD-time render, not a runtime one: the image's ENTRYPOINT *is*
+# /usr/bin/docker_init.sh, so if the script is absent runc refuses to start the
+# container at all ("stat /usr/bin/docker_init.sh: no such file or directory")
+# and pmon.service fails on every boot. CONFIGURED_PLATFORM only gates the
+# aspeed / mellanox / nvidia-bluefield blocks, all empty for vs.
+genrule(
+    name = "docker_init_sh",
+    srcs = ["docker_init.j2"],
+    outs = ["docker_init.sh"],
+    cmd = ("$(execpath @sonic_build_infra//jinja2:render) " +
+           "$(execpath docker_init.j2) $@ " +
+           "CONFIGURED_PLATFORM=vs"),
+    tools = ["@sonic_build_infra//jinja2:render"],
+)
+
 tar(
     name = "files",
     srcs = [
         "lm-sensors.sh",
         "docker-pmon.supervisord.conf.j2",
-        "docker_init.j2",
+        ":docker_init_sh",
         "ssd_tools/SmartCmd",
         "ssd_tools/iSmart",
         "critical_processes",
@@ -185,7 +206,9 @@ tar(
     mtree = [
         "./usr/bin/lm-sensors.sh uid=0 gid=0 mode=0755 type=file content=$(location :lm-sensors.sh)",
         "./usr/share/sonic/templates/docker-pmon.supervisord.conf.j2 uid=0 gid=0 mode=0644 type=file content=$(location :docker-pmon.supervisord.conf.j2)",
-        "./usr/share/sonic/templates/docker_init.j2 uid=0 gid=0 mode=0644 type=file content=$(location :docker_init.j2)",
+        # The rendered script, NOT the template: Dockerfile.j2 rm's the .j2
+        # right after generating the script, so it must not ship.
+        "./usr/bin/docker_init.sh uid=0 gid=0 mode=0755 type=file content=$(location :docker_init_sh)",
         "./usr/bin/SmartCmd uid=0 gid=0 mode=0755 type=file content=$(location :ssd_tools/SmartCmd)",
         "./usr/bin/iSmart uid=0 gid=0 mode=0755 type=file content=$(location :ssd_tools/iSmart)",
         "./etc/supervisor/critical_processes uid=0 gid=0 mode=0644 type=file content=$(location :critical_processes)",

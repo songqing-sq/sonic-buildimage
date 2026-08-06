@@ -390,6 +390,11 @@ HOST_PACKAGES = [
     "python3-scapy",
     "python3-scp",
     "python3-setuptools",
+    # sonic-host-server does `import systemd.daemon` at startup. Make gets this
+    # via `pip3 install systemd-python`, but that is an sdist-only C extension
+    # (like smbus), so the apt build of the same module is used instead --
+    # otherwise sonic-hostservice dies with "No module named 'systemd'".
+    "python3-systemd",
     "python3-typeguard",
     "python3-typing-extensions",
     "python3-urllib3",

@@ -1042,6 +1042,12 @@ apt.install(
         "python3-regex [amd64]",
         "python3-requests [amd64]",
         "python3-scp [amd64]",
+        # sonic-host-server does `import systemd.daemon` at startup.
+        # sonic_debian_extension.j2 gets this by `pip3 install systemd-python`,
+        # but that is an sdist-only C extension (like smbus), so the apt build
+        # of the same module is used instead. Without it sonic-hostservice dies
+        # with "ModuleNotFoundError: No module named 'systemd'".
+        "python3-systemd [amd64]",
         "python3-typeguard [amd64]",
         "python3-typing-extensions [amd64]",
         "python3-urllib3 [amd64]",
