@@ -1847,6 +1847,27 @@ tar(
 )
 
 # -----------------------------------------------------------------------------
+# The static /dev entries debootstrap creates in the rootfs before devtmpfs is
+# mounted over it. Only the dirs and symlinks live here: the char device nodes
+# (console, null, ...) need mknod, which the unprivileged build sandbox denies,
+# so they are synthesized by the mksquashfs pseudo definitions in
+# sonic_onie_image instead. Contents and modes mirror fsroot-vs/dev.
+# -----------------------------------------------------------------------------
+tar(
+    name = "dev_layer",
+    mtree = [
+        "./dev uid=0 gid=0 mode=0755 type=dir",
+        "./dev/pts uid=0 gid=0 mode=0755 type=dir",
+        "./dev/shm uid=0 gid=0 mode=0755 type=dir",
+        "./dev/fd uid=0 gid=0 type=link link=/proc/self/fd",
+        "./dev/stdin uid=0 gid=0 type=link link=/proc/self/fd/0",
+        "./dev/stdout uid=0 gid=0 type=link link=/proc/self/fd/1",
+        "./dev/stderr uid=0 gid=0 type=link link=/proc/self/fd/2",
+    ],
+    visibility = ["//platform:__subpackages__"],
+)
+
+# -----------------------------------------------------------------------------
 # SONiC host Python wheels: the wheels build_debian.sh / sonic_debian_extension
 # pip-install into the host rootfs (sonic-utilities CLI under /usr/local/bin +
 # their packages under /usr/local/lib/python3/dist-packages). Each wheel repo
