@@ -49,6 +49,10 @@ apt.install(
         "libboost-system1.83-dev:arm64",
         "liblua5.1-0-dev:amd64",
         "liblua5.1-0-dev:arm64",
+        # rsyslog_plugin and its test include <nlohmann/json.hpp>. swss-common
+        # declares this in its own isolated @swss_deps pool, invisible here.
+        "nlohmann-json3-dev:amd64",
+        "nlohmann-json3-dev:arm64",
         # Test-only: eventdb_ut talks to a real EVENT_DB, so the tests spin up
         # their own redis instance. redis-server's /usr/bin/redis-server is just
         # a symlink to redis-check-rdb, whose real multicall binary ships in
@@ -57,6 +61,11 @@ apt.install(
         "redis-server:amd64",
         "redis-tools:amd64",
         "liblzf1:amd64",
+        # ... and the rest of that binary's DT_NEEDED closure. libssl/libcrypto
+        # already arrive via libhiredis1.1.0 below.
+        "libatomic1:amd64",
+        "libjemalloc2:amd64",
+        "libsystemd0:amd64",
         # Test-only: a cc_test runs in the sandbox, where nothing has installed
         # any deb, so the whole runtime .so closure must reach the runfiles. The
         # production binaries never need this -- they land in an image where

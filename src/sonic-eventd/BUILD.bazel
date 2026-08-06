@@ -22,6 +22,49 @@ COPTS = [
 # pulled via the framework's system_libs target (uses -pthread, not -lpthread).
 PTHREAD_DEP = ["@sonic_build_infra//system_libs:pthread"]
 
+# ------ test-only runtime staging ------
+# A sandboxed test has no installed debs, so the whole .so closure the binary
+# loads at runtime has to reach the runfiles as data. tests/run_test.sh unpacks
+# these tars into TEST_TMPDIR and points LD_LIBRARY_PATH at the result. The
+# production binaries never need any of this: they land in an image where
+# libswsscommon's deb Depends put the same libraries in the multiarch dir.
+#
+# The _files targets are separate: they carry the soname symlinks
+# (libswsscommon.so.0 -> .so.0.0.0) that the _solib_* dirs do not have.
+TEST_SO_FILES = [
+    "@sonic-swss-common//:swsscommon_files",
+    "@libnl3//:libnl_3_files",
+    "@libnl3//:libnl_nf_3_files",
+    "@libnl3//:libnl_route_3_files",
+    "@libyang3//:yang_files",
+]
+
+TEST_APT_DATA = [
+    "@eventd_deps//libboost-serialization1.83.0:data",
+    "@eventd_deps//libhiredis1.1.0:data",
+    "@eventd_deps//libzmq5:data",
+    "@eventd_deps//libuuid1:data",
+    "@eventd_deps//libpcre2-8-0:data",
+    "@eventd_deps//libpcre2-16-0:data",
+    "@eventd_deps//libpcre2-32-0:data",
+    "@eventd_deps//libpcre2-posix3:data",
+    "@eventd_deps//liblua5.1-0:data",
+    "@eventd_deps//libxxhash0:data",
+    "@eventd_deps//zlib1g:data",
+]
+
+# redis-server, for the DB-backed cases. /usr/bin/redis-server is a symlink to
+# redis-check-rdb, whose real multicall binary lives in redis-tools; the rest is
+# that binary's DT_NEEDED closure minus what TEST_APT_DATA already covers.
+REDIS_DATA = [
+    "@eventd_deps//redis-server:data",
+    "@eventd_deps//redis-tools:data",
+    "@eventd_deps//liblzf1:data",
+    "@eventd_deps//libatomic1:data",
+    "@eventd_deps//libjemalloc2:data",
+    "@eventd_deps//libsystemd0:data",
+]
+
 # ------ eventd binary (Make: OBJS = src/eventd.o + src/main.o) ------
 cc_binary(
     name = "eventd",
@@ -123,13 +166,14 @@ cc_binary(
 # (src/subdir.mk line 3), linked against -lgtest -lgtest_main -lgmock -lgmock_main.
 #
 # tests/main.cpp probes for a reachable redis in its global SetUp and records the
-# result in g_is_redis_available; the three DB-backed cases in eventd_ut.cpp check
-# that flag and return early ("redis not available; Hence DB TEST skipped"), so
-# this target passes inside the sandbox without a redis instance.
+# result in g_is_redis_available; the DB-backed cases in eventd_ut.cpp check that
+# flag and return early when it is false. The sh_test below starts a redis, so
+# they take the real path.
 #
 # main.cpp reads its SonicDBConfig fixtures via the relative paths
 # ./tests/redis_multi_db_ut_config/{database_config,database_global}.json, which
-# resolve against the runfiles root, so the whole fixture dir is data.
+# resolve against the package dir the wrapper cd's into, so the whole fixture
+# dir is data.
 cc_binary(
     name = "eventd_ut_bin",
     testonly = True,
@@ -156,36 +200,129 @@ cc_binary(
     ] + PTHREAD_DEP,
 )
 
-# The wrapper resolves the soname-vs-filename mismatch described in
-# tests/run_test.sh before exec'ing the gtest binary. The _files targets are what
-# contribute the soname symlinks it scans for; the json fixtures are read by
-# main.cpp through ./tests/redis_multi_db_ut_config/ relative paths.
+# The wrapper resolves the sandbox-only problems described in tests/run_test.sh
+# before exec'ing the gtest binary, and --redis makes it start a private
+# redis-server on rewritten endpoints so the DB-backed cases in eventd_ut.cpp
+# actually run (without one, main.cpp's probe leaves g_is_redis_available false
+# and those cases return early).
 sh_test(
     name = "eventd_ut",
+    size = "medium",
     srcs = ["tests/run_test.sh"],
-    args = ["$(rootpath :eventd_ut_bin)"],
+    args = [
+        "--redis",
+        "$(rootpath :eventd_ut_bin)",
+    ],
     data = glob(["tests/redis_multi_db_ut_config/*.json"]) + [
         ":eventd_ut_bin",
-        "@sonic-swss-common//:swsscommon_files",
-        "@libnl3//:libnl_3_files",
-        "@libnl3//:libnl_nf_3_files",
-        "@libnl3//:libnl_route_3_files",
-        "@libyang3//:yang_files",
-        # apt-provided runtime closure. In an image these arrive via
-        # libswsscommon's deb Depends; in the sandbox the wrapper unpacks these
-        # data tars into TEST_TMPDIR and points LD_LIBRARY_PATH at them.
-        "@eventd_deps//libboost-serialization1.83.0:data",
-        "@eventd_deps//libhiredis1.1.0:data",
-        "@eventd_deps//libzmq5:data",
-        "@eventd_deps//libuuid1:data",
-        "@eventd_deps//libpcre2-8-0:data",
-        "@eventd_deps//libpcre2-16-0:data",
-        "@eventd_deps//libpcre2-32-0:data",
-        "@eventd_deps//libpcre2-posix3:data",
-        "@eventd_deps//liblua5.1-0:data",
-        "@eventd_deps//libxxhash0:data",
-        "@eventd_deps//zlib1g:data",
+    ] + TEST_SO_FILES + TEST_APT_DATA + REDIS_DATA,
+)
+
+# ------ eventdb unit tests (Make: `eventdb-tests`) ------
+# EVENTDB_TEST_OBJS = tests/eventdb_ut.o (tests/subdir.mk) + src/eventd.o +
+# eventconsume.o + eventutils.o + loghandler.o (src/subdir.mk), linked against
+# the same gtest/gmock set. src/eventdb.o is deliberately absent: it carries the
+# production main(), and the test brings its own.
+#
+# Unlike eventd_ut this one has no skip path: every fixture opens
+# DBConnector("EVENT_DB", ...) and the global SetUp does GTEST_SKIP() if that
+# throws, so a redis has to be running for the cases to execute at all.
+# Fixtures are addressed as ./tests/eventdb_database_config{,_global}.json and
+# tests/eventd.json.
+cc_binary(
+    name = "eventdb_ut_bin",
+    testonly = True,
+    srcs = [
+        "src/eventconsume.cpp",
+        "src/eventconsume.h",
+        "src/eventd.cpp",
+        "src/eventd.h",
+        "src/eventutils.cpp",
+        "src/eventutils.h",
+        "src/loghandler.cpp",
+        "src/loghandler.h",
+        "tests/eventdb_ut.cpp",
     ],
+    copts = COPTS,
+    includes = ["src"],
+    dynamic_deps = [
+        "@sonic-swss-common//:swsscommon_shared",
+        "@libnl3//:libnl_3_shared",
+        "@libnl3//:libnl_nf_3_shared",
+        "@libnl3//:libnl_route_3_shared",
+        "@libyang3//:yang_shared",
+    ],
+    deps = [
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@sonic-swss-common//:swsscommon",
+        "@eventd_deps//liblua5.1-0-dev:lua5.1",
+    ] + PTHREAD_DEP,
+)
+
+sh_test(
+    name = "eventdb_ut",
+    size = "medium",
+    srcs = ["tests/run_test.sh"],
+    args = [
+        "--redis",
+        "$(rootpath :eventdb_ut_bin)",
+    ],
+    data = [
+        ":eventdb_ut_bin",
+        "tests/default.json",
+        "tests/eventd.json",
+        "tests/eventdb_database_config.json",
+        "tests/eventdb_database_config_global.json",
+    ] + TEST_SO_FILES + TEST_APT_DATA + REDIS_DATA,
+)
+
+# ------ rsyslog_plugin unit tests (Make: `rsyslog-plugin-tests`) ------
+# RSYSLOG-PLUGIN-TEST_OBJS = rsyslog_plugin_tests/rsyslog_plugin_ut.o
+# (rsyslog_plugin_tests/subdir.mk) plus the plugin objects. Pure parsing tests:
+# no DB, so no --redis. Fixtures are read as
+# ./rsyslog_plugin_tests/test_regex_*.rc.json and ./..._syslogs*.txt.
+cc_binary(
+    name = "rsyslog_plugin_ut_bin",
+    testonly = True,
+    srcs = [
+        "rsyslog_plugin/rsyslog_plugin.cpp",
+        "rsyslog_plugin/rsyslog_plugin.h",
+        "rsyslog_plugin/syslog_parser.cpp",
+        "rsyslog_plugin/syslog_parser.h",
+        "rsyslog_plugin/timestamp_formatter.cpp",
+        "rsyslog_plugin/timestamp_formatter.h",
+        "rsyslog_plugin_tests/rsyslog_plugin_ut.cpp",
+    ],
+    copts = COPTS,
+    includes = ["rsyslog_plugin"],
+    dynamic_deps = [
+        "@sonic-swss-common//:swsscommon_shared",
+        "@libnl3//:libnl_3_shared",
+        "@libnl3//:libnl_nf_3_shared",
+        "@libnl3//:libnl_route_3_shared",
+        "@libyang3//:yang_shared",
+    ],
+    deps = [
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@sonic-swss-common//:swsscommon",
+        "@eventd_deps//liblua5.1-0-dev:lua5.1",
+        "@eventd_deps//nlohmann-json3-dev:nlohmann-json3",
+    ] + PTHREAD_DEP,
+)
+
+sh_test(
+    name = "rsyslog_plugin_ut",
+    size = "small",
+    srcs = ["tests/run_test.sh"],
+    args = ["$(rootpath :rsyslog_plugin_ut_bin)"],
+    data = glob([
+        "rsyslog_plugin_tests/*.json",
+        "rsyslog_plugin_tests/*.txt",
+    ]) + [
+        ":rsyslog_plugin_ut_bin",
+    ] + TEST_SO_FILES + TEST_APT_DATA,
 )
 
 # ------ sonic-eventd .deb (main) ------
