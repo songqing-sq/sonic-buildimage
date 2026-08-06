@@ -1,0 +1,30 @@
+# Bazel-only manifest: feeds the aspect_rules_py uv extension (MODULE.bazel)
+# to provision third-party test/runtime deps for the py_test targets in
+# BUILD.bazel. It does NOT drive the wheel build — wheel metadata lives in
+# py_wheel(requires=...) which mirrors setup.py, and the Make side keeps
+# using setup.py directly.
+#
+# Make-side equivalents of these deps:
+#   natsort, pyyaml      — setup.py install_requires, `pip3 install .` in
+#                          slave.mk's SONIC_PYTHON_WHEELS recipe
+#   redis                — transitive dep of redis-dump-load (redisdl imports
+#                          it at module import time); preinstalled in the
+#                          slave image
+#   pytest, mock         — sonic-slave Dockerfile.j2 preinstalled test deps
+#                          (setup.py tests_require)
+[project]
+name = "sonic-py-common"
+version = "1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "natsort",
+    "pyyaml",
+    "redis",
+    "pytest",
+    "mock",
+    # PEP517 frontend/backend for the extension's sdist_build repos; must be
+    # [project] dependencies so the hub emits their aliases (same pattern and
+    # rationale as src/sonic-yang-models/pyproject.toml).
+    "build",
+    "setuptools",
+]
