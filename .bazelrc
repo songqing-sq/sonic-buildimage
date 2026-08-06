@@ -9,15 +9,6 @@ common -c opt
 
 common --platforms=@@sonic-build-infra+//platform:x86_64_trixie
 
-# Build-time tools (cfg=exec: clippy, code generators, make/tar/cpio, ...) must
-# use the SAME pinned GCC + trixie sysroot as target code. Otherwise the exec
-# platform stays Bazel's auto-detected host, which carries no :trixie
-# constraint, //toolchains/gcc:linux_x86_64 cannot match, and Bazel silently
-# falls back to /usr/bin/gcc. That mixes trixie sysroot HEADERS with the HOST
-# glibc and breaks on any host older than trixie -- e.g. `undefined reference to
-# __isoc23_strtoll`, a symbol that only exists from glibc 2.38.
-common --extra_execution_platforms=@@sonic-build-infra+//platform:x86_64_trixie
-
 common:aarch64 --platforms=@@sonic-build-infra+//platform:aarch64_trixie
 
 build --workspace_status_command=scripts/workspace_status.sh
