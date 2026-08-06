@@ -10,11 +10,13 @@
 # 1. soname vs filename. sonic_shared_library_versioned names the real artifact
 #    after the full version (libswsscommon.so.0.0.0) while its SONAME -- hence
 #    the DT_NEEDED entry consumers record -- is the major soname
-#    (libswsscommon.so.0). cc_shared_library only stages the fully versioned
-#    file into the _solib_* dir the link-time RPATH points at; the soname symlink
-#    comes from the library's separate `_files` target and lands in the runfiles
-#    repo directory. Scanning for those symlinks and adding their directories to
-#    LD_LIBRARY_PATH avoids hardcoding canonical repo names into linkopts.
+#    (libswsscommon.so.0). cc_shared_library stages only the fully versioned file
+#    into the _solib_* dir the link-time RPATH points at; the soname symlink is a
+#    separate output, contributed by the library's `_files` target, and lands in
+#    the runfiles repo directory. Scanning for those symlinks and adding their
+#    directories to LD_LIBRARY_PATH avoids hardcoding canonical repo names into
+#    linkopts. (Nothing has to be recreated here: `_files` carries the symlink,
+#    just as a Debian library package ships its own as a real archive member.)
 #
 # 2. apt-provided transitive libs. The sandbox has no installed debs at all, so
 #    the apt `:data` tars are shipped as test data and unpacked here into a
@@ -81,17 +83,6 @@ if [ -d "$runfiles" ]; then
         tar -xf "$tarball" -C "$sysroot" 2>/dev/null || true
     done
 
-    # A deb only ships the fully versioned file (liblua5.1.so.0.0.0); the soname
-    # symlink (liblua5.1.so.0) is created on the target by ldconfig from the
-    # package's postinst and is therefore absent here. Recreate it by reading
-    # each library's SONAME -- this is what ldconfig would have done.
-    for so in $(find "$sysroot" -name '*.so.*' -type f 2>/dev/null); do
-        soname=$(readelf -d "$so" 2>/dev/null |
-            sed -n 's/.*SONAME.*\[\(.*\)\].*/\1/p' | head -1)
-        [ -n "$soname" ] || continue
-        link="$(dirname "$so")/$soname"
-        [ -e "$link" ] || ln -s "$(basename "$so")" "$link" 2>/dev/null || true
-    done
     # Add every directory that ended up holding shared objects.
     for dir in $(find "$sysroot" -name '*.so.*' 2>/dev/null |
         while IFS= read -r so; do dirname "$so"; done | sort -u); do
