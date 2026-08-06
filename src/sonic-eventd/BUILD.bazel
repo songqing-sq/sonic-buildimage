@@ -118,6 +118,76 @@ cc_binary(
     ] + PTHREAD_DEP,
 )
 
+# ------ eventd unit tests (Make: `eventd-tests`) ------
+# TEST_OBJS = tests/eventd_ut.o + tests/main.o (tests/subdir.mk) + src/eventd.o
+# (src/subdir.mk line 3), linked against -lgtest -lgtest_main -lgmock -lgmock_main.
+#
+# tests/main.cpp probes for a reachable redis in its global SetUp and records the
+# result in g_is_redis_available; the three DB-backed cases in eventd_ut.cpp check
+# that flag and return early ("redis not available; Hence DB TEST skipped"), so
+# this target passes inside the sandbox without a redis instance.
+#
+# main.cpp reads its SonicDBConfig fixtures via the relative paths
+# ./tests/redis_multi_db_ut_config/{database_config,database_global}.json, which
+# resolve against the runfiles root, so the whole fixture dir is data.
+cc_binary(
+    name = "eventd_ut_bin",
+    testonly = True,
+    srcs = [
+        "src/eventd.cpp",
+        "src/eventd.h",
+        "tests/eventd_ut.cpp",
+        "tests/main.cpp",
+    ],
+    copts = COPTS,
+    includes = ["src"],
+    dynamic_deps = [
+        "@sonic-swss-common//:swsscommon_shared",
+        "@libnl3//:libnl_3_shared",
+        "@libnl3//:libnl_nf_3_shared",
+        "@libnl3//:libnl_route_3_shared",
+        "@libyang3//:yang_shared",
+    ],
+    deps = [
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@sonic-swss-common//:swsscommon",
+        "@eventd_deps//liblua5.1-0-dev:lua5.1",
+    ] + PTHREAD_DEP,
+)
+
+# The wrapper resolves the soname-vs-filename mismatch described in
+# tests/run_test.sh before exec'ing the gtest binary. The _files targets are what
+# contribute the soname symlinks it scans for; the json fixtures are read by
+# main.cpp through ./tests/redis_multi_db_ut_config/ relative paths.
+sh_test(
+    name = "eventd_ut",
+    srcs = ["tests/run_test.sh"],
+    args = ["$(rootpath :eventd_ut_bin)"],
+    data = glob(["tests/redis_multi_db_ut_config/*.json"]) + [
+        ":eventd_ut_bin",
+        "@sonic-swss-common//:swsscommon_files",
+        "@libnl3//:libnl_3_files",
+        "@libnl3//:libnl_nf_3_files",
+        "@libnl3//:libnl_route_3_files",
+        "@libyang3//:yang_files",
+        # apt-provided runtime closure. In an image these arrive via
+        # libswsscommon's deb Depends; in the sandbox the wrapper unpacks these
+        # data tars into TEST_TMPDIR and points LD_LIBRARY_PATH at them.
+        "@eventd_deps//libboost-serialization1.83.0:data",
+        "@eventd_deps//libhiredis1.1.0:data",
+        "@eventd_deps//libzmq5:data",
+        "@eventd_deps//libuuid1:data",
+        "@eventd_deps//libpcre2-8-0:data",
+        "@eventd_deps//libpcre2-16-0:data",
+        "@eventd_deps//libpcre2-32-0:data",
+        "@eventd_deps//libpcre2-posix3:data",
+        "@eventd_deps//liblua5.1-0:data",
+        "@eventd_deps//libxxhash0:data",
+        "@eventd_deps//zlib1g:data",
+    ],
+)
+
 # ------ sonic-eventd .deb (main) ------
 # debian/sonic-eventd.install lists:
 #   usr/bin/eventd

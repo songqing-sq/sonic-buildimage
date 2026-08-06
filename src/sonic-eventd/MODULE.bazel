@@ -12,6 +12,12 @@ bazel_dep(name = "sonic-swss-common", version = "1.0.0")
 bazel_dep(name = "libnl3", version = "3.7.0")
 bazel_dep(name = "libyang3", version = "3.12.2")
 
+# gtest/gmock for the unit tests under tests/ (Makefile links
+# -lgtest -lgtest_main -lgmock -lgmock_main). Not marked dev_dependency:
+# this module is always consumed as a non-root dependency, and dev deps are
+# dropped in that case, which would leave @googletest unresolvable.
+bazel_dep(name = "googletest", version = "1.15.2")
+
 apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
 apt.sources_list(
     architectures = ["amd64", "arm64"],
@@ -43,6 +49,35 @@ apt.install(
         "libboost-system1.83-dev:arm64",
         "liblua5.1-0-dev:amd64",
         "liblua5.1-0-dev:arm64",
+        # Test-only: eventdb_ut talks to a real EVENT_DB, so the tests spin up
+        # their own redis instance. redis-server's /usr/bin/redis-server is just
+        # a symlink to redis-check-rdb, whose real multicall binary ships in
+        # redis-tools; liblzf1 is one of its DT_NEEDED libs and is usually
+        # absent from the host. amd64 only -- tests run on the exec platform.
+        "redis-server:amd64",
+        "redis-tools:amd64",
+        "liblzf1:amd64",
+        # Test-only: a cc_test runs in the sandbox, where nothing has installed
+        # any deb, so the whole runtime .so closure must reach the runfiles. The
+        # production binaries never need this -- they land in an image where
+        # libswsscommon's deb Depends (libboost-serialization1.83.0, libhiredis,
+        # libzmq5, libuuid1, ...) put these libs in the standard multiarch dir.
+        # swsscommon declares them in its own isolated @swss_deps pool, which is
+        # invisible from here, hence the duplicate declarations.
+        "libboost-serialization1.83.0:amd64",
+        "libhiredis1.1.0:amd64",
+        "libzmq5:amd64",
+        "libuuid1:amd64",
+        "libpcre2-8-0:amd64",
+        "libpcre2-16-0:amd64",
+        "libpcre2-32-0:amd64",
+        "libpcre2-posix3:amd64",
+        # The -dev packages above only carry the unversioned link-time .so; the
+        # runtime artifacts (liblua5.1.so.0.0.0, ...) live in the library
+        # packages, which is what the test binary actually loads.
+        "liblua5.1-0:amd64",
+        "libxxhash0:amd64",
+        "zlib1g:amd64",
     ],
     suites = ["trixie", "trixie-updates", "trixie-security"],
 )
