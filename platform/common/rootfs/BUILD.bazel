@@ -1459,7 +1459,13 @@ genrule(
            "chmod +x $$W/bin/openssl; " +
            "for f in $(locations @sonic_build_infra//kernel_host_tools:openssl_libs); do " +
            "  cp $$f $$W/bin/; done; " +
-           "export LD_LIBRARY_PATH=$$W/bin; " +
+           # openssl is a trixie binary. LD_LIBRARY_PATH alone would supply
+           # libssl/libcrypto but still resolve libc.so.6 against the BUILD
+           # HOST's /lib64, so it dies wherever the host glibc is older than
+           # trixie's. Run it through the UNPACKED ld.so with an explicit
+           # --library-path instead, so nothing here depends on the host libc.
+           "OPENSSL=\"$$W/bin/ld-linux-x86-64.so.2 --library-path $$W/bin " +
+           "  $$W/bin/openssl\"; " +
            "CONF=$$W/root/etc/ca-certificates.conf; " +
            "{ echo '# This file lists certificates that you wish to use or to ignore to be'; " +
            "  echo '# installed in /etc/ssl/certs.'; " +
@@ -1485,7 +1491,7 @@ genrule(
            "( cd $$W/root/etc/ssl/certs; " +
            "  for pem in *.pem; do " +
            "    tgt=$$W/src$$(readlink $$pem); " +
-           "    h=$$($$W/bin/openssl x509 -hash -noout -in $$tgt); " +
+           "    h=$$($$OPENSSL x509 -hash -noout -in $$tgt); " +
            "    n=0; while [ -e $$h.$$n ]; do n=$$((n+1)); done; " +
            "    ln -sf $$pem $$h.$$n; " +
            "  done ); " +
