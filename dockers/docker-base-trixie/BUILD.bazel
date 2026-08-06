@@ -22,6 +22,33 @@ site_packages(
     visibility = [":__subpackages__"],
 )
 
+# The pip/uv console script for supervisord starts with a /bin/sh wrapper that
+# re-execs `python3 "$0"`, so the running process is named "python3", not
+# "supervisord". Every SONiC container ctl script gates its start on
+#   docker exec <ctr> pgrep -x -c supervisord
+# which then counts 0 forever -- database.service never leaves "activating" and
+# the entire SONiC graph (swss/syncd/teamd/bgp/pmon) stays blocked behind it.
+# Re-emit the script with a direct interpreter shebang so the process keeps its
+# own name. Body is taken from the wheel's own script, not rewritten.
+genrule(
+    name = "supervisord_shebang",
+    srcs = [":pip_layer"],
+    outs = ["supervisord_shebang.tar"],
+    cmd = ("set -euo pipefail; " +
+           "OUTTAR=$$(realpath $(RULEDIR))/$$(basename $@); " +
+           "W=$$(realpath $(RULEDIR))/_supd; rm -rf $$W; " +
+           "mkdir -p $$W/usr/local/bin; " +
+           # Drop the 3-line `#!/bin/sh` + exec + `' '''` preamble and prepend a
+           # real shebang; the rest of the script is the wheel's verbatim.
+           "{ echo '#!/usr/bin/python3'; " +
+           "  tar -xzOf $(location :pip_layer) ./usr/local/bin/supervisord | " +
+           "    tail -n +4; } > $$W/usr/local/bin/supervisord; " +
+           "chmod 0755 $$W/usr/local/bin/supervisord; " +
+           "cd $$W; " +
+           "tar -cf $$OUTTAR --owner=0 --group=0 --numeric-owner --sort=name .; " +
+           "rm -rf $$W"),
+)
+
 # Single Python content layer: pip-installed packages (via site_packages) +
 # sonic-built wheels' :install tars, deduplicated.
 flatten(
@@ -30,6 +57,9 @@ flatten(
     tars = [
         ":pip_layer",
         "@sonic-supervisord-utilities//:install",
+        # Last: deduplicate keeps the final occurrence, so this overrides
+        # pip_layer's sh-wrapped supervisord entry point.
+        ":supervisord_shebang",
     ],
     visibility = [":__subpackages__"],
 )
