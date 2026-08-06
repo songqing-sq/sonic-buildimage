@@ -37,13 +37,15 @@ genrule(
 
 # Boot userspace closure: the binaries the SONiC init-premount/init-bottom
 # scripts and (skipped) hooks would need at runtime — e2fsprogs (mke2fs/
-# e2fsck/resize2fs), acl (setfacl), util-linux (losetup/blkid), kmod
-# (modprobe), zstd (pzstd for docker_inram), file. Each @trixie//<pkg> pulls
-# its shared-lib dep closure.
+# e2fsck/resize2fs), acl (setfacl), util-linux (losetup/blkid), mount
+# (mount/umount — a separate package from util-linux; busybox's applet cannot
+# mount the ext4 root), kmod (modprobe), zstd (pzstd for docker_inram), file.
+# Each @trixie//<pkg> pulls its shared-lib dep closure.
 _USERSPACE = [
     "@trixie//e2fsprogs",
     "@trixie//acl",
     "@trixie//util-linux",
+    "@trixie//mount",
     "@trixie//kmod",
     "@trixie//zstd",
     "@trixie//file",
@@ -75,6 +77,12 @@ initramfs(
         "virtio_pci",
         "virtio_net",
         "ext4",
+        # ext4 asks the crypto API for "crc32c" by alias when mounting, which is
+        # a runtime request rather than a modules.dep edge, so the dep-closure
+        # walk cannot discover it. Without these the root mount dies with
+        # "EXT4-fs (vda3): Cannot load crc32c driver."
+        "crc32c_generic",
+        "libcrc32c",
     ],
     modules_tree = "//platform/vs/kernel:modules_install",
     out = "initrd.img-" + KVERSION,
