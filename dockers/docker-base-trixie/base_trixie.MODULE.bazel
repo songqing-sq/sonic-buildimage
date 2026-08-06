@@ -1107,7 +1107,7 @@ apt.lock(
 )
 use_repo(apt, "trixie")
 
-# Hub name is "pip_util1". The aspect_rules_py uv extension marks itself
+# Hub name is "pip_util2". The aspect_rules_py uv extension marks itself
 # reproducible=True (still true in 1.11.7), so Bazel caches its generated hub
 # repo and does NOT re-evaluate it when only uv.lock's contents change. Each
 # time the pip closure grows, the hub name must be bumped to force a fresh
@@ -1118,8 +1118,10 @@ use_repo(apt, "trixie")
 # pip_pmon4 and docker-database referenced pip_ce2). Adding docker-snmp's pip
 # deps (hiredis/python-arptable; smbus uses apt python3-smbus, not pip) bumped
 # to "pip_pmon8". docker-orchagent then adds pyroute2==0.5.14 (sdist, wheel
-# build-dep), growing the closure again, so the hub is bumped to "pip_util1"
-# and unifies ALL consumers onto @pip_util1//<pkg>.
+# build-dep), growing the closure again, so the hub was bumped to "pip_util1"
+# and unified ALL consumers onto one hub. Adding azure-storage (the host
+# core_uploader does `from azure.storage.file import FileService`) grows the
+# closure once more -> "pip_util2".
 #
 # Migrated to the aspect_rules_py 1.11.7 uv API: uv.project(pyproject, lock)
 # replaces the old declare_venv + lockfile pair, and unstable_annotate_packages
@@ -1127,9 +1129,9 @@ use_repo(apt, "trixie")
 # site_packages/py_venv targets select equals this project's [project].name
 # ("docker-base-trixie").
 uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
-uv.declare_hub(hub_name = "pip_util1")
+uv.declare_hub(hub_name = "pip_util2")
 uv.project(
-    hub_name = "pip_util1",
+    hub_name = "pip_util2",
     lock = "//dockers/docker-base-trixie:uv.lock",
     pyproject = "//dockers/docker-base-trixie:pyproject.toml",
 )
@@ -1142,4 +1144,4 @@ uv.unstable_annotate_packages(
     src = "//dockers/docker-base-trixie:pip_annotations.toml",
     lock = "//dockers/docker-base-trixie:uv.lock",
 )
-use_repo(uv, "pip_util1")
+use_repo(uv, "pip_util2")

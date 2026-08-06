@@ -112,6 +112,13 @@ dependencies = [
     "six>=1.16.0",
     "scp==0.14.5",
     "paramiko>=3.0",
+
+    # ---- host corefile uploader ----
+    # core_uploader.py does `from azure.storage.file import FileService` at
+    # import time, so core_uploader.service fails on every boot without it.
+    # sonic_debian_extension.j2 pip-installs this; 0.36.0 matches Make's
+    # resolved azure_storage-0.36.0.dist-info in fsroot-vs.
+    "azure-storage==0.36.0",
 ]
 
 # pyangbind unconditionally depends on enum34, which on Python 3 shadows the
