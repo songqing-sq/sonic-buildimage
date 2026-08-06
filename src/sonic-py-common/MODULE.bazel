@@ -8,3 +8,25 @@ bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "aspect_rules_py", version = "1.11.7")
 bazel_dep(name = "tar.bzl", version = "0.8.1")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
+
+# sonic_py_pytest_test macro + shared pytest shim.
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+
+# --- Test-only deps (BUILD.bazel py_test targets) ---
+# Mirror of the Make-side test environment (slave.mk SONIC_PYTHON_WHEELS
+# recipe): _DEPENDS wheels pip-installed into the slave container and
+# _DEBS_DEPENDS debs dpkg-installed there (rules/sonic-py-common.mk).
+bazel_dep(name = "sonic-py-swsssdk", version = "2.0.1")       # _DEPENDS: SWSSSDK_PY3
+bazel_dep(name = "sonic-swss-common", version = "1.0.0")      # _DEBS_DEPENDS: PYTHON3_SWSSCOMMON
+bazel_dep(name = "redis-dump-load-py3", version = "1.1")      # setup.py sonic_dependencies
+
+# Third-party PyPI deps (pytest/mock from the slave image, natsort/pyyaml/redis
+# from `pip3 install .`). Same uv-hub pattern as src/sonic-yang-models.
+uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
+uv.declare_hub(hub_name = "sonic_py_common_pip")
+uv.project(
+    hub_name = "sonic_py_common_pip",
+    pyproject = "//bazel:pyproject.toml",
+    lock = "//bazel:uv.lock",
+)
+use_repo(uv, "sonic_py_common_pip")
