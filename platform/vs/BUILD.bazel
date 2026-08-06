@@ -11,6 +11,15 @@ sonic_onie_image(
     arch = DEBIAN_ARCH,
     boot_files = "//platform/vs/kernel:boot_tree",
     dockers = VS_DOCKERS,
+    # MUST equal the `build_version` key in
+    # //platform/common/rootfs:rendered/etc__sonic__sonic_version.yml. The
+    # installer unpacks to /host/image-<image_version>, but rc.local derives
+    # FIRST_BOOT_FILE as /host/image-$SONIC_VERSION/platform/firsttime from that
+    # yml key. When the two disagree the whole first-boot block is silently
+    # skipped: /var/platform is never created and mgmt-framework's
+    # `--mount type=bind,source=/var/platform/` fails the container with "bind
+    # source path does not exist". (rc.local reads the key with a bare
+    # `grep build_version`, so that file must carry no comment naming it.)
     image_version = "bazel-dev",
     initrd = "//platform/vs/rootfs:initrd",
     install_sh_template = "//installer:install.sh",

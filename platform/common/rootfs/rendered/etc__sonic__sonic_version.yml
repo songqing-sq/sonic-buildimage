@@ -1,5 +1,5 @@
 ---
-build_version: 'master.0-dirty-20260701.212558'
+build_version: 'bazel-dev'
 debian_version: '13.5'
 kernel_version: '6.12.41+deb13-sonic-amd64'
 asic_type: vs
@@ -9,7 +9,7 @@ branch: 'master'
 release: 'none'
 build_date: Wed Jul  1 13:38:58 UTC 2026
 build_number: 0
-built_by: duzhongfan.dzf@alinos-oncall215192149219.na131
+built_by: bazel
 libswsscommon: 1.0.0
 sonic-ctrmgrd-rs: 1.0.0
 sonic-host-services-rs: 1.0.0
