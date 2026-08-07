@@ -407,7 +407,19 @@ tar(
                "{ echo '# /etc/shells: valid login shells'; " +
                "".join(["  echo '%s'; " % sh for sh in shells]) +
                "} > $$W/root/etc/shells; " +
+               # /etc/machine-id: systemd's ConditionFirstBoot treats a MISSING
+               # (not empty) machine-id as "first boot" and then runs
+               # `systemctl preset-all`, which enables every unit carrying
+               # [Install] WantedBy but no explicit preset rule -- Debian's
+               # default policy is `enable`. That silently switched on ipmievd,
+               # chrony-wait, topology, core_uploader and 13 more that Make
+               # leaves disabled, and they then fail on every boot (no BMC, no
+               # watchdog device, no multi-ASIC dir). An EMPTY file means
+               # "uninitialized": systemd-machine-id-setup fills it in on first
+               # boot WITHOUT the preset pass, matching Make's image.
+               ("" if variant else ": > $$W/root/etc/machine-id; ") +
                "cd $$W/root; chmod 644 etc/profile etc/nsswitch.conf etc/networks etc/shells; " +
+               ("" if variant else "chmod 444 etc/machine-id; ") +
                "tar -cf $$OUTTAR --owner=0 --group=0 --numeric-owner --sort=name .; " +
                "rm -rf $$W"),
         visibility = ["//visibility:public"],
