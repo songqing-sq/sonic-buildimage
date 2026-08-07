@@ -581,29 +581,81 @@ def _vtysh_cmd_xref_genrule_impl(ctx):
     # special-case fires: daemon binaries need a dot-free basename (e.g.
     # "zebra"); versioned libs / plugin .so's need the correct parent directory
     # (xref2vtysh uses path.parts[-2] for dotted names); fabricd must be at the
-    # literal relative path "isisd/fabricd".  We cd into the staging dir and
-    # pass RELATIVE paths so xrelfo records the origin exactly as the staged
-    # relative path.
+    # literal relative path "isisd/fabricd".
+    #
+    # THREE paths must share one prefix or xref2vtysh misclassifies every
+    # libfrr-resident command.  xref2vtysh.py:200 computes
+    #     defun_file = os.path.relpath(spec["defun"]["file"], frr_top_src)
+    # and branches on `defun_path.parts[0] == "lib"`, also using the string as a
+    # daemon_flags dict key.  The three inputs are:
+    #   raw = spec["defun"]["file"] -- the compile-time __FILE__, which is
+    #         EXECROOT-RELATIVE ("external/<repo>/frr/lib/command.c");
+    #   top = frr_top_src, derived from abspath(__file__) of xref2vtysh.py;
+    #   cwd -- relpath() joins the RELATIVE `raw` with the current directory.
+    #
+    # Two things used to break that: `cd "$STAGE"` moved cwd to /tmp, and Bazel
+    # stages python/*.py as SYMLINKS back into the shared output_base, so
+    # abspath() left `top` there while cwd was the sandbox execroot.  relpath()
+    # then subtracted two unrelated prefixes and returned a "../../.." escape
+    # chain: parts[0] became ".." instead of "lib", so every libfrr command fell
+    # through to the loadable-module branch and got tagged
+    # "VTYSH_" + parts[-2].upper() == "VTYSH_LIB".
+    #
+    # That emitted commands upstream deliberately DROPS -- zlog_5424_cli.c is
+    # intentionally absent from daemon_flags, so its log_5424_* commands should
+    # return {} -- producing an install_EXTLOG_NODE() that aborts vtysh on
+    # `assert(node)` (vtysh calls cmd_init(0) and never installs that node), and
+    # widening ~188 genuinely-lib commands from their narrow VTYSH_* flags.
+    #
+    # Replace Bazel's SYMLINKED python/*.py with real copies in place, so
+    # abspath(__file__) inside xref2vtysh.py resolves to the sandbox execroot
+    # (alongside the sources whose execroot-relative __FILE__ we must match)
+    # rather than following the symlink out to the shared output_base.
+    py_dir = ctx.file.xrelfo.dirname
+    py_stage_cmds = [
+        "PYTMP=\"$(mktemp -d -p \"$PWD\" .vtysh_xref_py.XXXXXX)\"",
+        # Copy EVERY staged entry (not just *.py): xrelfo also needs
+        # xrefstructs.json from this directory, and breaking only the .py
+        # links would leave it unreachable.
+        "cp -RL \"$PWD/" + py_dir + "\"/. \"$PYTMP/\"",
+        # rm FIRST: `cp -f` onto a symlink writes THROUGH it to the shared
+        # output_base original, leaving the link (and thus abspath) intact.
+        "for f in \"$PYTMP\"/*; do " +
+        "t=\"$PWD/" + py_dir + "/$(basename \"$f\")\"; rm -rf \"$t\"; cp -R \"$f\" \"$t\"; done",
+        "ABS_XRELFO=\"$PWD/" + ctx.file.xrelfo.path + "\"",
+        "PYDIR=\"$PWD/" + py_dir + "\"",
+    ]
+
     if origins and len(origins) == len(bin_files):
-        stage_cmds = ["STAGE=\"$(mktemp -d)\""]
+        # The origins must be passed EXACTLY as FRR expects them --
+        # xref2vtysh.py:323 compares `origin == "isisd/fabricd"` literally -- so
+        # they cannot carry a staging prefix, AND we must not cd, because
+        # relpath() joins the relative __FILE__ with the CWD. So stage them at
+        # the execroot top level. Verified that none of the top-level origin
+        # names (lib/ zebra/ bgpd/ isisd/ mgmtd/ pathd/ frr/ d/) collide with
+        # anything Bazel materialises in the execroot.
+        top_level = {}
+        for origin in origins:
+            top_level[origin.split("/")[0]] = True
+        stage_cmds = []
         rel_args = []
         for i in range(len(bin_files)):
             f = bin_files[i]
             origin = origins[i]
-            stage_cmds.append("mkdir -p \"$STAGE/$(dirname '" + origin + "')\"")
-            stage_cmds.append("ln -sf \"$PWD/" + f.path + "\" \"$STAGE/" + origin + "\"")
+            stage_cmds.append("mkdir -p \"$PWD/$(dirname '" + origin + "')\"")
+            stage_cmds.append("ln -sf \"$PWD/" + f.path + "\" \"$PWD/" + origin + "\"")
             rel_args.append("\"" + origin + "\"")
         bin_args = " ".join(rel_args)
+        cleanup = " ".join(["\"$PWD/" + d + "\"" for d in sorted(top_level.keys())])
         cmd = (
             "set -euo pipefail\n" +
             "\n".join(stage_cmds) + "\n" +
+            "\n".join(py_stage_cmds) + "\n" +
             "ABS_CLIPPY=\"$PWD/" + clippy_files.executable.path + "\"\n" +
-            "ABS_XRELFO=\"$PWD/" + ctx.file.xrelfo.path + "\"\n" +
             "ABS_OUT=\"$PWD/" + out.path + "\"\n" +
             "ABS_PYHOME=\"$PWD/$(cat " + py_prefix_file.path + ")\"\n" +
-            "PYDIR=\"$PWD/" + ctx.file.xrelfo.dirname + "\"\n" +
-            "cd \"$STAGE\"\n" +
-            "exec env \\\n" +
+            "trap 'rm -rf \"$PYTMP\" " + cleanup + "' EXIT\n" +
+            "env \\\n" +
             "    PYTHONHOME=\"$ABS_PYHOME\" \\\n" +
             "    PYTHONPATH=\"$PYDIR\" \\\n" +
             "    \"$ABS_CLIPPY\" \"$ABS_XRELFO\" " + bin_args + " -c \"$ABS_OUT\"\n"
@@ -640,7 +692,15 @@ vtysh_cmd_xref_genrule = rule(
         "binaries": attr.label_list(allow_files = True, mandatory = True),
         "origins": attr.string_list(),
         "xrelfo": attr.label(allow_single_file = [".py"], mandatory = True),
-        "py_pkg": attr.label_list(allow_files = [".py"]),
+        # NOT [".py"]-filtered: xrelfo.py opens python/xrefstructs.json at
+        # import time (xrelfo.py:30), so that file must be declarable as an
+        # action input. With the filter it could not be, and the build only
+        # worked because Bazel symlinked python/*.py back to the shared
+        # output_base, letting the open() escape the sandbox and find the json
+        # beside the real script -- a sealing hole, and one that breaks as soon
+        # as those symlinks are replaced by real copies (which is what makes
+        # xref2vtysh's path arithmetic resolve correctly).
+        "py_pkg": attr.label_list(allow_files = True),
         "clippy": attr.label(mandatory = True, executable = True, cfg = "exec"),
         "_exec_py_prefix": attr.label(
             default = ":_clippy_exec_py_prefix",

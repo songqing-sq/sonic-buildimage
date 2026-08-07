@@ -2902,6 +2902,14 @@ vtysh_cmd_xref_genrule(
     py_pkg = glob([
         "frr/python/*.py",
         "frr/python/clippy/*.py",
+        # xrelfo.py:30 opens python/xrefstructs.json and xref2vtysh.py:114 opens
+        # lib/command.h (to parse `enum node_type` for the CLI node names), both
+        # relative to frr_top_src. Neither was ever declared as an input; the
+        # build only worked because Bazel symlinked python/*.py back to the
+        # shared output_base, letting those open() calls escape the sandbox and
+        # find the files beside the real script.
+        "frr/python/xrefstructs.json",
+        "frr/lib/command.h",
     ]),
     clippy = ":clippy",
 )
@@ -2947,15 +2955,7 @@ cc_binary(
         ":libfrr_shared",
         "@libyang3//:yang_shared",
     ],
-    copts = FRR_COMMON_COPTS + [
-        # xref2vtysh maps ~263 libfrr-resident CLI commands to a synthetic
-        # VTYSH_LIB token (its __FILE__/frr_top_src relpath doesn't reduce to
-        # lib/<file>.c inside the Bazel sandbox, so they hit the loadable-module
-        # parent-dir branch = "lib").  VTYSH_LIB isn't defined in vtysh.h; since
-        # these commands are linked into every daemon via libfrr, alias it to
-        # VTYSH_ALL so vtysh_cmd.c compiles.  VERIFY-PHASE equivalence gap.
-        "-DVTYSH_LIB=VTYSH_ALL",
-    ],
+    copts = FRR_COMMON_COPTS,
     linkopts = ["-Wl,--export-dynamic", "-pthread", "-lm", "-Wl,-rpath,/usr/lib/x86_64-linux-gnu/frr"],
     visibility = ["//visibility:public"],
 )
