@@ -1900,6 +1900,13 @@ tar(
         "./host uid=0 gid=0 mode=0755 type=dir",
         "./sonic uid=0 gid=0 mode=0755 type=dir",
         "./var/log uid=0 gid=0 mode=0755 type=dir",
+        # core_uploader.py watches /var/core with inotify (CORE_FILE_PATH) and
+        # kdump-tools dumps into /var/crash; no package owns either, so both
+        # were absent. Both are listed in
+        # files/image_config/secureboot/allowlist_paths.conf, i.e. they are
+        # expected to exist at runtime.
+        "./var/core uid=0 gid=0 mode=0755 type=dir",
+        "./var/crash uid=0 gid=0 mode=0755 type=dir",
     ],
     visibility = ["//platform:__subpackages__"],
 )
