@@ -108,18 +108,18 @@ site_packages(
     name = "pip_layer",
     srcs = [
         # Dockerfile.j2 explicit pip3 install.
-        "@pip_util2//pyangbind",
+        "@pip_util3//pyangbind",
         # sonic-config-engine install_requires (bitarray is compiled from
         # source in bitarray_layer below — no cp313 wheel exists).
-        "@pip_util2//lxml",
-        "@pip_util2//netaddr",
+        "@pip_util3//lxml",
+        "@pip_util3//netaddr",
         # sonic-yang-mgmt install_requires.
-        "@pip_util2//ijson",
-        "@pip_util2//jsonpointer",
-        "@pip_util2//jsondiff",
-        "@pip_util2//tabulate",
+        "@pip_util3//ijson",
+        "@pip_util3//jsonpointer",
+        "@pip_util3//jsondiff",
+        "@pip_util3//tabulate",
         # sonic-py-common install_requires.
-        "@pip_util2//natsort",
+        "@pip_util3//natsort",
     ],
     venv = "docker-base-trixie",
 )

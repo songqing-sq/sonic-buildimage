@@ -112,6 +112,12 @@ dependencies = [
     "six>=1.16.0",
     "scp==0.14.5",
     "paramiko>=3.0",
+    # queuestat / watermarkstat and the other counter CLIs do
+    # `from redis import Redis`, so `show queue counters` and
+    # `show priority-group ...` fail with ModuleNotFoundError without it.
+    # Make pip-installs this (it is NOT an apt package in fsroot-vs); pin to the
+    # same 3.5.3 Make resolves.
+    "redis==3.5.3",
 
     # ---- host corefile uploader ----
     # core_uploader.py does `from azure.storage.file import FileService` at

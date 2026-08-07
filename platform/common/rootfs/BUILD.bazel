@@ -1972,6 +1972,14 @@ flatten(
     deduplicate = True,
     tars = [
         ":host_pip_layer",
+        # bitarray C extension, compiled from sdist with the hermetic GCC (no
+        # cp313 wheel exists on PyPI, so it cannot come from the uv hub -- see
+        # the host_pip_layer comment below). openconfig_acl.py does
+        # `from bitarray import bitarray` at import time, so without it
+        # acl-loader dies with ModuleNotFoundError and BOTH `show acl table`
+        # and `show acl rule` are unusable. Make's fsroot-vs has bitarray-2.8.1.
+        # Same target docker-config-engine-trixie already consumes.
+        "@bitarray_src//:bitarray_install",
         "@sonic-py-common//:install",
         "@sonic-config-engine//:install",
         "@sonic-platform-common//:install",
@@ -1994,7 +2002,7 @@ flatten(
 )
 
 # Third-party PyPI runtime deps of the SONiC host wheels that resolve in the
-# @pip_util2 uv hub. Deps the hub lacks (redis/bitarray/docker/filelock/
+# @pip_util3 uv hub. Deps the hub lacks (redis/bitarray/docker/filelock/
 # pexpect/jsonpatch/click_log/lazy_object_proxy/www_authenticate/
 # semantic_version/prettyprinter/docker_image_py) are a known gap — they are
 # sonic-utilities CLI runtime deps, not boot-critical; Make pip-installs them
@@ -2003,65 +2011,70 @@ flatten(
 site_packages(
     name = "host_pip_layer",
     srcs = [
-        "@pip_util2//natsort",
-        "@pip_util2//pyyaml",
-        "@pip_util2//lxml",
-        "@pip_util2//netaddr",
-        "@pip_util2//jinja2",
-        "@pip_util2//ijson",
-        "@pip_util2//jsonpointer",
-        "@pip_util2//jsondiff",
-        "@pip_util2//tabulate",
-        "@pip_util2//psutil",
-        "@pip_util2//click",
-        "@pip_util2//toposort",
-        "@pip_util2//requests",
+        "@pip_util3//natsort",
+        "@pip_util3//pyyaml",
+        "@pip_util3//lxml",
+        "@pip_util3//netaddr",
+        "@pip_util3//jinja2",
+        "@pip_util3//ijson",
+        "@pip_util3//jsonpointer",
+        "@pip_util3//jsondiff",
+        "@pip_util3//tabulate",
+        "@pip_util3//psutil",
+        "@pip_util3//click",
+        "@pip_util3//toposort",
+        "@pip_util3//requests",
         # These three carry console_scripts that Make's image has under
         # /usr/local/bin: pyang -> pyang/yang2dsdl/yang2html, jsonschema ->
         # jsonschema, pyroute2 -> pyroute2-{decoder,dhcp-client,test-platform}
         # and ss2. They resolve in the hub, so there is no reason to be missing.
-        "@pip_util2//pyang",
-        "@pip_util2//jsonschema",
-        "@pip_util2//pyroute2",
+        "@pip_util3//pyang",
+        "@pip_util3//jsonschema",
+        "@pip_util3//pyroute2",
         # sonic-utilities setup.py install_requires — the CLI imports these at
         # startup, so a missing one is an immediate traceback on `show`/`config`.
-        "@pip_util2//bcrypt",
-        "@pip_util2//click_log",
-        "@pip_util2//cryptography",
-        "@pip_util2//docker",
-        "@pip_util2//docker_image_py",
-        "@pip_util2//enlighten",
-        "@pip_util2//filelock",
-        "@pip_util2//jsonpatch",
-        "@pip_util2//lazy_object_proxy",
-        "@pip_util2//paramiko",
-        "@pip_util2//pexpect",
-        "@pip_util2//prettyprinter",
-        "@pip_util2//pygments",
-        "@pip_util2//scp",
-        "@pip_util2//semantic_version",
-        "@pip_util2//six",
-        "@pip_util2//urllib3",
-        "@pip_util2//www_authenticate",
-        "@pip_util2//xmltodict",
+        "@pip_util3//bcrypt",
+        "@pip_util3//click_log",
+        "@pip_util3//cryptography",
+        "@pip_util3//docker",
+        "@pip_util3//docker_image_py",
+        "@pip_util3//enlighten",
+        "@pip_util3//filelock",
+        "@pip_util3//jsonpatch",
+        "@pip_util3//lazy_object_proxy",
+        "@pip_util3//paramiko",
+        "@pip_util3//pexpect",
+        "@pip_util3//prettyprinter",
+        "@pip_util3//pygments",
+        "@pip_util3//scp",
+        "@pip_util3//semantic_version",
+        "@pip_util3//six",
+        "@pip_util3//urllib3",
+        "@pip_util3//www_authenticate",
+        "@pip_util3//xmltodict",
         # Reachable in the hub and present in Make's host rootfs (pulled in as
         # transitive deps of the pmon/config-engine wheels rather than named by
         # sonic-utilities directly).
-        "@pip_util2//blkinfo",
-        "@pip_util2//grpcio",
-        "@pip_util2//grpcio_tools",
-        "@pip_util2//libpci",
-        "@pip_util2//protobuf",
-        "@pip_util2//pyangbind",
-        "@pip_util2//python_dateutil",
-        "@pip_util2//smbus2",
-        "@pip_util2//thrift",
+        "@pip_util3//blkinfo",
+        "@pip_util3//grpcio",
+        "@pip_util3//grpcio_tools",
+        "@pip_util3//libpci",
+        "@pip_util3//protobuf",
+        "@pip_util3//pyangbind",
+        "@pip_util3//python_dateutil",
+        "@pip_util3//smbus2",
+        "@pip_util3//thrift",
         # core_uploader.py does `from azure.storage.file import FileService` at
         # import time. azure_common / azure_nspkg are azure_storage's namespace
         # packages; all three match the dist-info dirs in Make's fsroot-vs.
-        "@pip_util2//azure_storage",
-        "@pip_util2//azure_common",
-        "@pip_util2//azure_nspkg",
+        "@pip_util3//azure_storage",
+        "@pip_util3//azure_common",
+        "@pip_util3//azure_nspkg",
+        # queuestat / watermarkstat / redisdl (redis-dump) all do
+        # `import redis`. Without it `show queue counters` fails AND
+        # resolv-config.sh's redis-dump call dies, so /run/resolvconf/resolv.conf
+        # is never generated and /etc/resolv.conf stays a dangling symlink.
+        "@pip_util3//redis",
     ],
     venv = "docker-base-trixie",
     visibility = ["//platform:__subpackages__"],
