@@ -397,10 +397,22 @@ tar(
                "W=$$(realpath $(RULEDIR))/_basepi" + variant + "; rm -rf $$W; " +
                "mkdir -p $$W/src $$W/root/etc; " +
                "tar -xzf $(location @trixie//base-files:data) -C $$W/src " +
-               "  ./usr/share/base-files/profile; " +
+               "  ./usr/share/base-files/profile" +
+               ("" if variant else
+                " ./usr/share/base-files/dot.profile" +
+                " ./usr/share/base-files/dot.bashrc") + "; " +
                "tar -xzf $(location @trixie//libc-bin:data) -C $$W/src " +
                "  ./usr/share/libc-bin/nsswitch.conf; " +
                "cp $$W/src/usr/share/base-files/profile $$W/root/etc/profile; " +
+               # base-files postinst, two lines below the /etc/profile one:
+               #   install_from_default dot.profile /root/.profile
+               #   install_from_default dot.bashrc  /root/.bashrc
+               # Without them a root shell gets no PATH/prompt setup and loses
+               # the umask/locale defaults every Debian system has.
+               ("" if variant else
+                "mkdir -p $$W/root/root; " +
+                "cp $$W/src/usr/share/base-files/dot.profile $$W/root/root/.profile; " +
+                "cp $$W/src/usr/share/base-files/dot.bashrc $$W/root/root/.bashrc; ") +
                "cp $$W/src/usr/share/libc-bin/nsswitch.conf $$W/root/etc/nsswitch.conf; " +
                "printf 'default\\t\\t0.0.0.0\\nloopback\\t127.0.0.0\\nlink-local\\t169.254.0.0\\n\\n' " +
                "  > $$W/root/etc/networks; " +
@@ -419,6 +431,7 @@ tar(
                # boot WITHOUT the preset pass, matching Make's image.
                ("" if variant else ": > $$W/root/etc/machine-id; ") +
                "cd $$W/root; chmod 644 etc/profile etc/nsswitch.conf etc/networks etc/shells; " +
+               ("" if variant else "chmod 700 root; chmod 644 root/.profile root/.bashrc; ") +
                ("" if variant else "chmod 444 etc/machine-id; ") +
                "tar -cf $$OUTTAR --owner=0 --group=0 --numeric-owner --sort=name .; " +
                "rm -rf $$W"),
