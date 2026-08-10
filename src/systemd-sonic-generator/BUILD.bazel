@@ -1,4 +1,5 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
 
 package(default_visibility = ["//visibility:public"])
@@ -36,6 +37,97 @@ cc_binary(
     # never end up in the binary's NEEDED either (verified against the Make
     # deb: libstdc++/libjson-c/libm/libgcc_s/libc, no boost).
     deps = ["@ssg_deps//libjson-c-dev:json-c"],
+)
+
+# =============================================================================
+# Unit test — Bazel equivalent of the deb build's dh_auto_test step:
+#   debian/rules override_dh_auto_test -> `make test` -> ./ssg_test
+# Baseline (target/debs/trixie/systemd-sonic-generator_*.deb.log):
+#   [  PASSED  ] 14 tests. (3 suites)
+#
+# Linkage mirrors Make exactly: gtest static (the slave's libgtest-dev ships
+# only .a; here the same-version BCR source build), boost_filesystem /
+# boost_system / json-c dynamic against the trixie .so. The sandbox has no
+# installed debs and the hermetic toolchain writes no usable RUNPATH, so the
+# dynamic closure reaches the test as runtime deb :data tars that
+# run_ssg_test.sh unpacks into a sysroot and serves via LD_LIBRARY_PATH under
+# the trixie loader — the sonic-eventd tests/run_test.sh approach.
+# =============================================================================
+
+# The code under test, compiled with -D_SSG_UNITTEST — mirrors the Makefile's
+#   systemd-sonic-generator.o: ... -D_SSG_UNITTEST -c systemd-sonic-generator.cpp
+# The macro strips the production main() (ssg-test.cc has its own) and enables
+# clean_up_cache(). The shipped cc_binary above must NOT reuse this object.
+cc_library(
+    name = "ssg_under_test",
+    testonly = True,
+    srcs = ["systemd-sonic-generator.cpp"],
+    hdrs = ["systemd-sonic-generator.h"],
+    copts = [
+        "-std=c++20",
+        "-D_GNU_SOURCE",
+        "-D_SSG_UNITTEST",
+    ],
+    includes = ["."],
+    # Same shared json-c import as the shipped binary — dynamic, like Make.
+    deps = ["@ssg_deps//libjson-c-dev:json-c"],
+)
+
+# Runtime .so closure staged for the wrapper's sysroot: everything the test
+# binary's DT_NEEDED chain resolves inside the slave container, including the
+# complete trixie glibc family (libc6 = libc/libm/ld-linux; plus libgcc-s1,
+# libstdc++6) so the trixie loader never mixes with host glibc.
+TEST_APT_DATA = [
+    "@ssg_test_deps//libboost-filesystem1.83.0:data",
+    "@ssg_test_deps//libboost-system1.83.0:data",
+    "@ssg_test_deps//libboost-atomic1.83.0:data",
+    "@ssg_test_deps//libjson-c5:data",
+    "@ssg_test_deps//libc6:data",
+    "@ssg_test_deps//libgcc-s1:data",
+    "@ssg_test_deps//libstdc++6:data",
+]
+
+# The gtest binary — Make's `ssg_test` target, compiled WITHOUT
+# -D_SSG_UNITTEST, exactly like Make's
+#   g++ $(CXXFLAGS) -ggdb -o ssg_test ssg-test.cc systemd-sonic-generator.o
+# Linked like Make's LDFLAGS resolve in the slave: gtest static (no
+# gtest_main — the test defines main/RUN_ALL_TESTS itself), boost and json-c
+# dynamic via the apt shared cc_imports (stdc++/pthread from the toolchain).
+cc_binary(
+    name = "ssg_test_bin",
+    testonly = True,
+    srcs = ["ssg-test.cc"],
+    copts = [
+        "-std=c++20",
+        "-D_GNU_SOURCE",
+    ],
+    deps = [
+        ":ssg_under_test",
+        "@googletest//:gtest",
+        "@ssg_test_deps//libboost-filesystem1.83-dev:boost_filesystem",
+        "@ssg_test_deps//libboost-system1.83-dev:boost_system",
+        "@ssg_test_deps//nlohmann-json3-dev:nlohmann-json3",
+    ],
+)
+
+# Make runs the suite from the package root (`make test` -> ./ssg_test) and
+# ssg-test.cc uses CWD-relative fixture paths, creating scratch dirs under
+# tests/ssg-test/. Bazel's test CWD is the main repo's runfiles dir and the
+# sandbox has no installed debs, so the launcher (a) stages tests/testfiles/
+# into TEST_TMPDIR, (b) unpacks TEST_APT_DATA into a sysroot and starts the
+# binary under the trixie loader with LD_LIBRARY_PATH — mirroring
+# sonic-eventd's tests/run_test.sh. Expected result mirrors the deb build log:
+#   [  PASSED  ] 14 tests. (3 suites)
+sh_test(
+    name = "ssg_test",
+    size = "small",
+    srcs = ["run_ssg_test.sh"],
+    data = [":ssg_test_bin"] + glob(["tests/testfiles/**"]) + TEST_APT_DATA,
+    env = {
+        "SSG_TEST_BIN": "$(rootpath :ssg_test_bin)",
+        # Any file inside testfiles/ works; the launcher dirname()s it.
+        "SSG_TESTFILE": "$(rootpath tests/testfiles/test.service)",
+    },
 )
 
 sonic_deb(

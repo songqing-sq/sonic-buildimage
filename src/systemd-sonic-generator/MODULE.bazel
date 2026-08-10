@@ -7,6 +7,14 @@ bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_buil
 bazel_dep(name = "rules_cc", version = "0.2.16")
 bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
 
+# gtest for ssg-test.cc (Makefile links -lgtest; no gtest_main — the test has
+# its own main/RUN_ALL_TESTS). Same BCR-source approach as sonic-eventd;
+# version pinned to 1.16.0 to match the slave container's libgtest-dev
+# 1.16.0-1 (trixie). Not marked dev_dependency for the same reason as eventd:
+# this module is always consumed as a non-root dependency and dev deps would
+# be dropped, leaving @googletest unresolvable.
+bazel_dep(name = "googletest", version = "1.16.0")
+
 apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
 apt.sources_list(
     architectures = [
@@ -43,3 +51,41 @@ apt.install(
     ],
 )
 use_repo(apt, "ssg_deps")
+
+# Test-only deps, mirroring what `make test` links inside the slave container
+# (LDFLAGS: -lboost_filesystem -lboost_system -ljson-c dynamic, plus the
+# header-only nlohmann/json.hpp). Kept in a separate dependency set so the
+# production closure above stays json-c only.
+#
+# Two groups:
+#   - link-time: the -dev packages, whose generated cc_import (shared .so)
+#     targets keep the test binary dynamically linked exactly like Make.
+#   - run-time: the runtime .so packages whose :data tars the test wrapper
+#     unpacks into a sysroot (sandbox has no installed debs), plus the full
+#     trixie glibc family (libc6 carries libc/libm/ld-linux; libgcc-s1 and
+#     libstdc++6 complete the closure) so the wrapper can launch the binary
+#     under the trixie loader without mixing glibc generations — same
+#     approach as sonic-eventd's tests/run_test.sh.
+apt.install(
+    dependency_set = "ssg_test_deps",
+    packages = [
+        # link-time
+        "libboost-filesystem1.83-dev",
+        "libboost-system1.83-dev",
+        "nlohmann-json3-dev",
+        # run-time closure for the wrapper's sysroot
+        "libboost-filesystem1.83.0",
+        "libboost-system1.83.0",
+        "libboost-atomic1.83.0",
+        "libjson-c5",
+        "libc6",
+        "libgcc-s1",
+        "libstdc++6",
+    ],
+    suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
+)
+use_repo(apt, "ssg_test_deps")
