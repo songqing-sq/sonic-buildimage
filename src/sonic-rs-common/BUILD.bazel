@@ -1,4 +1,4 @@
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -26,3 +26,74 @@ rust_library(
         "@sonic_rs_common_crates//:tracing",
     ],
 )
+
+# Integration tests (cargo test). Each file under tests/ is its own crate root,
+# and both pull the shared fake in via `mod mock_state_db;`.
+#
+# The rust_tests are tagged manual and driven through the sh_test wrappers below:
+# linking the library drags in libswsscommon's whole runtime .so closure (zmq,
+# hiredis, boost, krb5, pcre2, ...), none of which is installed in the sandbox,
+# so those apt data tars have to be unpacked and the binary run under the
+# matching ld-linux before it can start.
+_TEST_APT_DATA = [
+    "@sonic_rs_common_test_deps//libboost-serialization1.83.0:data",
+    "@sonic_rs_common_test_deps//libc6:data",
+    "@sonic_rs_common_test_deps//libgcc-s1:data",
+    "@sonic_rs_common_test_deps//libhiredis1.1.0:data",
+    "@sonic_rs_common_test_deps//liblua5.1-0:data",
+    "@sonic_rs_common_test_deps//libpcre2-16-0:data",
+    "@sonic_rs_common_test_deps//libpcre2-32-0:data",
+    "@sonic_rs_common_test_deps//libpcre2-8-0:data",
+    "@sonic_rs_common_test_deps//libpcre2-posix3:data",
+    "@sonic_rs_common_test_deps//libstdc++6:data",
+    "@sonic_rs_common_test_deps//libuuid1:data",
+    "@sonic_rs_common_test_deps//libxxhash0:data",
+    "@sonic_rs_common_test_deps//libzmq5:data",
+    "@sonic_rs_common_test_deps//zlib1g:data",
+]
+
+[
+    rust_test(
+        name = name + "_bin",
+        srcs = [
+            "tests/" + name + ".rs",
+            "tests/mock_state_db.rs",
+        ],
+        crate_root = "tests/" + name + ".rs",
+        edition = "2021",
+        # Rust's default linker mode emits version-stripped `-lX` for every
+        # propagated `.so.N` -- which yields nonsense like `-lld-linux-x86-64`
+        # and needs unversioned `libX.so` symlinks trixie's package split does
+        # not provide. cc_common link mode uses `-l:libX.so.N`, matching
+        # cc_binary.
+        experimental_use_cc_common_link = 1,
+        tags = ["manual"],
+        deps = [
+            ":sonic_rs_common",
+            # mock_state_db.rs names swss_common types directly when it
+            # implements StateDBTrait, so it is a direct dep of the test crate
+            # rather than only a transitive one through the library.
+            "@sonic-swss-common//crates/swss-common:swss_common",
+            "@sonic_rs_common_crates//:gag",
+            "@sonic_rs_common_crates//:syslog",
+        ],
+    )
+    for name in [
+        "device_info_test",
+        "test_logger",
+    ]
+]
+
+[
+    sh_test(
+        name = name,
+        size = "small",
+        srcs = ["tests/run_test.sh"],
+        args = ["$(rootpath :{}_bin)".format(name)],
+        data = [":" + name + "_bin"] + _TEST_APT_DATA,
+    )
+    for name in [
+        "device_info_test",
+        "test_logger",
+    ]
+]

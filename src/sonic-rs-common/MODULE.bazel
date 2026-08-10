@@ -8,6 +8,7 @@ bazel_dep(name = "rules_cc", version = "0.2.16")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
 bazel_dep(name = "sonic-swss-common", version = "1.0.0")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
 
 # Cargo.toml declares swss-common as a `path = ...` dep so plain `cargo build`
 # works standalone. crate_universe cannot cross module boundaries for path deps,
@@ -35,5 +36,43 @@ crate.spec(
     package = "time",
     version = "=0.3.36",
 )
+# Test-only. Cargo.toml's [dev-dependencies] lists mockall / tempfile /
+# serde_json / gag, but only gag is actually imported: tests/test_logger.rs uses
+# gag::BufferRedirect to capture stdout, and tests/mock_state_db.rs hand-rolls
+# its mock rather than deriving one with mockall.
+crate.spec(
+    package = "gag",
+    version = "1.0",
+)
 crate.from_specs(name = "sonic_rs_common_crates")
 use_repo(crate, "sonic_rs_common_crates")
+
+# Test-only runtime closure. A sandboxed test has no installed debs at all, so
+# every library the test binary loads has to reach the runfiles. In production
+# these arrive via libswsscommon's deb Depends, which put them in the standard
+# multiarch dir. swsscommon declares them in its own isolated pool, invisible
+# from here, hence the duplication. libc6 also supplies the ld-linux the wrapper
+# runs the binary under, so the loader and libc stay from one glibc package.
+# amd64 only -- tests run on the exec platform.
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.install(
+    dependency_set = "sonic_rs_common_test_deps",
+    packages = [
+        "libboost-serialization1.83.0:amd64",
+        "libc6:amd64",
+        "libgcc-s1:amd64",
+        "libhiredis1.1.0:amd64",
+        "liblua5.1-0:amd64",
+        "libpcre2-8-0:amd64",
+        "libpcre2-16-0:amd64",
+        "libpcre2-32-0:amd64",
+        "libpcre2-posix3:amd64",
+        "libstdc++6:amd64",
+        "libuuid1:amd64",
+        "libxxhash0:amd64",
+        "libzmq5:amd64",
+        "zlib1g:amd64",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(apt, "sonic_rs_common_test_deps")
