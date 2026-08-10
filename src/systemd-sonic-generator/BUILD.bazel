@@ -1,5 +1,6 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sonic_build_infra//cc:gtest_test.bzl", "sonic_cc_gtest_test")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
 
 package(default_visibility = ["//visibility:public"])
@@ -112,22 +113,18 @@ cc_binary(
 
 # Make runs the suite from the package root (`make test` -> ./ssg_test) and
 # ssg-test.cc uses CWD-relative fixture paths, creating scratch dirs under
-# tests/ssg-test/. Bazel's test CWD is the main repo's runfiles dir and the
-# sandbox has no installed debs, so the launcher (a) stages tests/testfiles/
-# into TEST_TMPDIR, (b) unpacks TEST_APT_DATA into a sysroot and starts the
-# binary under the trixie loader with LD_LIBRARY_PATH — mirroring
-# sonic-eventd's tests/run_test.sh. Expected result mirrors the deb build log:
+# tests/ssg-test/ — hence fixture_mode = "stage" (writable package-root
+# replica in TEST_TMPDIR). The runtime .so closure is unpacked into the
+# runner's sysroot and the binary runs under the trixie loader; see
+# @sonic_build_infra//cc:test_runner.sh. Expected result mirrors the deb
+# build log:
 #   [  PASSED  ] 14 tests. (3 suites)
-sh_test(
+sonic_cc_gtest_test(
     name = "ssg_test",
-    size = "small",
-    srcs = ["run_ssg_test.sh"],
-    data = [":ssg_test_bin"] + glob(["tests/testfiles/**"]) + TEST_APT_DATA,
-    env = {
-        "SSG_TEST_BIN": "$(rootpath :ssg_test_bin)",
-        # Any file inside testfiles/ works; the launcher dirname()s it.
-        "SSG_TESTFILE": "$(rootpath tests/testfiles/test.service)",
-    },
+    binary = ":ssg_test_bin",
+    fixture_mode = "stage",
+    fixtures = glob(["tests/testfiles/**"]),
+    runtime_debs = TEST_APT_DATA,
 )
 
 sonic_deb(
