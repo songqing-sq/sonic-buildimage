@@ -148,6 +148,154 @@ cc_binary(
     ],
 )
 
+# =============================================================================
+# Unit tests (Make: tests/Makefile.am, `TESTS = tests tests_asan ...`).
+#
+# tests_SOURCES = rebootbe_test.cpp + rebootbe.cpp + reboot_thread_test.cpp +
+# reboot_thread.cpp + test_main.cpp, linked against gtest/gmock, libswsscommon,
+# libprotobuf and librebootgnoi. The production sources come from the same
+# patched genrules the daemon uses, so the test and the shipped binary compile
+# identical code.
+#
+# Make also builds tests_asan / tests_tsan / tests_usan -- the same sources with
+# -fsanitize=address|thread|undefined. Those are deliberately not reproduced as
+# three extra targets: sanitizers belong behind a Bazel config on the one target
+# rather than duplicated rules.
+# =============================================================================
+
+# The test sources and the mock header include "system/system.pb.h", but the
+# generated proto header lives at github.com/openconfig/gnoi/system/system.pb.h
+# -- the same rewrite patch_reboot_thread_h applies to the production header.
+[
+    genrule(
+        name = "patch_test_" + src.replace(".", "_"),
+        srcs = ["tests/" + src],
+        outs = ["patched/" + src],
+        cmd = "sed " +
+              "-e 's|\"system/system.pb.h\"|\"github.com/openconfig/gnoi/system/system.pb.h\"|g' " +
+              "$(SRCS) > $@",
+    )
+    for src in [
+        "rebootbe_test.cpp",
+        "reboot_thread_test.cpp",
+        "mock_reboot_interfaces.h",
+    ]
+]
+
+cc_binary(
+    name = "sysmgr_ut_bin",
+    testonly = True,
+    srcs = [
+        "patched/mock_reboot_interfaces.h",
+        "patched/reboot_thread_test.cpp",
+        "patched/rebootbe_test.cpp",
+        "tests/test_main.cpp",
+        # Production code under test, from the same genrules the daemon uses.
+        "patched/reboot_thread.cpp",
+        "patched/reboot_thread.h",
+        "patched/rebootbe.cpp",
+        "rebootbackend/interfaces.cpp",
+        "rebootbackend/interfaces.h",
+        "rebootbackend/reboot_common.h",
+        "rebootbackend/reboot_interfaces.h",
+        "rebootbackend/rebootbe.h",
+        ":reboot_dbus_h",
+    ],
+    copts = [
+        "-std=c++17",
+        "-Wno-write-strings",
+        "-Wno-unused-parameter",
+        "-Wno-deprecated-declarations",
+    ],
+    includes = [
+        "gen_dbus",
+        "patched",
+        "rebootbackend",
+    ],
+    deps = [
+        ":rebootgnoi",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@protobuf//:json_util",
+        "@sonic-swss-common//:swsscommon",
+        "@sonic_build_infra//system_libs:pthread",
+        "@sysmgr_deps//libdbus-c++-dev:dbus-c++-1",
+    ],
+    dynamic_deps = [
+        ":rebootgnoi_shared",
+        "@sonic_build_infra//protobuf:libprotobuf_shared",
+        "@libnl3//:libnl_3_shared",
+        "@libnl3//:libnl_nf_3_shared",
+        "@libnl3//:libnl_route_3_shared",
+        "@libnl3//:libnl_genl_3_shared",
+        "@libyang3//:yang_shared",
+        "@sonic-swss-common//:swsscommon_shared",
+    ],
+)
+
+# The wrapper bridges the sandbox-only gaps: the versioned libraries' soname
+# symlinks live in their `_files` targets rather than the _solib_* dirs the RPATH
+# points at, and libswsscommon's apt runtime closure is not installed anywhere in
+# the sandbox. See src/sonic-eventd/tests/run_test.sh for the full story.
+#
+# TAGGED MANUAL -- 4 of the 33 cases pass (RebootStatusTest); RebootThreadTest and
+# RebootBEAutoStartTest do not. Their fixture constructors build swss::DBConnector
+# directly, so SonicDBConfig falls back to its hardcoded absolute
+# DEFAULT_SONIC_DB_CONFIG_FILE (/var/run/redis/sonic-db/database_config.json).
+# That path is not writable, and swsscommon exposes no env-var override.
+#
+# The wrapper implements the fix -- bind-mount a staged config over /run/redis
+# with bubblewrap -- and it is correct, but it cannot run *here*: this build host
+# is already inside a container whose uid_map is fully mapped (0 0 4294967295), so
+# no further user namespace can be nested and bwrap fails with
+# "setting up uid map: Permission denied". Drop the manual tag on any host that
+# allows userns nesting.
+#
+# Make only passes because the sonic-slave container ships that config file.
+sh_test(
+    name = "sysmgr_ut",
+    size = "small",
+    srcs = ["tests/run_test.sh"],
+    args = ["$(rootpath :sysmgr_ut_bin)"],
+    tags = ["manual"],
+    data = [
+        ":rebootgnoi_files",
+        ":sysmgr_ut_bin",
+        # The fixtures construct DBConnector directly and SonicDBConfig falls
+        # back to the hardcoded /var/run/redis/sonic-db/database_config.json.
+        # The wrapper stages this file there over a bubblewrap bind mount.
+        "@sonic-swss-common//:common/database_config.json",
+        "@sysmgr_deps//bubblewrap:data",
+        "@libnl3//:libnl_3_files",
+        "@libnl3//:libnl_genl_3_files",
+        "@libnl3//:libnl_nf_3_files",
+        "@libnl3//:libnl_route_3_files",
+        "@libyang3//:yang_files",
+        "@sonic-swss-common//:swsscommon_files",
+        "@sonic_build_infra//protobuf:libprotobuf_files",
+        "@sysmgr_deps//libboost-serialization1.83.0:data",
+        # The binary links libdbus-c++-1.so.0, whose own DT_NEEDED pulls
+        # libdbus-1.so.3. Both packages already exist in the pool for the deb.
+        "@sysmgr_deps//libdbus-1-3:data",
+        "@sysmgr_deps//libdbus-c++-1-0v5:data",
+        # libc6 also supplies the ld-linux the wrapper runs the binary under, so
+        # the loader and libc stay from the same glibc package.
+        "@sysmgr_deps//libc6:data",
+        "@sysmgr_deps//libgcc-s1:data",
+        "@sysmgr_deps//libstdc++6:data",
+        "@sysmgr_deps//libhiredis1.1.0:data",
+        "@sysmgr_deps//liblua5.1-0:data",
+        "@sysmgr_deps//libpcre2-8-0:data",
+        "@sysmgr_deps//libpcre2-16-0:data",
+        "@sysmgr_deps//libpcre2-32-0:data",
+        "@sysmgr_deps//libpcre2-posix3:data",
+        "@sysmgr_deps//libuuid1:data",
+        "@sysmgr_deps//libxxhash0:data",
+        "@sysmgr_deps//libzmq5:data",
+        "@sysmgr_deps//zlib1g:data",
+    ],
+)
+
 sonic_deb(
     name = "sysmgr_{}.deb".format(VERSION),
     package = "sysmgr",

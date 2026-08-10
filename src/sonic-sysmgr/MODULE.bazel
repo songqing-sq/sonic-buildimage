@@ -13,6 +13,12 @@ bazel_dep(name = "libnl3", version = "3.7.0")
 bazel_dep(name = "libyang3", version = "3.12.2")
 bazel_dep(name = "gnoi", version = "0.0.0")
 
+# gtest/gmock for the unit tests under tests/ (tests/Makefile.am links
+# -lgtest -lgtest_main -lgmock -lgmock_main). Not marked dev_dependency: this
+# module is always consumed as a non-root dependency, and dev deps are dropped
+# in that case, which would leave @googletest unresolvable.
+bazel_dep(name = "googletest", version = "1.15.2")
+
 apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
 apt.install(
     dependency_set = "sysmgr_deps",
@@ -48,6 +54,31 @@ apt.install(
         "libstdc++6:arm64",
         "libgcc-s1:amd64",
         "libgcc-s1:arm64",
+        # Test-only: the RebootBE / RebootThread fixtures construct
+        # swss::DBConnector directly, which reads the hardcoded absolute path
+        # /var/run/redis/sonic-db/database_config.json. That path is not writable
+        # in the sandbox and swsscommon offers no env-var override, so the wrapper
+        # bind-mounts a writable /run/redis with bubblewrap instead of patching
+        # upstream. Declared from apt rather than using the host binary so the
+        # test stays hermetic.
+        "bubblewrap:amd64",
+        # Test-only: a sandboxed test has no installed debs, so the whole
+        # runtime .so closure the binary loads must reach the runfiles. In
+        # production these arrive via libswsscommon's deb Depends, which put
+        # them in the standard multiarch dir. swsscommon declares them in its
+        # own isolated pool, invisible from here, hence the duplication.
+        # amd64 only -- tests run on the exec platform.
+        "libboost-serialization1.83.0:amd64",
+        "libhiredis1.1.0:amd64",
+        "libzmq5:amd64",
+        "libuuid1:amd64",
+        "libpcre2-8-0:amd64",
+        "libpcre2-16-0:amd64",
+        "libpcre2-32-0:amd64",
+        "libpcre2-posix3:amd64",
+        "liblua5.1-0:amd64",
+        "libxxhash0:amd64",
+        "zlib1g:amd64",
     ],
     suites = ["trixie", "trixie-updates", "trixie-security"],
 )
