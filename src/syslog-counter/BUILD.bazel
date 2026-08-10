@@ -1,4 +1,4 @@
-load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
 
 package(default_visibility = ["//visibility:public"])
@@ -33,6 +33,57 @@ rust_binary(
     experimental_use_cc_common_link = 1,
     deps = _DIRECT_CRATES + [
         "@sonic-swss-common//crates/swss-common:swss_common",
+    ],
+)
+
+# Unit tests (Make: `test: cargo test`).
+#
+# tests/syslog_counter_test.rs pulls the library in with
+# `#[path = "../src/lib.rs"] mod lib;` rather than depending on a library crate,
+# so both files share one compilation unit -- the same arrangement the binary
+# uses. The suite substitutes a MockDbConnector for DbConnectorTrait, so nothing
+# talks to a live redis.
+#
+# Tagged manual and driven through the sh_test below: the binary inherits
+# libswsscommon's whole runtime .so closure, none of which is installed in the
+# sandbox, so the apt data tars have to be unpacked before it can start.
+rust_test(
+    name = "syslog_counter_test_bin",
+    srcs = [
+        "src/lib.rs",
+        "tests/syslog_counter_test.rs",
+    ],
+    crate_root = "tests/syslog_counter_test.rs",
+    edition = "2021",
+    # Same linker reason as the binary above.
+    experimental_use_cc_common_link = 1,
+    tags = ["manual"],
+    deps = _DIRECT_CRATES + [
+        "@sonic-swss-common//crates/swss-common:swss_common",
+    ],
+)
+
+sh_test(
+    name = "syslog_counter_test",
+    size = "small",
+    srcs = ["tests/run_test.sh"],
+    args = ["$(rootpath :syslog_counter_test_bin)"],
+    data = [
+        ":syslog_counter_test_bin",
+        "@syslog_counter_test_deps//libboost-serialization1.83.0:data",
+        "@syslog_counter_test_deps//libc6:data",
+        "@syslog_counter_test_deps//libgcc-s1:data",
+        "@syslog_counter_test_deps//libhiredis1.1.0:data",
+        "@syslog_counter_test_deps//liblua5.1-0:data",
+        "@syslog_counter_test_deps//libpcre2-16-0:data",
+        "@syslog_counter_test_deps//libpcre2-32-0:data",
+        "@syslog_counter_test_deps//libpcre2-8-0:data",
+        "@syslog_counter_test_deps//libpcre2-posix3:data",
+        "@syslog_counter_test_deps//libstdc++6:data",
+        "@syslog_counter_test_deps//libuuid1:data",
+        "@syslog_counter_test_deps//libxxhash0:data",
+        "@syslog_counter_test_deps//libzmq5:data",
+        "@syslog_counter_test_deps//zlib1g:data",
     ],
 )
 
