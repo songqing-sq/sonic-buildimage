@@ -1,6 +1,7 @@
 load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@sonic_build_infra//python:pytest_test.bzl", "sonic_py_pytest_test")
 load("@tar.bzl", "tar")
 
 py_library(
@@ -75,4 +76,47 @@ tar(
         "./usr/lib/python3/dist-packages/tests/mock_connector.py uid=0 gid=0 mode=0644 type=file content=$(location tests/mock_connector.py)",
     ],
     visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Unit tests. Bazel equivalent of the Make-side test step in slave.mk's
+# SONIC_PYTHON_WHEELS recipe:
+#     pip3 install ".[testing]" && pip3 uninstall --yes <self>
+#     timeout ... python3 -m pytest        # gate: wheel is built only if green
+#
+# `tests_lib` above deliberately excludes tests/common and stays non-testonly,
+# because the wheel depends on it: Make pip-installs the wheel's `tests` package
+# into the docker image. The suite additionally needs tests/common, which holds
+# the MockBootloader / MockConfigDb / MockDBConnector fakes, so it is gathered
+# here instead.
+#
+# Fully hermetic: those fakes replace ConfigDB and the bootloader outright, so
+# nothing reaches a live redis or touches the host.
+# =============================================================================
+py_library(
+    name = "pytest_lib",
+    testonly = True,
+    srcs = glob(["tests/**/*.py"]),
+    imports = ["."],
+    deps = [
+        ":sources",
+        "@sonic-py-common//:sources",
+        "@sonic-swss-common//pybind:swsscommon",
+        "@sonic_bmpcfgd_pip//jinja2",
+        "@sonic_bmpcfgd_pip//mock",
+        "@sonic_bmpcfgd_pip//natsort",
+        "@sonic_bmpcfgd_pip//netaddr",
+        "@sonic_bmpcfgd_pip//parameterized",
+        "@sonic_bmpcfgd_pip//pytest",
+        "@sonic_bmpcfgd_pip//pyyaml",
+        "@sonic_bmpcfgd_pip//redis",
+    ],
+)
+
+sonic_py_pytest_test(
+    name = "bmpcfgd_test",
+    test_file = "tests/bmpcfgd_test.py",
+    # venv name from bazel/pyproject.toml [project].name.
+    venv = "sonic-bmpcfgd-services",
+    deps = [":pytest_lib"],
 )
