@@ -1,6 +1,7 @@
 load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@sonic_build_infra//python:pytest_test.bzl", "sonic_py_pytest_test")
 load("@tar.bzl", "tar")
 
 py_library(
@@ -108,3 +109,43 @@ tar(
     ],
     visibility = ["//visibility:public"],
 )
+
+# =============================================================================
+# Unit tests. Bazel equivalent of the Make-side test step in slave.mk's
+# SONIC_PYTHON_WHEELS recipe:
+#     pip3 install ".[testing]" && pip3 uninstall --yes <self>
+#     timeout ... python3 -m pytest        # gate: wheel is built only if green
+#
+# `tests_lib` above stays non-testonly because the wheel depends on it (setup.py
+# packages `tests` and Make ships it inside the docker image), so the deps are
+# layered on here instead.
+#
+# The cleanest suite in this batch: swsscommon is never imported. Both test files
+# replace the whole swsscommon.swsscommon module with a MagicMock through
+# patch.dict('sys.modules') before importing frrcfgd, so nothing reaches a live
+# redis and no SONiC library has to be staged.
+# =============================================================================
+py_library(
+    name = "pytest_lib",
+    testonly = True,
+    deps = [
+        ":frrcfgd_lib",
+        ":tests_lib",
+        # frrcfgd.py imports netaddr at module level (setup.py install_requires).
+        "@sonic_frr_mgmt_pip//netaddr",
+        "@sonic_frr_mgmt_pip//pytest",
+    ],
+)
+
+_TEST_FILES = [
+    "test_config.py",
+    "test_constructor.py",
+]
+
+[sonic_py_pytest_test(
+    name = f[:-len(".py")],
+    test_file = "tests/" + f,
+    # venv name from bazel/pyproject.toml [project].name.
+    venv = "sonic-frr-mgmt-framework",
+    deps = [":pytest_lib"],
+) for f in _TEST_FILES]
