@@ -1,4 +1,5 @@
 load("@aspect_rules_py//py/unstable:defs.bzl", "py_venv_binary")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sonic_build_infra//shared_library:shared_library.bzl", "sonic_shared_library_versioned")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
@@ -146,6 +147,62 @@ filegroup(
 filegroup(
     name = "nexthopgroup_capi_hdrs",
     srcs = ["src/c-api/nexthopgroup_capi.h"],
+)
+
+# =============================================================================
+# Unit tests (Make: `make check`, via tests/Makefile.am).
+#
+# tests_tests_SOURCES lists all five files; TESTS = tests/tests registers the
+# binary with automake's check runner. tests_tests_LDADD links
+# src/libnexthopgroup.la plus -lgtest -lgtest_main -lgmock -lgmock_main.
+#
+# The -lzmq / -luuid / -lboost_serialization in LDADD are vestigial: neither the
+# test sources nor libnexthopgroup reference them (the library's only link-time
+# dep is libpthread), so they are not repeated here.
+# =============================================================================
+TEST_COPTS = LIB_COPTS + [
+    # From tests_tests_CPPFLAGS. The tests reach into private members of the
+    # generated NextHopGroupFull classes, which only compiles with access
+    # control disabled.
+    "-fno-access-control",
+]
+
+cc_binary(
+    name = "fib_ut_bin",
+    testonly = True,
+    srcs = [
+        "tests/c_api_ut.cpp",
+        "tests/main.cpp",
+        "tests/nexthopgroup_debug_ut.cpp",
+        "tests/nexthopgroupfull_json_ut.cpp",
+        "tests/nexthopgroupfull_ut.cpp",
+    ],
+    copts = TEST_COPTS,
+    dynamic_deps = [":nexthopgroup_shared"],
+    deps = [
+        ":generated_headers",
+        ":nexthopgroup",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@sonic_build_infra//system_libs:pthread",
+    ],
+)
+
+# The wrapper exists for one reason: sonic_shared_library_versioned names the
+# real artifact libnexthopgroup.so.0.0.0 while the DT_NEEDED entry records the
+# soname libnexthopgroup.so.0. cc_shared_library stages only the versioned file
+# into the _solib_* dir the link-time RPATH points at; the soname symlink is a
+# separate output carried by the `_files` target and lands in the runfiles repo
+# directory, so it needs to reach LD_LIBRARY_PATH.
+sh_test(
+    name = "fib_ut",
+    size = "small",
+    srcs = ["tests/run_test.sh"],
+    args = ["$(rootpath :fib_ut_bin)"],
+    data = [
+        ":fib_ut_bin",
+        ":nexthopgroup_files",
+    ],
 )
 
 # =============================================================================

@@ -11,6 +11,12 @@ bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
 bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
 
+# gtest/gmock for the unit tests under tests/ (tests/Makefile.am links
+# -lgtest -lgtest_main -lgmock -lgmock_main). Not marked dev_dependency: this
+# module is always consumed as a non-root dependency, and dev deps are dropped
+# in that case, which would leave @googletest unresolvable.
+bazel_dep(name = "googletest", version = "1.15.2")
+
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(python_version = "3.11.3")
 
