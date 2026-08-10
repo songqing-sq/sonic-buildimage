@@ -1,6 +1,7 @@
 load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@sonic_build_infra//python:pytest_test.bzl", "sonic_py_pytest_test")
 load("@tar.bzl", "tar")
 
 package(default_visibility = ["//visibility:public"])
@@ -100,3 +101,45 @@ tar(
     ],
     visibility = ["//visibility:public"],
 )
+
+# =============================================================================
+# Unit tests. Bazel equivalent of the Make-side test step in slave.mk's
+# SONIC_PYTHON_WHEELS recipe:
+#     pip3 install ".[testing]" && pip3 uninstall --yes <self>
+#     timeout ... python3 -m pytest        # gate: wheel is built only if green
+#
+# `:sources` already globs tests/*.py (setup.py packages both `containercfgd`
+# and `tests`, and Make ships the tests package inside the docker image), so this
+# library only adds the rsyslog conf fixtures and the deps.
+#
+# Fully hermetic: conftest.py just sets CONTAINER_NAME, and the suite patches
+# swsscommon, so nothing reaches a live redis.
+# =============================================================================
+py_library(
+    name = "pytest_lib",
+    testonly = True,
+    data = glob(["tests/*.conf"]),
+    deps = [
+        ":sources",
+        "@sonic-py-common//:sources",
+        "@sonic-swss-common//pybind:swsscommon",
+        "@sonic_containercfgd_pip//mock",
+        "@sonic_containercfgd_pip//natsort",
+        "@sonic_containercfgd_pip//pytest",
+        "@sonic_containercfgd_pip//pyyaml",
+        "@sonic_containercfgd_pip//redis",
+    ],
+)
+
+_TEST_FILES = [
+    "test_config_daemon.py",
+    "test_syslog_config.py",
+]
+
+[sonic_py_pytest_test(
+    name = f[:-len(".py")],
+    test_file = "tests/" + f,
+    # venv name from bazel/pyproject.toml [project].name.
+    venv = "sonic-containercfgd",
+    deps = [":pytest_lib"],
+) for f in _TEST_FILES]
