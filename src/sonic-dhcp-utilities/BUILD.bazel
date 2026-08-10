@@ -1,6 +1,7 @@
 load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@sonic_build_infra//python:pytest_test.bzl", "sonic_py_pytest_test")
 load("@tar.bzl", "tar")
 
 # install_requires (third-party pip): psutil, freezegun. Consuming dockers must
@@ -105,3 +106,60 @@ tar(
     ],
     visibility = ["//visibility:public"],
 )
+
+# =============================================================================
+# Unit tests. Bazel equivalent of the Make-side test step in slave.mk's
+# SONIC_PYTHON_WHEELS recipe:
+#     pip3 install ".[testing]" && pip3 uninstall --yes <self>
+#     timeout ... python3 -m pytest        # gate: wheel is built only if green
+#
+# One py_test per test file instead of one monolithic pytest run: same case set,
+# but parallel + per-file cacheable.
+#
+# Fully hermetic: MockConfigDb / MockProc / MockPopen replace the DB and
+# subprocess layers, and conftest.py patches
+# utils.swsscommon.DBConnector.__init__, so nothing reaches a live redis or
+# spawns a real dhcrelay.
+# =============================================================================
+py_library(
+    name = "pytest_lib",
+    testonly = True,
+    srcs = glob(["tests/*.py"]),
+    data = glob(["tests/test_data/**"]),
+    # conftest.py inserts the tests dir on sys.path and the files import
+    # `common_utils` as a top-level module, so both roots are needed.
+    imports = [
+        ".",
+        "tests",
+    ],
+    deps = [
+        ":sources",
+        "@sonic-py-common//:sources",
+        "@sonic-swss-common//pybind:swsscommon",
+        "@sonic_dhcp_utilities_pip//freezegun",
+        "@sonic_dhcp_utilities_pip//jinja2",
+        "@sonic_dhcp_utilities_pip//natsort",
+        "@sonic_dhcp_utilities_pip//psutil",
+        "@sonic_dhcp_utilities_pip//pytest",
+        "@sonic_dhcp_utilities_pip//pyyaml",
+        "@sonic_dhcp_utilities_pip//redis",
+    ],
+)
+
+_TEST_FILES = [
+    "test_dhcp_cfggen.py",
+    "test_dhcp_db_monitor.py",
+    "test_dhcp_lease.py",
+    "test_dhcprelayd.py",
+    "test_dhcpservd.py",
+    "test_smart_switch.py",
+    "test_utils.py",
+]
+
+[sonic_py_pytest_test(
+    name = f[:-len(".py")],
+    test_file = "tests/" + f,
+    # venv name from bazel/pyproject.toml [project].name.
+    venv = "sonic-dhcp-utilities",
+    deps = [":pytest_lib"],
+) for f in _TEST_FILES]
