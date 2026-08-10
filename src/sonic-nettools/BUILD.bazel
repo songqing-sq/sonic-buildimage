@@ -1,4 +1,4 @@
-load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
 
 package(default_visibility = ["//visibility:public"])
@@ -25,6 +25,21 @@ rust_binary(
     crate_root = "wol/src/main.rs",
     edition = "2015",
     deps = _DIRECT_CRATES,
+)
+
+# Unit tests (Make: `test: cargo test`).
+#
+# The cases live in inline `#[cfg(test)] mod tests` blocks inside
+# wol/src/wol.rs and wol/src/socket.rs, so `crate = ":wol"` recompiles the
+# binary's own crate with --test rather than duplicating srcs and deps.
+#
+# Despite living in socket.rs, none of the cases opens a socket: they only build
+# sockaddr_in / sockaddr_in6 structs and parse MAC and IP strings. So no
+# CAP_NET_RAW and no runtime staging are needed.
+rust_test(
+    name = "wol_test",
+    size = "small",
+    crate = ":wol",
 )
 
 # debian/install: `bin/wol /usr/bin/` (the Makefile moves target/release/wol
