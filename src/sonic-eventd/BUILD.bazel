@@ -52,6 +52,13 @@ TEST_APT_DATA = [
     "@eventd_deps//liblua5.1-0:data",
     "@eventd_deps//libxxhash0:data",
     "@eventd_deps//zlib1g:data",
+    # The trixie glibc family, per the sonic_cc_gtest_test convention: the
+    # runner picks its loader out of the staged sysroot, so libc/libm/ld-linux
+    # (all in libc6) plus libgcc/libstdc++ have to be declared here rather
+    # than ridden in on whatever the import closure stages into _solib_*.
+    "@eventd_deps//libc6:data",
+    "@eventd_deps//libgcc-s1:data",
+    "@eventd_deps//libstdc++6:data",
 ]
 
 # redis-server, for the DB-backed cases. /usr/bin/redis-server is a symlink to

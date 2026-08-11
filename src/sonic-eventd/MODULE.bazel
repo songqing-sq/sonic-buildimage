@@ -87,6 +87,15 @@ apt.install(
         "liblua5.1-0:amd64",
         "libxxhash0:amd64",
         "zlib1g:amd64",
+        # Test-only: the full trixie glibc family, per the sonic_cc_gtest_test
+        # convention. libc6 carries libc/libm/ld-linux, so the shared runner
+        # finds a loader matching the libc it stages and both halves of glibc
+        # come from one package. Declared explicitly rather than relying on the
+        # import closure happening to stage them into _solib_* -- that ride
+        # disappears the moment the closure's shape changes.
+        "libc6:amd64",
+        "libgcc-s1:amd64",
+        "libstdc++6:amd64",
     ],
     suites = ["trixie", "trixie-updates", "trixie-security"],
 )
