@@ -1,5 +1,7 @@
 load("@aspect_rules_py//py:defs.bzl", "py_library")
+load(":apt_tree.bzl", "apt_tree")
 load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@sonic_build_infra//python:pytest_test.bzl", "sonic_py_pytest_test")
 load("@tar.bzl//:tar.bzl", "tar")
 
 package(default_visibility = ["//visibility:public"])
@@ -42,4 +44,95 @@ tar(
     mtree = _PACKAGE_MTREE + [
         "./usr/local/bin/healthd uid=0 gid=0 mode=0755 type=file content=$(location scripts/healthd)",
     ],
+)
+
+# -----------------------------------------------------------------------------
+# apt-provided python packages (dbus, gi) for the suite's mock.patch targets.
+#
+# rules_distroless only exposes a deb's payload as an un-extracted
+# content.tar.gz. //cc:test_runner.sh unpacks those at run time for sh_test
+# consumers, but a py_venv_test has no such launcher, so unpack at BUILD time
+# into two trees: one importable (PYTHONPATH) and one for ld.so
+# (LD_LIBRARY_PATH). Same idea as src/libyang3-py3's :runtime_libs, with a
+# directory output instead of an exhaustive `outs` list (~54 files here).
+#
+# Both env vars have to be set by Bazel before the process starts -- ld.so reads
+# LD_LIBRARY_PATH once at exec and PYTHONPATH is consumed by site at startup --
+# so they are `env` entries on the test, not something the pytest shim can do.
+# -----------------------------------------------------------------------------
+apt_tree(
+    name = "apt_py",
+    strip = "usr/lib/python3/dist-packages",
+    tars = [
+        "@system_health_apt//python3-dbus:data",
+        "@system_health_apt//python3-gi:data",
+    ],
+)
+
+# The .so closure those two extensions load, plus the typelibs gi needs.
+# Enumerated deliberately: a blanket scan would also surface a trixie
+# libc.so.6 and kill the host interpreter.
+apt_tree(
+    name = "apt_lib",
+    strip = "usr/lib/x86_64-linux-gnu",
+    tars = [
+        "@system_health_apt//gir1.2-glib-2.0:data",
+        "@system_health_apt//libdbus-1-3:data",
+        "@system_health_apt//libffi8:data",
+        "@system_health_apt//libgirepository-1.0-1:data",
+        "@system_health_apt//libglib2.0-0t64:data",
+    ],
+)
+
+# =============================================================================
+# Unit tests. Bazel equivalent of the Make-side test step in slave.mk's
+# SONIC_PYTHON_WHEELS recipe:
+#     pip3 install ".[testing]" && pip3 uninstall --yes <self>
+#     timeout ... python3 -m pytest        # gate: wheel is built only if green
+#
+# test_system_health.py imports its fixtures as a package (`from
+# .mock_connector import MockConnector`) and load_source()s scripts/healthd,
+# so both the tests package and the script travel as data. The suite patches
+# swsscommon.SonicV2Connector with its own MockConnector, so nothing reaches a
+# live redis.
+# =============================================================================
+py_library(
+    name = "pytest_lib",
+    testonly = True,
+    srcs = _ALL_SRCS,
+    data = ["scripts/healthd"] + glob(
+        ["tests/**"],
+        exclude = ["tests/**/*.py"],
+    ) + [
+        ":apt_py",
+        ":apt_lib",
+    ],
+    imports = ["."],
+    deps = [
+        "@sonic-py-common//:sources",
+        "@sonic-swss-common//pybind:swsscommon",
+        "@system_health_pip//docker",
+        "@system_health_pip//jinja2",
+        "@system_health_pip//mock",
+        "@system_health_pip//natsort",
+        "@system_health_pip//psutil",
+        "@system_health_pip//pytest",
+        "@system_health_pip//pyyaml",
+    ],
+)
+
+sonic_py_pytest_test(
+    name = "test_system_health",
+    test_file = "tests/test_system_health.py",
+    env = {
+        # Runfiles-relative, from the test's runfiles root (the shim chdirs
+        # into the package dir, but both vars are read before that).
+        "PYTHONPATH": "../system-health+/apt_py",
+        "LD_LIBRARY_PATH": "../system-health+/apt_lib",
+        # libgirepository looks the typelibs up here.
+        "GI_TYPELIB_PATH": "../system-health+/apt_lib/girepository-1.0",
+    },
+    # venv name from bazel/pyproject.toml [project].name.
+    venv = "system-health",
+    deps = [":pytest_lib"],
 )
