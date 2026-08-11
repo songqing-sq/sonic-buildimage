@@ -1,5 +1,6 @@
 load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@sonic_build_infra//python:pytest_test.bzl", "sonic_py_pytest_test")
 load("@tar.bzl", "tar")
 
 package(default_visibility = ["//visibility:public"])
@@ -103,4 +104,45 @@ tar(
         "./usr/local/bin/sonic-cfg-help uid=0 gid=0 mode=0755 type=file content=$(location sonic-cfg-help)",
     ],
     visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Unit tests. Bazel equivalent of the Make-side test step in slave.mk's
+# SONIC_PYTHON_WHEELS recipe (pip install ".[testing]" + python3 -m pytest,
+# which gates the wheel).
+#
+# Only tests/test_sonic_yang_mgmt.py is wired up. tests/test_cfghelp.py is left
+# out on purpose: it shells out to ../sonic-cfg-help as a subprocess, and that
+# script hardcodes YANG_MODELS_DIR = "/usr/local/yang-models" with no CLI flag
+# or env override, so it can only work where the sonic-yang-models wheel has
+# been installed system-wide (the slave container). Making it hermetic needs
+# either a bind mount (the route sonic-sysmgr abandoned -- userns nesting is
+# unavailable on this host) or an env-var escape hatch in the script; see
+# test_docs/module_log/sonic-yang-mgmt_module_log.md.
+# =============================================================================
+py_library(
+    name = "pytest_lib",
+    testonly = True,
+    srcs = glob(["tests/**/*.py"]),
+    data = glob(
+        ["tests/**"],
+        exclude = ["tests/**/*.py"],
+    ),
+    imports = ["."],
+    deps = [
+        ":sources",
+        "@sonic_yang_mgmt_pip//ijson",
+        "@sonic_yang_mgmt_pip//jsondiff",
+        "@sonic_yang_mgmt_pip//jsonpointer",
+        "@sonic_yang_mgmt_pip//pytest",
+        "@sonic_yang_mgmt_pip//tabulate",
+    ],
+)
+
+sonic_py_pytest_test(
+    name = "test_sonic_yang_mgmt",
+    test_file = "tests/test_sonic_yang_mgmt.py",
+    # venv name from bazel/pyproject.toml [project].name.
+    venv = "sonic-yang-mgmt",
+    deps = [":pytest_lib"],
 )

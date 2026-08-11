@@ -1,0 +1,25 @@
+# Bazel-only manifest: feeds the aspect_rules_py uv extension (MODULE.bazel)
+# to provision the third-party test deps for the py_test targets in
+# BUILD.bazel. It does NOT drive the wheel build -- wheel metadata lives in
+# py_wheel(requires=...) which mirrors setup.py, and the Make side keeps using
+# setup.py directly.
+#
+# Make-side equivalents: setup.py tests_require is ['pytest>3', 'ijson>=3.2.3',
+# 'jsondiff>=1.2.0'], and install_requires adds jsonpointer + tabulate. The
+# slave image preinstalls pytest.
+[project]
+name = "sonic-yang-mgmt"
+version = "1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "pytest",
+    "ijson",
+    "jsondiff",
+    "jsonpointer",
+    "tabulate",
+    # PEP517 frontend/backend for the extension's sdist_build repos; must be
+    # [project] dependencies so the hub emits their aliases, same pattern as
+    # src/sonic-py-common.
+    "build",
+    "setuptools",
+]
