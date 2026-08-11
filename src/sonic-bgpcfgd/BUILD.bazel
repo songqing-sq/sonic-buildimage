@@ -1,6 +1,7 @@
 load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@sonic_build_infra//python:pytest_test.bzl", "sonic_py_pytest_test")
 load("@tar.bzl", "tar")
 
 py_library(
@@ -36,6 +37,74 @@ py_library(
     srcs = glob(["tests/*.py"]),
     imports = ["."],
 )
+
+# =============================================================================
+# Unit tests. Bazel equivalent of the Make-side test step in slave.mk's
+# SONIC_PYTHON_WHEELS recipe (pip install ".[testing]" + python3 -m pytest,
+# which gates the wheel).
+#
+# The suites do not touch a live redis or the real swsscommon: each test file
+# does `sys.modules["swsscommon"] = swsscommon_test` (tests/swsscommon_test.py,
+# a pure-Python fake) and mocks subprocess, so only the first-party bgpcfgd
+# packages + jinja2/netaddr/pyyaml are needed.
+#
+# test_sonic-cfggen.py and eight template/constants suites are excluded: they
+# read fixtures from OTHER parts of the source tree that this standalone module
+# cannot reach --
+#   * ../../dockers/docker-fpm-frr/frr  (51 jinja2 templates, owned by
+#     docker-fpm-frr) rendered by test_bgp/_setsrc/_templates/_bbr_templates/
+#     _chassis_app_db/_device_global/_ipv6_nexthop_global/_prefix_list;
+#   * ../../files/image_config/constants (constants.yml);
+#   * the sonic-cfggen console script (sonic-config-engine).
+# Bazel modules can only glob their own files, and none of the above is exposed
+# as a cross-module target yet. Wiring them needs docker-fpm-frr / files /
+# sonic-config-engine to publish those dirs as filegroups the tests can take as
+# data (a design decision spanning several components); vendoring copies here
+# would drift from the upstreams. Tracked in
+# test_docs/module_log/sonic-bgpcfgd_module_log.md.
+_EXCLUDED_TESTS = [
+    "tests/test_sonic-cfggen.py",
+    "tests/test_bbr_templates.py",
+    "tests/test_bgp.py",
+    "tests/test_chassis_app_db.py",
+    "tests/test_device_global.py",
+    "tests/test_ipv6_nexthop_global.py",
+    "tests/test_prefix_list.py",
+    "tests/test_setsrc.py",
+    "tests/test_templates.py",
+]
+
+py_library(
+    name = "pytest_lib",
+    testonly = True,
+    data = glob(["tests/**"], exclude = ["tests/**/*.py"]),
+    imports = ["."],
+    deps = [
+        ":bgpcfgd_lib",
+        ":bgpmon_lib",
+        ":bfdmon_lib",
+        ":staticroutebfd_lib",
+        ":tests_lib",
+        "@sonic-swss-common//pybind:swsscommon",
+        "@sonic-py-common//:sources",
+        "@sonic_bgpcfgd_pip//jinja2",
+        "@sonic_bgpcfgd_pip//mock",
+        "@sonic_bgpcfgd_pip//natsort",
+        "@sonic_bgpcfgd_pip//netaddr",
+        "@sonic_bgpcfgd_pip//pytest",
+        "@sonic_bgpcfgd_pip//pyyaml",
+    ],
+)
+
+[sonic_py_pytest_test(
+    name = f[len("tests/"):-len(".py")],
+    test_file = f,
+    venv = "sonic-bgpcfgd",
+    deps = [":pytest_lib"],
+) for f in glob(
+    ["tests/test_*.py"],
+    exclude = _EXCLUDED_TESTS,
+)]
 
 py_wheel(
     name = "wheel",

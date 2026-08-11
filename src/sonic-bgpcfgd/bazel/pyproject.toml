@@ -1,0 +1,27 @@
+# Bazel-only manifest: feeds the aspect_rules_py uv extension (MODULE.bazel)
+# to provision the third-party test deps for the py_test targets in
+# BUILD.bazel. It does NOT drive the wheel build -- wheel metadata lives in
+# py_wheel(requires=...) which mirrors setup.py, and the Make side keeps using
+# setup.py directly.
+#
+# Make-side equivalents: setup.py install_requires (jinja2, netaddr, pyyaml) +
+# tests_require (pytest, pytest-cov). netaddr pinned to 0.8.0 like setup.py.
+# The suites replace swsscommon with tests/swsscommon_test.py (a pure-Python
+# fake, `sys.modules["swsscommon"] = swsscommon_test`), so no pybind is needed.
+[project]
+name = "sonic-bgpcfgd"
+version = "1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "pytest",
+    "mock",
+    "jinja2>=2.10",
+    "netaddr==0.8.0",
+    "pyyaml>=6.0.1",
+    "natsort",
+    # PEP517 frontend/backend for the extension's sdist_build repos; must be
+    # [project] dependencies so the hub emits their aliases, same pattern as
+    # src/sonic-py-common.
+    "build",
+    "setuptools",
+]
