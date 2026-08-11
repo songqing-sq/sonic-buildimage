@@ -5,6 +5,7 @@ module(
 
 bazel_dep(name = "rules_cc", version = "0.2.16")
 bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "protobuf", version = "29.0")
 bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
 bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
@@ -54,14 +55,17 @@ apt.install(
         "libstdc++6:arm64",
         "libgcc-s1:amd64",
         "libgcc-s1:arm64",
-        # Test-only: the RebootBE / RebootThread fixtures construct
-        # swss::DBConnector directly, which reads the hardcoded absolute path
-        # /var/run/redis/sonic-db/database_config.json. That path is not writable
-        # in the sandbox and swsscommon offers no env-var override, so the wrapper
-        # bind-mounts a writable /run/redis with bubblewrap instead of patching
-        # upstream. Declared from apt rather than using the host binary so the
-        # test stays hermetic.
-        "bubblewrap:amd64",
+        # The fixtures need a live redis, not just a parseable config: they hold
+        # DBConnector members plus NotificationProducer / NotificationConsumer.
+        # /usr/bin/redis-server is a symlink to redis-check-rdb, whose real
+        # multicall binary ships in redis-tools; the rest is that binary's
+        # DT_NEEDED closure.
+        "redis-server:amd64",
+        "redis-tools:amd64",
+        "liblzf1:amd64",
+        "libatomic1:amd64",
+        "libjemalloc2:amd64",
+        "libsystemd0:amd64",
         # Test-only: a sandboxed test has no installed debs, so the whole
         # runtime .so closure the binary loads must reach the runfiles. In
         # production these arrive via libswsscommon's deb Depends, which put
