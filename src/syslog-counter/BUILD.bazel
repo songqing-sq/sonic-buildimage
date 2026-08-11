@@ -1,4 +1,5 @@
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+load("@sonic_build_infra//cc:gtest_test.bzl", "sonic_cc_gtest_test")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
 
 package(default_visibility = ["//visibility:public"])
@@ -63,13 +64,10 @@ rust_test(
     ],
 )
 
-sh_test(
+sonic_cc_gtest_test(
     name = "syslog_counter_test",
-    size = "small",
-    srcs = ["tests/run_test.sh"],
-    args = ["$(rootpath :syslog_counter_test_bin)"],
-    data = [
-        ":syslog_counter_test_bin",
+    binary = ":syslog_counter_test_bin",
+    runtime_debs = [
         "@syslog_counter_test_deps//libboost-serialization1.83.0:data",
         "@syslog_counter_test_deps//libc6:data",
         "@syslog_counter_test_deps//libgcc-s1:data",

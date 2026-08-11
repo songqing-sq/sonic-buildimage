@@ -1,6 +1,7 @@
 load("@aspect_rules_py//py/unstable:defs.bzl", "py_venv_binary")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sonic_build_infra//cc:gtest_test.bzl", "sonic_cc_gtest_test")
 load("@sonic_build_infra//shared_library:shared_library.bzl", "sonic_shared_library_versioned")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
 
@@ -188,21 +189,16 @@ cc_binary(
     ],
 )
 
-# The wrapper exists for one reason: sonic_shared_library_versioned names the
-# real artifact libnexthopgroup.so.0.0.0 while the DT_NEEDED entry records the
-# soname libnexthopgroup.so.0. cc_shared_library stages only the versioned file
-# into the _solib_* dir the link-time RPATH points at; the soname symlink is a
-# separate output carried by the `_files` target and lands in the runfiles repo
-# directory, so it needs to reach LD_LIBRARY_PATH.
-sh_test(
+# libnexthopgroup is a sonic_shared_library_versioned, so DT_NEEDED records the
+# soname (libnexthopgroup.so.0) while the _solib_* dir the RPATH points at holds
+# only the fully versioned file. The shared runner picks the soname symlink up
+# from the `_files` target. Nothing else is needed: the library links only
+# libpthread, so there is no apt runtime closure and no hermetic-glibc loader in
+# play.
+sonic_cc_gtest_test(
     name = "fib_ut",
-    size = "small",
-    srcs = ["tests/run_test.sh"],
-    args = ["$(rootpath :fib_ut_bin)"],
-    data = [
-        ":fib_ut_bin",
-        ":nexthopgroup_files",
-    ],
+    binary = ":fib_ut_bin",
+    runtime_files = [":nexthopgroup_files"],
 )
 
 # =============================================================================

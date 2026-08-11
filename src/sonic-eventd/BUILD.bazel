@@ -1,4 +1,5 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@sonic_build_infra//cc:gtest_test.bzl", "sonic_cc_gtest_test")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
 
 package(default_visibility = ["//visibility:public"])
@@ -205,17 +206,16 @@ cc_binary(
 # redis-server on rewritten endpoints so the DB-backed cases in eventd_ut.cpp
 # actually run (without one, main.cpp's probe leaves g_is_redis_available false
 # and those cases return early).
-sh_test(
+sonic_cc_gtest_test(
     name = "eventd_ut",
     size = "medium",
-    srcs = ["tests/run_test.sh"],
-    args = [
-        "--redis",
-        "$(rootpath :eventd_ut_bin)",
-    ],
-    data = glob(["tests/redis_multi_db_ut_config/*.json"]) + [
-        ":eventd_ut_bin",
-    ] + TEST_SO_FILES + TEST_APT_DATA + REDIS_DATA,
+    binary = ":eventd_ut_bin",
+    fixtures = glob(["tests/redis_multi_db_ut_config/*.json"]),
+    # The hook rewrites the fixture endpoints, so it needs a writable replica.
+    fixture_mode = "in_place",
+    runtime_debs = TEST_APT_DATA + REDIS_DATA,
+    runtime_files = TEST_SO_FILES,
+    setup = "tests/redis_setup.sh",
 )
 
 # ------ eventdb unit tests (Make: `eventdb-tests`) ------
@@ -260,21 +260,20 @@ cc_binary(
     ] + PTHREAD_DEP,
 )
 
-sh_test(
+sonic_cc_gtest_test(
     name = "eventdb_ut",
     size = "medium",
-    srcs = ["tests/run_test.sh"],
-    args = [
-        "--redis",
-        "$(rootpath :eventdb_ut_bin)",
-    ],
-    data = [
-        ":eventdb_ut_bin",
+    binary = ":eventdb_ut_bin",
+    fixtures = [
         "tests/default.json",
         "tests/eventd.json",
         "tests/eventdb_database_config.json",
         "tests/eventdb_database_config_global.json",
-    ] + TEST_SO_FILES + TEST_APT_DATA + REDIS_DATA,
+    ],
+    fixture_mode = "in_place",
+    runtime_debs = TEST_APT_DATA + REDIS_DATA,
+    runtime_files = TEST_SO_FILES,
+    setup = "tests/redis_setup.sh",
 )
 
 # ------ rsyslog_plugin unit tests (Make: `rsyslog-plugin-tests`) ------
@@ -312,17 +311,18 @@ cc_binary(
     ] + PTHREAD_DEP,
 )
 
-sh_test(
+sonic_cc_gtest_test(
     name = "rsyslog_plugin_ut",
-    size = "small",
-    srcs = ["tests/run_test.sh"],
-    args = ["$(rootpath :rsyslog_plugin_ut_bin)"],
-    data = glob([
+    binary = ":rsyslog_plugin_ut_bin",
+    fixtures = glob([
         "rsyslog_plugin_tests/*.json",
         "rsyslog_plugin_tests/*.txt",
-    ]) + [
-        ":rsyslog_plugin_ut_bin",
-    ] + TEST_SO_FILES + TEST_APT_DATA,
+    ]),
+    # Pure parsing cases: they read their fixtures through package-relative
+    # paths and never write, so no staging and no redis.
+    fixture_mode = "in_place",
+    runtime_debs = TEST_APT_DATA,
+    runtime_files = TEST_SO_FILES,
 )
 
 # ------ sonic-eventd .deb (main) ------

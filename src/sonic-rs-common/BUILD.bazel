@@ -1,4 +1,5 @@
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("@sonic_build_infra//cc:gtest_test.bzl", "sonic_cc_gtest_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -84,16 +85,11 @@ _TEST_APT_DATA = [
     ]
 ]
 
-[
-    sh_test(
-        name = name,
-        size = "small",
-        srcs = ["tests/run_test.sh"],
-        args = ["$(rootpath :{}_bin)".format(name)],
-        data = [":" + name + "_bin"] + _TEST_APT_DATA,
-    )
-    for name in [
-        "device_info_test",
-        "test_logger",
-    ]
-]
+[sonic_cc_gtest_test(
+    name = name,
+    binary = ":" + name + "_bin",
+    runtime_debs = _TEST_APT_DATA,
+) for name in [
+    "device_info_test",
+    "test_logger",
+]]
