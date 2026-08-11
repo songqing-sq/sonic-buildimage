@@ -1,5 +1,5 @@
 load("@aspect_rules_py//py:defs.bzl", "py_library")
-load(":apt_tree.bzl", "apt_tree")
+load("@sonic_build_infra//apt:apt_tree.bzl", "apt_tree")
 load("@rules_python//python:packaging.bzl", "py_wheel")
 load("@sonic_build_infra//python:pytest_test.bzl", "sonic_py_pytest_test")
 load("@tar.bzl//:tar.bzl", "tar")
