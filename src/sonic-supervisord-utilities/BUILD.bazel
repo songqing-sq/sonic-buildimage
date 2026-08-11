@@ -1,4 +1,6 @@
+load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@sonic_build_infra//python:pytest_test.bzl", "sonic_py_pytest_test")
 load("@rules_python//python:packaging.bzl", "py_wheel")
 load("@tar.bzl//:tar.bzl", "tar")
 
@@ -49,4 +51,52 @@ tar(
         "./usr/local/bin/supervisor-proc-exit-listener uid=0 gid=0 mode=0755 type=file content=$(location scripts/supervisor-proc-exit-listener)",
     ],
     visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Unit tests. Bazel equivalent of the Make-side test step in slave.mk's
+# SONIC_PYTHON_WHEELS recipe:
+#     pip3 install ".[testing]" && pip3 uninstall --yes <self>
+#     timeout ... python3 -m pytest        # gate: wheel is built only if green
+#
+# test_listener.py load_source()s the console script directly and patches
+# sonic-config-engine's mock_tables ConfigDBConnector into it, so nothing reaches
+# a live redis. Its `../../sonic-config-engine/tests` sys.path insert resolves in
+# the runfiles tree because both packages sit next to each other there, and
+# :mock_tables makes the files present.
+# =============================================================================
+py_library(
+    name = "pytest_lib",
+    testonly = True,
+    srcs = glob(["tests/*.py"]),
+    data = ["scripts/supervisor-proc-exit-listener"] + glob(
+        ["tests/**"],
+        exclude = ["tests/**/*.py"],
+    ) + [
+        # swsssdk reads its own bundled config/database_config.json; py_library
+        # srcs carry only .py, so the package exports the json separately.
+        "@sonic-py-swsssdk//:package_data",
+    ],
+    imports = ["."],
+    deps = [
+        "@sonic-config-engine//:mock_tables",
+        "@sonic-py-common//:sources",
+        "@sonic-py-swsssdk//:sources",
+        "@sonic-swss-common//pybind:swsscommon",
+        "@sonic_supervisord_pip//mock",
+        "@sonic_supervisord_pip//mockredispy",
+        "@sonic_supervisord_pip//natsort",
+        "@sonic_supervisord_pip//pyyaml",
+        "@sonic_supervisord_pip//pytest",
+        "@sonic_supervisord_pip//redis",
+        "@sonic_supervisord_pip//supervisor",
+    ],
+)
+
+sonic_py_pytest_test(
+    name = "test_listener",
+    test_file = "tests/test_listener.py",
+    # venv name from bazel/pyproject.toml [project].name.
+    venv = "sonic-supervisord-utilities",
+    deps = [":pytest_lib"],
 )

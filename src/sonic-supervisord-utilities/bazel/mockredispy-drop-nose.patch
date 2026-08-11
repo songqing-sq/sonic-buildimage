@@ -1,0 +1,19 @@
+Drop the nose setup_requires from mockredispy's sdist.
+
+nose was abandoned upstream and has no release that imports on Python 3.10+
+(it still uses `collections.Callable`). mockredispy only lists it so that
+`python setup.py nosetests` works and so it can register a nose plugin
+entry point -- neither matters when all we want is the built wheel, and the
+mock_tables shims that consume this package import mockredis directly.
+
+--- a/setup.py
++++ b/setup.py
+@@ -13,9 +13,6 @@
+       license='Apache2',
+       packages=find_packages(exclude=['*.tests']),
+-      setup_requires=[
+-          'nose'
+-      ],
+       extras_require={
+           'lua': ['lunatic-python-bugfix==1.1.1'],
+       },

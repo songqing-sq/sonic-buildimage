@@ -1,0 +1,31 @@
+# Bazel-only manifest: feeds the aspect_rules_py uv extension (MODULE.bazel)
+# to provision the third-party test deps for the py_test target in BUILD.bazel.
+# It does NOT drive the wheel build -- wheel metadata lives in
+# py_wheel(requires=...) which mirrors setup.py, and the Make side keeps using
+# setup.py directly.
+#
+# Make-side equivalents of these deps:
+#   supervisor   - setup.py install_requires; the script imports childutils
+#   pytest, mock - slave image preinstalled test deps
+#   mockredispy  - sonic-config-engine's tests/mock_tables (which test_listener
+#                  imports directly) swaps the redis client for mockredis
+#   redis        - imported by mock_tables/dbconnector.py alongside mockredis
+[project]
+name = "sonic-supervisord-utilities"
+version = "1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "pytest",
+    "mock",
+    "supervisor",
+    "mockredispy",
+    # sonic_py_common.device_info imports natsort at module import time.
+    "natsort",
+    "pyyaml",
+    "redis",
+    # PEP517 frontend/backend for the extension's sdist_build repos (mockredispy
+    # is sdist-only); must be [project] dependencies so the hub emits their
+    # aliases, same pattern as src/sonic-py-common.
+    "build",
+    "setuptools",
+]

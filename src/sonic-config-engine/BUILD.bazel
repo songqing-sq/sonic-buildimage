@@ -28,6 +28,34 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
+# =============================================================================
+# tests/mock_tables — the in-memory ConfigDB stand-in, exported for OTHER
+# packages' test suites.
+#
+# It monkey-patches swsssdk's SonicDBConfig and swaps the redis client for
+# mockredis, then loads the json fixtures next to it. Consumers whose code calls
+# into portconfig / ConfigDBConnector need this on the path, otherwise swsscommon
+# falls through to its hardcoded absolute
+# /var/run/redis/sonic-db/database_config.json, which no sandbox can provide.
+#
+# Current consumers: sonic-platform-common (sfputilhelper_test),
+# sonic-supervisord-utilities (test_listener).
+#
+# Deliberately NO deps: aspect_rules_py's venv is a single-valued build flag, so
+# a test can only activate one package's pip hub. Pulling this target's pip deps
+# from @sonic_config_engine_pip would make it incompatible under every consumer's
+# venv. The consumer declares mockredispy / redis in its own hub instead; this
+# target only carries the sources and fixtures.
+# =============================================================================
+py_library(
+    name = "mock_tables",
+    testonly = True,
+    srcs = glob(["tests/mock_tables/**/*.py"]),
+    data = glob(["tests/mock_tables/**/*.json"]),
+    imports = ["tests"],
+    visibility = ["//visibility:public"],
+)
+
 # bdist_wheel emits top_level.txt listing top-level module names.
 # For py_modules-based wheels, one line per module (without .py suffix).
 write_file(

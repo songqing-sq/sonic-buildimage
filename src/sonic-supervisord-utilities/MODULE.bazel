@@ -7,3 +7,35 @@ bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "aspect_rules_py", version = "1.11.7")
 bazel_dep(name = "tar.bzl", version = "0.8.1")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+
+# Test-only. test_listener.py imports sonic-config-engine's
+# tests/mock_tables.dbconnector directly (via a `../../sonic-config-engine/tests`
+# sys.path insert) and patches its ConfigDBConnector into the script under test;
+# mock_tables in turn imports swsssdk, swsscommon and sonic_py_common.
+bazel_dep(name = "sonic-config-engine", version = "1.0")
+bazel_dep(name = "sonic-py-common", version = "1.0")
+bazel_dep(name = "sonic-py-swsssdk", version = "2.0.1")
+bazel_dep(name = "sonic-swss-common", version = "1.0.0")
+
+# Third-party test deps for the py_test target. The manifest lives under bazel/
+# rather than the module root so `python3 -m build` on the Make side never sees a
+# pyproject.toml next to setup.py -- see bazel/BUILD.bazel.
+uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
+uv.declare_hub(hub_name = "sonic_supervisord_pip")
+uv.project(
+    hub_name = "sonic_supervisord_pip",
+    pyproject = "//bazel:pyproject.toml",
+    lock = "//bazel:uv.lock",
+)
+
+# mockredispy ships only an sdist whose setup.py names `nose` in setup_requires.
+# nose was abandoned upstream and does not import on Python 3.10+; it is there
+# only to register a nose plugin entry point, which the wheel build does not need.
+uv.override_package(
+    lock = "//bazel:uv.lock",
+    name = "mockredispy",
+    pre_build_patches = ["//bazel:mockredispy-drop-nose.patch"],
+    pre_build_patch_strip = 1,
+)
+use_repo(uv, "sonic_supervisord_pip")
