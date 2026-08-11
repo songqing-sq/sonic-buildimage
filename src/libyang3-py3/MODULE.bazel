@@ -25,6 +25,22 @@ apt.install(
     packages = [
         "libpcre2-dev:amd64",
         "libpcre2-dev:arm64",
+        # Test-only: the CFFI extension's DT_NEEDED closure. The -dev package
+        # above carries only the link-time .so, while a py_test importing
+        # `libyang` has to load the versioned runtime files. amd64 only -- tests
+        # run on the exec platform.
+        #
+        # Deliberately NOT libc6/libstdc++6/libgcc-s1, even though the extension
+        # links those too: staging a trixie glibc would put it ahead of the host
+        # interpreter's own libc and kill the test process outright
+        # (GLIBC_ABI_DT_X86_64_PLT not found). A py_test cannot re-exec under a
+        # matched loader the way //cc:test_runner.sh does, so the host copies of
+        # those three have to stay in play.
+        "libpcre2-8-0:amd64",
+        "libpcre2-16-0:amd64",
+        "libpcre2-32-0:amd64",
+        "libpcre2-posix3:amd64",
+        "libxxhash0:amd64",
     ],
     suites = ["trixie", "trixie-updates", "trixie-security"],
 )

@@ -2,6 +2,7 @@ load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@aspect_rules_py//py/unstable:defs.bzl", "py_venv_binary")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@sonic_build_infra//python:pytest_test.bzl", "sonic_py_pytest_test")
 load("@tar.bzl", "tar")
 
 package(default_visibility = ["//visibility:public"])
@@ -351,3 +352,71 @@ filegroup(
     ],
     visibility = ["//visibility:public"],
 )
+
+# =============================================================================
+# Unit tests. Bazel equivalent of the Make-side test step in slave.mk's
+# SONIC_PYTHON_WHEELS recipe:
+#     pip3 install ".[testing]" && pip3 uninstall --yes <self>
+#     timeout ... python3 -m pytest        # gate: wheel is built only if green
+#
+# Only tests/yang_model_pytests/ is wired here. tests/yang_model_tests/ is a
+# different harness -- JSON-driven, over sonic-yang-mgmt -- and belongs with that
+# package.
+#
+# conftest.py builds a libyang context from <package root>/yang-models/*.yang,
+# walking up two levels from its own __file__, so the models have to be staged at
+# exactly that path. Four of the 146 are rendered from templates and land under
+# gen/yang-models/, which is why :yang_models_files (covering both roots) is the
+# data dep rather than a plain glob.
+#
+# Fully hermetic: the suite only parses YANG text and validates JSON against it.
+# =============================================================================
+py_library(
+    name = "pytest_lib",
+    testonly = True,
+    srcs = glob(["tests/yang_model_pytests/*.py"]),
+    # conftest.py hardcodes <package root>/yang-models as its single libyang
+    # searchdir (it walks up two levels from its own __file__), so every model has
+    # to sit there. For the four templated ones that means the SOURCE copies, not
+    # the rendered gen/yang-models/ outputs: Bazel will not place a generated file
+    # at a path a source file already occupies. Harmless here -- the suite only
+    # needs the models to parse and sonic-types.yang to be importable, and the
+    # templating only substitutes a py/cvl flavour that these cases never inspect.
+    data = glob(["yang-models/*.yang"]),
+    imports = ["."],
+    deps = [
+        "@libyang3-py3//:libyang",
+        "@sonic_yang_models_pip//cffi",
+        "@sonic_yang_models_pip//pytest",
+    ],
+)
+
+# libyang's CFFI extension links libyang.so.3 and the pcre2 family. ld.so reads
+# LD_LIBRARY_PATH once at process start, so this cannot be done from the pytest
+# shim -- it has to be an env entry. The paths are the runfiles dirs the two
+# providers stage into, deliberately enumerated rather than discovered: a blanket
+# scan of the runfiles tree would also surface the trixie libc.so.6 and kill the
+# host interpreter (GLIBC_ABI_DT_X86_64_PLT not found).
+_LIBYANG_LIB_DIRS = ":".join([
+    # libyang.so.3 itself (soname symlink included, from :yang_files).
+    "../libyang3++_repo_rules+libyang3_src",
+    # pcre2 + libxxhash, extracted from their apt tars by :runtime_libs.
+    "../libyang3-py3+/runtime_libs",
+])
+
+# The crm suites parse the whole 146-model set per case and are genuinely slow
+# (test_dash_crm takes ~47s), so they need more than the default "small" budget.
+_SLOW_TESTS = [
+    "test_crm",
+    "test_dash_crm",
+]
+
+[sonic_py_pytest_test(
+    name = f[len("tests/yang_model_pytests/"):-len(".py")],
+    test_file = f,
+    size = "medium" if f[len("tests/yang_model_pytests/"):-len(".py")] in _SLOW_TESTS else "small",
+    env = {"LD_LIBRARY_PATH": _LIBYANG_LIB_DIRS},
+    # venv name from pyproject.toml [project].name.
+    venv = "sonic-yang-models",
+    deps = [":pytest_lib"],
+) for f in glob(["tests/yang_model_pytests/test_*.py"])]

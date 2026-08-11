@@ -4,6 +4,11 @@ bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "aspect_rules_py", version = "1.11.7")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "tar.bzl", version = "0.8.1")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+
+# Test-only. tests/yang_model_pytests/conftest.py builds a libyang context from
+# yang-models/*.yang, so it needs the CFFI binding.
+bazel_dep(name = "libyang3-py3", version = "3.1.0")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(python_version = "3.11.3")

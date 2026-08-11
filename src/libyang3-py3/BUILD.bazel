@@ -1,4 +1,6 @@
+load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@aspect_rules_py//py/unstable:defs.bzl", "py_venv")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
@@ -86,6 +88,86 @@ cc_shared_library(
 alias(
     name = "libyang_py_sources",
     actual = "@libyang_python_src//:libyang_py_sources",
+)
+
+# =============================================================================
+# Importable form of the binding, for py_test targets in other modules (currently
+# sonic-yang-models' yang_model_pytests). The .deb below installs the filegroups
+# directly and does not use this.
+# =============================================================================
+
+# The sources live in @libyang_python_src, a different repo, so a py_library
+# pointing straight at them would put `libyang/` on a runfiles path the consuming
+# venv never adds -- aspect's _aspect.pth lists this repo, not that one. Copy them
+# in first so the package and its CFFI extension share one runfiles root.
+_LIBYANG_PY_FILES = [
+    "libyang/__init__.py",
+    "libyang/context.py",
+    "libyang/data.py",
+    "libyang/diff.py",
+    "libyang/extension.py",
+    "libyang/keyed_list.py",
+    "libyang/log.py",
+    "libyang/py.typed",
+    "libyang/schema.py",
+    "libyang/util.py",
+    "libyang/xpath.py",
+]
+
+[copy_file(
+    name = "copy_" + f.replace("/", "_").replace(".", "_"),
+    src = "@libyang_python_src//:" + f,
+    out = f,
+) for f in _LIBYANG_PY_FILES]
+
+# The extension links the pcre2 family and libxxhash, which rules_distroless only
+# exposes as un-extracted content.tar.gz. //cc:test_runner.sh unpacks those at
+# runtime for sh_test consumers, but a py_venv_test has no such launcher, so
+# extract at BUILD time into one flat directory instead.
+_RUNTIME_SOS = [
+    "libpcre2-8.so.0",
+    "libpcre2-16.so.0",
+    "libpcre2-32.so.0",
+    "libpcre2-posix.so.3",
+    "libxxhash.so.0",
+]
+
+genrule(
+    name = "runtime_libs",
+    srcs = [
+        "@libyang3_py3_deps//libpcre2-16-0:data",
+        "@libyang3_py3_deps//libpcre2-32-0:data",
+        "@libyang3_py3_deps//libpcre2-8-0:data",
+        "@libyang3_py3_deps//libpcre2-posix3:data",
+        "@libyang3_py3_deps//libxxhash0:data",
+    ],
+    outs = ["runtime_libs/" + so for so in _RUNTIME_SOS],
+    cmd = """
+set -e
+work=$$(mktemp -d)
+for t in $(SRCS); do tar -xzf "$$t" -C "$$work"; done
+for out in $(OUTS); do
+  cp -L "$$work/usr/lib/x86_64-linux-gnu/$$(basename $$out)" "$$out"
+done
+rm -rf "$$work"
+""",
+)
+
+# libyang/*.py do `from _libyang import ffi, lib`, so the extension has to be
+# importable as a top-level module next to the package. It also links libyang.so.3
+# and the libraries extracted above; ld.so reads LD_LIBRARY_PATH once at process
+# start, so a consuming py_test points that at these runfiles dirs through its
+# `env` attribute -- see sonic-yang-models' BUILD.bazel.
+py_library(
+    name = "libyang",
+    srcs = [":" + f for f in _LIBYANG_PY_FILES],
+    data = [
+        ":_libyang_so",
+        ":runtime_libs",
+        "@libyang3//:yang_files",
+    ],
+    imports = ["."],
+    visibility = ["//visibility:public"],
 )
 
 # =============================================================================

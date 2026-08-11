@@ -4,6 +4,11 @@ version = "1.0"
 requires-python = ">=3.11"
 dependencies = [
     "jinja2",
+    # tests/yang_model_pytests: setup.py extras_require["testing"].
+    "pytest",
+    # libyang's binding is a CFFI extension; `from _libyang import ffi, lib`
+    # needs cffi's own _cffi_backend module at import time.
+    "cffi",
     # PEP517 build frontend/backend, required by the aspect uv extension:
     # markupsafe (jinja2's C-extension dep) has an sdist and no none-any wheel,
     # so the extension provisions an sdist_build repo whose build tool resolves
