@@ -6,6 +6,13 @@ bazel_dep(name = "tar.bzl", version = "0.8.1")
 
 bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
 
+# test_cfghelp runs the sonic-cfg-help script, which imports libyang + sonic_yang
+# and parses the yang models. libyang3-py3 provides the CFFI extension + its .so
+# closure; sonic-yang-models provides the .yang files.
+bazel_dep(name = "libyang3-py3", version = "3.1.0")
+bazel_dep(name = "sonic-yang-models", version = "1.0")
+bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
+
 uv = use_extension("@aspect_rules_py//uv/unstable:extension.bzl", "uv")
 uv.declare_hub(hub_name = "sonic_yang_mgmt_pip")
 uv.project(

@@ -16,7 +16,10 @@ dependencies = [
     "ijson",
     "jsondiff",
     "jsonpointer",
-    "tabulate",
+    "tabulate==0.9.0",
+    # sonic-cfg-help (run as a subprocess by test_cfghelp) imports libyang,
+    # whose CFFI extension needs cffi at run time.
+    "cffi",
     # PEP517 frontend/backend for the extension's sdist_build repos; must be
     # [project] dependencies so the hub emits their aliases, same pattern as
     # src/sonic-py-common.

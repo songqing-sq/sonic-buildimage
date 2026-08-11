@@ -1,5 +1,6 @@
 load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("@sonic_build_infra//python:pytest_test.bzl", "sonic_py_pytest_test")
 load("@tar.bzl", "tar")
 
@@ -110,15 +111,6 @@ tar(
 # Unit tests. Bazel equivalent of the Make-side test step in slave.mk's
 # SONIC_PYTHON_WHEELS recipe (pip install ".[testing]" + python3 -m pytest,
 # which gates the wheel).
-#
-# Only tests/test_sonic_yang_mgmt.py is wired up. tests/test_cfghelp.py is left
-# out on purpose: it shells out to ../sonic-cfg-help as a subprocess, and that
-# script hardcodes YANG_MODELS_DIR = "/usr/local/yang-models" with no CLI flag
-# or env override, so it can only work where the sonic-yang-models wheel has
-# been installed system-wide (the slave container). Making it hermetic needs
-# either a bind mount (the route sonic-sysmgr abandoned -- userns nesting is
-# unavailable on this host) or an env-var escape hatch in the script; see
-# test_docs/module_log/sonic-yang-mgmt_module_log.md.
 # =============================================================================
 py_library(
     name = "pytest_lib",
@@ -131,6 +123,10 @@ py_library(
     imports = ["."],
     deps = [
         ":sources",
+        # cffi is a runtime dep of libyang (imported by the sonic-cfg-help
+        # subprocess in test_cfghelp); it lands in the venv site-packages the
+        # subprocess python resolves through, alongside its _cffi_backend.so.
+        "@sonic_yang_mgmt_pip//cffi",
         "@sonic_yang_mgmt_pip//ijson",
         "@sonic_yang_mgmt_pip//jsondiff",
         "@sonic_yang_mgmt_pip//jsonpointer",
@@ -143,6 +139,62 @@ sonic_py_pytest_test(
     name = "test_sonic_yang_mgmt",
     test_file = "tests/test_sonic_yang_mgmt.py",
     # venv name from bazel/pyproject.toml [project].name.
+    venv = "sonic-yang-mgmt",
+    deps = [":pytest_lib"],
+)
+
+# test_cfghelp runs ../sonic-cfg-help as a subprocess. sonic-cfg-help loads
+# every model in YANG_MODELS_DIR and they cross-reference sonic-types, so the
+# directory must hold all 146 (142 static under yang-models/ + 4 rendered
+# under gen/yang-models/). yang_models_files spans both roots, so flatten them
+# into one directory here and point the script at it via the escape hatch env
+# var added to sonic-cfg-help (SONIC_YANG_MODELS_DIR).
+copy_to_directory(
+    name = "all_yang_models_dir",
+    testonly = True,
+    srcs = ["@sonic-yang-models//:yang_models_files"],
+    include_external_repositories = ["sonic-yang-models*"],
+    # Strip both yang-models/ and gen/yang-models/ prefixes so every .yang
+    # lands flat in the output root.
+    replace_prefixes = {
+        "gen/yang-models/": "",
+        "yang-models/": "",
+    },
+)
+
+# The subprocess starts fresh from the sonic-cfg-help shebang, so it inherits
+# none of the in-process sys.path the pytest shim rebuilds -- it only sees what
+# we hand it through the environment:
+#   * PYTHONPATH: sonic_yang/* (this repo) + libyang (libyang3-py3 repo). The
+#     pip deps tabulate/cffi come from the venv python the shebang resolves to.
+#   * LD_LIBRARY_PATH: libyang.so.3 + its pcre2/xxhash closure, same dirs
+#     sonic-yang-models enumerates (never a trixie glibc -- see that comment).
+#   * SONIC_YANG_MODELS_DIR: the flattened model dir above.
+# Paths are runfiles-root-relative (the test CWD is the main repo's runfiles
+# dir); all three are read before the pytest shim chdirs.
+_LIBYANG_LIB_DIRS = ":".join([
+    "../libyang3++_repo_rules+libyang3_src",
+    "../libyang3-py3+/runtime_libs",
+])
+
+_SUBPROC_PYTHONPATH = ":".join([
+    "../sonic-yang-mgmt+",
+    "../libyang3-py3+",
+])
+
+sonic_py_pytest_test(
+    name = "test_cfghelp",
+    test_file = "tests/test_cfghelp.py",
+    data = [
+        "sonic-cfg-help",
+        ":all_yang_models_dir",
+        "@libyang3-py3//:libyang",
+    ],
+    env = {
+        "SONIC_YANG_MODELS_DIR": "../sonic-yang-mgmt+/all_yang_models_dir",
+        "PYTHONPATH": _SUBPROC_PYTHONPATH,
+        "LD_LIBRARY_PATH": _LIBYANG_LIB_DIRS,
+    },
     venv = "sonic-yang-mgmt",
     deps = [":pytest_lib"],
 )

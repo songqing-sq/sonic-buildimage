@@ -2,13 +2,18 @@
 
 import argparse
 from tabulate import tabulate
+import os
 import re
 import textwrap
 
 import libyang as ly
 import sonic_yang
 
-YANG_MODELS_DIR = "/usr/local/yang-models"
+# Default to the system location the sonic-yang-models wheel installs into.
+# SONIC_YANG_MODELS_DIR lets a caller point at another copy without a code
+# change -- used by the Bazel test (tests/test_cfghelp.py runs this script as
+# a subprocess in a hermetic sandbox where /usr/local/yang-models is absent).
+YANG_MODELS_DIR = os.environ.get("SONIC_YANG_MODELS_DIR", "/usr/local/yang-models")
 
 
 class SonicCfgDescriber:
