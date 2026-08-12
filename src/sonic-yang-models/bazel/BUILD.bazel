@@ -1,0 +1,9 @@
+# Anchor package for the Bazel-only uv manifest (pyproject.toml + uv.lock).
+# Deliberately NOT at the module root: pip/setuptools discover a root
+# pyproject.toml automatically and would treat its [project] table as the
+# authoritative metadata source, switching the Make wheel build to PEP517 and
+# breaking it. Keeping the manifest here leaves Make on its legacy setup.py path.
+exports_files([
+    "pyproject.toml",
+    "uv.lock",
+])

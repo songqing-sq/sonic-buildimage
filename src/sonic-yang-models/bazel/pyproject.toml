@@ -1,13 +1,12 @@
+# Bazel-only manifest: feeds the aspect_rules_py uv extension (MODULE.bazel)
+# with the test venv deps. Deliberately in bazel/, NOT at the module root next
+# to setup.py: pip/setuptools discover a root pyproject.toml automatically and
+# then treat its [project] table as the authoritative metadata source, which
+# switched the Make wheel build to PEP517 and broke it (and every wheel
+# downstream). Keeping it here leaves Make on its legacy setup.py path.
 [project]
 name = "sonic-yang-models"
 version = "1.0"
-# setup.py passes long_description=<README.rst contents>, but setuptools treats
-# a [project] table as authoritative and then reads [project].readme -- absent,
-# it hands None to _long_description and dies with
-# "AttributeError: 'NoneType' object has no attribute 'get'". That breaks the
-# Make wheel build (slave.mk builds this with pip/setuptools), and every wheel
-# downstream of it, so declare the same file here.
-readme = "README.rst"
 requires-python = ">=3.11"
 dependencies = [
     "jinja2",
@@ -28,12 +27,3 @@ dependencies = [
     "build",
     "setuptools",
 ]
-
-# setup.py renders four yang models with jinja2 at metadata-generation time, so
-# under PEP517 build isolation jinja2 has to be a build requirement -- otherwise
-# `pip install .` fails with "No module named 'jinja2'" and takes every wheel
-# downstream of this one with it. Make only ever got away without this when some
-# earlier package in the same container happened to install jinja2 first.
-[build-system]
-requires = ["setuptools", "wheel", "jinja2"]
-build-backend = "setuptools.build_meta"

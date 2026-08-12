@@ -7,7 +7,6 @@ load("@tar.bzl", "tar")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["uv.lock"])
 exports_files(glob(["yang-models/*.yang"]))
 
 # NOTE: no reference to the source-tree cvlyang-models/ directory here. That
