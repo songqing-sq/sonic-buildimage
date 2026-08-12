@@ -182,6 +182,34 @@ _SUBPROC_PYTHONPATH = ":".join([
     "../libyang3-py3+",
 ])
 
+# The suite's class-scoped fixture reads a fixture file from a SIBLING package:
+# "../sonic-yang-models/tests/files/sample_config_db.json". Make satisfies that
+# because it runs from src/sonic-yang-mgmt, whose parent holds
+# src/sonic-yang-models. Runfiles has no sibling of that name (dependency repos
+# sit at the runfiles root as "sonic-yang-models+"), and a target may not write
+# above its own package, so the sibling cannot be created there.
+#
+# Stage a small monorepo-shaped tree inside this package instead -- _mono/ holds
+# sonic-yang-mgmt/ next to sonic-yang-models/ -- and have the pytest shim chdir
+# into _mono/sonic-yang-mgmt (SONIC_TEST_CHDIR). Both "./tests/..." and
+# "../sonic-yang-models/..." then resolve, with no change to the test source.
+copy_to_directory(
+    name = "mono_self",
+    testonly = True,
+    srcs = glob(["tests/**"]),
+    out = "_mono/sonic-yang-mgmt/tests",
+    replace_prefixes = {"tests/": ""},
+)
+
+copy_to_directory(
+    name = "mono_yang_models",
+    testonly = True,
+    srcs = ["@sonic-yang-models//:tests_files"],
+    include_external_repositories = ["sonic-yang-models*"],
+    out = "_mono/sonic-yang-models/tests/files",
+    replace_prefixes = {"tests/files/": ""},
+)
+
 # The libyang-python suite (26 of the 42 cases Make runs) opens its fixtures
 # through CWD-relative paths like "./tests/libyang-python-tests/*.json", which
 # is what the pytest shim's chdir into the module root already provides. It also
@@ -189,11 +217,26 @@ _SUBPROC_PYTHONPATH = ":".join([
 sonic_py_pytest_test(
     name = "test_sonic_yang",
     test_file = "tests/libyang-python-tests/test_sonic_yang.py",
-    data = [":all_yang_models_dir"],
+    data = [
+        ":all_yang_models_dir",
+        ":mono_self",
+        ":mono_yang_models",
+    ],
     env = {
-        "SONIC_YANG_MODELS_DIR": "../sonic-yang-mgmt+/all_yang_models_dir",
-        "PYTHONPATH": _SUBPROC_PYTHONPATH,
-        "LD_LIBRARY_PATH": _LIBYANG_LIB_DIRS,
+        # Run from inside the staged monorepo-shaped tree, so the fixture's
+        # "../sonic-yang-models/tests/files/..." resolves (see mono_self). That
+        # cwd is two levels below the package root, so the runfiles-relative
+        # paths below need three "../" instead of one.
+        "SONIC_TEST_CHDIR": "sonic-yang-mgmt+/_mono/sonic-yang-mgmt",
+        "SONIC_YANG_MODELS_DIR": "../../../sonic-yang-mgmt+/all_yang_models_dir",
+        "PYTHONPATH": ":".join([
+            "../../../sonic-yang-mgmt+",
+            "../../../libyang3-py3+",
+        ]),
+        "LD_LIBRARY_PATH": ":".join([
+            "../../../libyang3++_repo_rules+libyang3_src",
+            "../../../libyang3-py3+/runtime_libs",
+        ]),
     },
     # Two of these fail under Make as well (same names, AssertionError), so they
     # are upstream, not migration damage. The other five all hang off one
@@ -207,12 +250,6 @@ sonic_py_pytest_test(
         # upstream failures, also red under Make
         "--deselect=tests/libyang-python-tests/test_sonic_yang.py::Test_SonicYang::test_validate_yang_models",
         "--deselect=tests/libyang-python-tests/test_sonic_yang.py::Test_SonicYang::test_xlate_rev_xlate",
-        # blocked on the monorepo-shaped fixture described above
-        "--deselect=tests/libyang-python-tests/test_sonic_yang.py::Test_SonicYang::test_table_with_no_yang",
-        "--deselect=tests/libyang-python-tests/test_sonic_yang.py::Test_SonicYang::test_special_json_with_yang",
-        "--deselect=tests/libyang-python-tests/test_sonic_yang.py::Test_SonicYang::test_loaddata_quiet_suppresses_syslog_on_success",
-        "--deselect=tests/libyang-python-tests/test_sonic_yang.py::Test_SonicYang::test_loaddata_quiet_suppresses_syslog_on_failure",
-        "--deselect=tests/libyang-python-tests/test_sonic_yang.py::Test_SonicYang::test_loaddata_default_logs_syslog_on_success",
     ],
     venv = "sonic-yang-mgmt",
     deps = [
