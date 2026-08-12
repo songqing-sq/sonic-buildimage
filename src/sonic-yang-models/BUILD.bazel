@@ -260,6 +260,15 @@ _DATA_FILES = {}
 [_DATA_FILES.update({"yang-models/" + f: "data/yang-models/" + f}) for f in STATIC_YANG_FILES]
 [_DATA_FILES.update({":gen/cvlyang-models/" + f: "data/cvlyang-models/" + f}) for f in STATIC_YANG_FILES]
 
+# Fixture data under tests/files, exported for OTHER modules: the
+# libyang-python suite in sonic-yang-mgmt reads sample_config_db.json and
+# friends through "../sonic-yang-models/tests/files/...".
+filegroup(
+    name = "tests_files",
+    srcs = glob(["tests/files/**"]),
+    visibility = ["//visibility:public"],
+)
+
 py_library(
     name = "tests_pkg",
     srcs = TEST_SRCS,
