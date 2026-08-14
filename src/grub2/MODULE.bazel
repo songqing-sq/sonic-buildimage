@@ -51,11 +51,29 @@ apt.install(
         # usr/share/grub/{unicode,ascii,euro}.pf2 + {ascii,widthspec}.h.
         "xfonts-unifont:amd64",
         "xfonts-unifont:arm64",
-        # The runtime .so for grub-mkfont: the -dev cc_import gives headers and
-        # the link stub, but the tools carry no RUNPATH and would otherwise pick
-        # up the host libfreetype.
+        # gen_fonts runs grub-mkfont and friends, which link the hermetic glibc
+        # but keep the host /lib64/ld-linux-x86-64.so.2 as their PT_INTERP. A
+        # host glibc newer than the hermetic one (2.43 on Ubuntu vs 2.41 here)
+        # segfaults inside loader init, so the genrule launches them under the
+        # matching ld.so from libc6. Their RPATH points into _solib_k8, which
+        # the sandbox does not stage, hence every NEEDED .so is imported here
+        # for the genrule to unpack and pass via --library-path.
         "libfreetype6:amd64",
         "libfreetype6:arm64",
+        "libc6:amd64",
+        "libc6:arm64",
+        "libbz2-1.0:amd64",
+        "libbz2-1.0:arm64",
+        "libpng16-16t64:amd64",
+        "libpng16-16t64:arm64",
+        "zlib1g:amd64",
+        "zlib1g:arm64",
+        "libbrotli1:amd64",
+        "libbrotli1:arm64",
+        "libstdc++6:amd64",
+        "libstdc++6:arm64",
+        "libgcc-s1:amd64",
+        "libgcc-s1:arm64",
     ],
     suites = [
         "trixie",

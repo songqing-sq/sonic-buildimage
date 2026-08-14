@@ -778,12 +778,13 @@ genrule(
            "gzip -dc $$U/usr/share/fonts/X11/misc/unifont.pcf.gz > $@"),
 )
 
-# The three tools all link libfreetype dynamically but carry no RUNPATH, so
-# without this they resolve libfreetype.so.6 from the HOST — which silently
-# worked outside the sandbox and segfaulted inside it. Staging the .so from the
-# apt import under its plain soname and pointing LD_LIBRARY_PATH at it keeps the
-# hermetic library in play. (Bazel's own _solib symlink chain is not usable here:
-# the genrule sees the runfiles tree, not the solib dir.)
+# The three tools link the hermetic glibc from _solib_k8, but their PT_INTERP
+# still names the host /lib64/ld-linux-x86-64.so.2. When the host glibc differs
+# from the hermetic one (e.g. Ubuntu 2.43 vs Debian trixie 2.41) that loader
+# segfaults during its own initialization, before any program code runs, so
+# neither LD_LIBRARY_PATH nor LD_PRELOAD can help. Launching them through the
+# matching hermetic ld.so does: the binaries' RPATH already covers every
+# hermetic .so, so it resolves the rest via $ORIGIN on its own.
 genrule(
     name = "gen_fonts",
     outs = [
@@ -794,22 +795,27 @@ genrule(
         "fonts/widthspec.h",
     ],
     cmd = ("set -e; " +
-           "L=$$(realpath $(RULEDIR))/_ftlib; mkdir -p $$L; " +
-           "tar -xzf $(location @grub2_deps//libfreetype6:data) -C $$L; " +
-           "cp $$L/usr/lib/x86_64-linux-gnu/libfreetype.so.6.* " +
-           "  $$L/libfreetype.so.6; " +
-           "export LD_LIBRARY_PATH=$$L; " +
-           "$(location :grub_mkfont) -o $(location fonts/unicode.pf2) " +
+           "D=$$(realpath $(RULEDIR))/_hermetic; mkdir -p $$D; " +
+           "for t in $(locations :hermetic_runtime_libs); do " +
+           "  tar -xzf $$t -C $$D; done; " +
+           "P=$$D/usr/lib/x86_64-linux-gnu; " +
+           "for so in libfreetype.so.6 libbz2.so.1.0 libpng16.so.16 " +
+           "          libz.so.1 libbrotlidec.so.1 libbrotlicommon.so.1 " +
+           "          libstdc++.so.6 libgcc_s.so.1; do " +
+           "  [ -e $$P/$$so ] || ln -sf \"$$(ls -1 $$P/$$so.* | head -1)\" " +
+           "    $$P/$$so; done; " +
+           "R=\"$$P/ld-linux-x86-64.so.2 --library-path $$P\"; " +
+           "$$R $(location :grub_mkfont) -o $(location fonts/unicode.pf2) " +
            "  $(location :gen_unifont); " +
-           "$(location :grub_mkfont) -o $(location fonts/ascii.pf2) " +
+           "$$R $(location :grub_mkfont) -o $(location fonts/ascii.pf2) " +
            "  $(location :gen_unifont) " +
            "  -r 0x0-0x7f,0x2190-0x2193,0x2501-0x251B; " +
-           "$(location :grub_mkfont) -o $(location fonts/euro.pf2) " +
+           "$$R $(location :grub_mkfont) -o $(location fonts/euro.pf2) " +
            "  $(location :gen_unifont) " +
            "  -r 0x0-0x4ff,0x1e00-0x1fff,0x2190-0x2193,0x2501-0x251B; " +
-           "$(location :grub_gen_asciih) $(location :gen_unifont) " +
+           "$$R $(location :grub_gen_asciih) $(location :gen_unifont) " +
            "  $(location fonts/ascii.h); " +
-           "$(location :grub_gen_widthspec) $(location :gen_unifont) " +
+           "$$R $(location :grub_gen_widthspec) $(location :gen_unifont) " +
            "  $(location fonts/widthspec.h)"),
     # NOTE: in `srcs`, not `tools`. A genrule's `tools` are built in the exec
     # configuration, where these come out 93KB instead of 1076KB and segfault —
@@ -821,7 +827,24 @@ genrule(
         ":grub_gen_asciih",
         ":grub_gen_widthspec",
         ":grub_mkfont",
+        ":hermetic_runtime_libs",
+    ],
+)
+
+# Every .so the font tools list as NEEDED. The genrule unpacks these and runs
+# the tools under the hermetic ld.so from libc6, because the sandbox stages no
+# _solib_k8 for their RPATH to resolve against.
+filegroup(
+    name = "hermetic_runtime_libs",
+    srcs = [
+        "@grub2_deps//libbrotli1:data",
+        "@grub2_deps//libbz2-1.0:data",
+        "@grub2_deps//libc6:data",
         "@grub2_deps//libfreetype6:data",
+        "@grub2_deps//libgcc-s1:data",
+        "@grub2_deps//libpng16-16t64:data",
+        "@grub2_deps//libstdc++6:data",
+        "@grub2_deps//zlib1g:data",
     ],
 )
 
