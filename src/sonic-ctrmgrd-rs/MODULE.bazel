@@ -87,5 +87,18 @@ crate.spec(
     package = "async-trait",
     version = "0.1.77",
 )
+
+# Transitive deps. Left unpinned, from_specs takes their newest releases:
+# icu_locale_core >=2.1 uses let-chains, which need Rust 1.88 while the
+# toolchain here is 1.86, and writeable 0.6.4 changes the macro surface
+# icu 2.0 expects. Pin both to what Cargo.lock resolves to.
+crate.spec(
+    package = "icu_locale_core",
+    version = "=2.0.0",
+)
+crate.spec(
+    package = "writeable",
+    version = "=0.6.1",
+)
 crate.from_specs(name = "ctrmgrd_rs_crates")
 use_repo(crate, "ctrmgrd_rs_crates")
