@@ -21,14 +21,32 @@ LIBNL_COPTS = [
     # `_chk` variants (__fprintf_chk, __snprintf_chk, ...). Without them Bazel
     # emits the plain symbols and the two .so files differ in their imports.
     # _FORTIFY_SOURCE requires an optimizing build; `-c opt` supplies -O2.
+    #
+    # NOTE: this =2 currently does not take effect. //toolchains/args in
+    # sonic_rules appends -D_FORTIFY_SOURCE=1 to every opt build, and toolchain
+    # args land after per-target copts, so =1 wins and level 1 does not fortify
+    # fprintf/snprintf. Undefining first does not help for the same ordering
+    # reason. The fix belongs in that shared config, not here.
     "-D_FORTIFY_SOURCE=2",
     "-fstack-protector-strong",
+    # Also from dpkg-buildflags: Intel CET landing pads. Unlike the flags above
+    # this one leaves no symbol or dynamic-section trace, so its absence only
+    # shows up when you disassemble (Make emits 356 endbr64, we emitted 2).
+    "-fcf-protection=full",
     "-Wformat",
     "-Werror=format-security",
 ]
 
 # =============================================================================
 # Generated headers
+#
+# Stands in for ./configure, which we cannot run hermetically. Note that the
+# defaults are decided in configure.ac, not in defs.h.in: the template shows
+# every macro as `#undef`, so reading it alone tells you nothing about whether
+# configure would have defined one. NL_DEBUG is the case in point --
+# configure.ac defaults enable_debug=yes, and that macro guards an exported
+# symbol (nl_debug_dp). Cross-check against real configure output when adding
+# entries here.
 # =============================================================================
 
 genrule(
@@ -51,7 +69,7 @@ genrule(
             -e 's|#undef HAVE_SYS_TYPES_H|#define HAVE_SYS_TYPES_H 1|' \\
             -e 's|#undef HAVE_UNISTD_H|#define HAVE_UNISTD_H 1|' \\
             -e 's|#undef LT_OBJDIR|#define LT_OBJDIR ".libs/"|' \\
-            -e 's|#undef NL_DEBUG|/* #undef NL_DEBUG */|' \\
+            -e 's|#undef NL_DEBUG|#define NL_DEBUG 1|' \\
             -e 's/#undef PACKAGE$$/#define PACKAGE "libnl"/' \\
             -e 's|#undef PACKAGE_BUGREPORT|#define PACKAGE_BUGREPORT "http://www.infradead.org/~tgr/libnl/"|' \\
             -e 's|#undef PACKAGE_NAME|#define PACKAGE_NAME "libnl"|' \\
