@@ -64,11 +64,30 @@ py_wheel(
         ],
     },
     data_files = _DATA_FILES,
+    # bdist_wheel emits top_level.txt listing every top-level import name
+    # setup.py's find_packages() returns; here that's `frrcfgd` (real package)
+    # and `tests` (the tests/ dir has an __init__.py, so find_packages picks
+    # it up). Matches the Make wheel's <dist-info>/top_level.txt byte-for-byte.
+    extra_distinfo_files = {
+        ":top_level_txt": "top_level.txt",
+    },
     deps = [
         ":frrcfgd_lib",
         ":tests_lib",
     ],
     visibility = ["//visibility:public"],
+)
+
+# top_level.txt content: mirrors the Make wheel produced by `setup.py
+# bdist_wheel`, which lists everything find_packages() returns.
+write_file(
+    name = "top_level_txt",
+    out = "top_level.txt",
+    content = [
+        "frrcfgd",
+        "tests",
+        "",
+    ],
 )
 
 write_file(
