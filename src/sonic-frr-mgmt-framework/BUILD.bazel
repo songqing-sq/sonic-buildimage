@@ -51,8 +51,14 @@ _DATA_FILES = {
 
 py_wheel(
     name = "wheel",
-    distribution = "sonic_frr_mgmt_framework",
+    # setup.py `name`. py_wheel normalises this to sonic_frr_mgmt_framework
+    # for the .whl filename, but writes it verbatim into METADATA's Name
+    # field, so it has to carry the dashes to match the Make wheel.
+    distribution = "sonic-frr-mgmt-framework",
     version = "1.0",
+    # setup.py `description` / `url`.
+    summary = "Utility to dynamically configuration FRR based on config DB data update event",
+    homepage = "https://github.com/Azure/sonic-buildimage",
     requires = [
         "jinja2>=2.10",
         "netaddr==0.8.0",
