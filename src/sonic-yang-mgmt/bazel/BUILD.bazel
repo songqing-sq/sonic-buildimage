@@ -7,3 +7,7 @@ exports_files([
     "pyproject.toml",
     "uv.lock",
 ])
+
+# Source patches applied to COPIES at build time (the source tree stays as
+# upstream ships it). Consumed by //:test_sonic_yang_patched.
+exports_files(["patches/yang_models_dir_env.patch"])

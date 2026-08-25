@@ -1,0 +1,30 @@
+Let the suite's class-scoped fixture find the YANG models outside /usr/local.
+
+tests/libyang-python-tests/test_sonic_yang.py hardcodes an absolute
+/usr/local/yang-models/, which is where the sonic-yang-models .deb lands in
+Make's slave container. A Bazel sandbox has no such path, and
+SonicYang(dir).loadYangModel() does NOT raise on a missing directory -- it
+silently loads zero models. Two of the 34 cases (test_validate_yang_models,
+test_xlate_rev_xlate) are the only ones that use the real models, so they fail
+on `assert len(syc.jIn) == numTables` (0 == 198: loadData files all 198 tables
+of sample_config_db.json under tablesWithOutYang) while the other 32, which
+carry their own .yang fixtures, stay green. Both are green under Make.
+
+Read the same SONIC_YANG_MODELS_DIR escape hatch that sonic-cfg-help already
+honours (commit 6255b3ae0), keeping the absolute path as the default so
+behaviour on a real switch and under Make is unchanged.
+
+Applied by //:test_sonic_yang_patched to a COPY of the file:
+the source tree is left untouched.
+
+--- a/tests/libyang-python-tests/test_sonic_yang.py
++++ b/tests/libyang-python-tests/test_sonic_yang.py
+@@ -400,7 +400,7 @@
+     """
+     @pytest.fixture(autouse=True, scope='class')
+     def sonic_yang_data(self):
+-        sonic_yang_dir = "/usr/local/yang-models/"
++        sonic_yang_dir = os.environ.get("SONIC_YANG_MODELS_DIR", "/usr/local/yang-models/")
+         sonic_yang_test_file = "../sonic-yang-models/tests/files/sample_config_db.json"
+ 
+         syc = sy.SonicYang(sonic_yang_dir)

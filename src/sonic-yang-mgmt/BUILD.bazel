@@ -210,13 +210,53 @@ copy_to_directory(
     replace_prefixes = {"tests/files/": ""},
 )
 
-# The libyang-python suite (26 of the 42 cases Make runs) opens its fixtures
+# The suite's class-scoped autouse fixture hardcodes an absolute
+# /usr/local/yang-models/ -- where Make's slave container has the
+# sonic-yang-models .deb unpacked. No sandbox has that path, and
+# SonicYang(dir).loadYangModel() does not raise on a missing directory, it
+# silently loads zero models: only test_validate_yang_models and
+# test_xlate_rev_xlate touch the real models, so just those two fail on
+# `assert len(syc.jIn) == numTables` (0 == 198 -- loadData files every table of
+# sample_config_db.json under tablesWithOutYang) while the other 32 cases, which
+# carry their own .yang fixtures, pass. Both are green under Make.
+#
+# The fixture is defined inside the test class, so a conftest.py cannot override
+# it (class-local fixtures shadow conftest ones), and the source tree is not ours
+# to edit. Patch a COPY instead and run that. `patch` rather than `sed` on
+# purpose: it carries context lines and exits non-zero when they stop matching,
+# so a refactor upstream breaks the build instead of silently yielding an
+# unmodified copy that would put the two cases back to `0 == 198`.
+genrule(
+    name = "test_sonic_yang_patched",
+    testonly = True,
+    srcs = [
+        "tests/libyang-python-tests/test_sonic_yang.py",
+        "//bazel:patches/yang_models_dir_env.patch",
+    ],
+    outs = ["gen/libyang-python-tests/test_sonic_yang.py"],
+    # The copy comes out of the source tree read-only, hence the chmod.
+    #   -F 0  no fuzz. `patch` defaults to tolerating two mismatched context
+    #         lines, which would let the hunk land on drifted code and defeat
+    #         the whole reason for preferring patch over sed here (verified:
+    #         with the default fuzz an injected context change still applied,
+    #         "succeeded at 400 with fuzz 2", and the build stayed green).
+    #   -N    never apply in reverse; a stale patch must fail, not un-apply.
+    #   -r    rejects to /dev/null, so a failed apply cannot leave an
+    #         undeclared .rej output next to $@. The non-zero exit reports it.
+    cmd = """
+cp $(location tests/libyang-python-tests/test_sonic_yang.py) $@
+chmod +w $@
+patch -F 0 -N --no-backup-if-mismatch -r /dev/null $@ < $(location //bazel:patches/yang_models_dir_env.patch)
+""",
+)
+
+# The libyang-python suite (34 of the 42 cases Make runs) opens its fixtures
 # through CWD-relative paths like "./tests/libyang-python-tests/*.json", which
 # is what the pytest shim's chdir into the module root already provides. It also
 # needs every yang model on disk, same as test_cfghelp.
 sonic_py_pytest_test(
     name = "test_sonic_yang",
-    test_file = "tests/libyang-python-tests/test_sonic_yang.py",
+    test_file = ":test_sonic_yang_patched",
     data = [
         ":all_yang_models_dir",
         ":mono_self",
@@ -238,19 +278,6 @@ sonic_py_pytest_test(
             "../../../libyang3-py3+/runtime_libs",
         ]),
     },
-    # Two of these fail under Make as well (same names, AssertionError), so they
-    # are upstream, not migration damage. The other five all hang off one
-    # class-scoped autouse fixture that hardcodes BOTH an absolute
-    # /usr/local/yang-models/ and a cross-module "../sonic-yang-models/tests/
-    # files/sample_config_db.json"; reaching them needs a monorepo-shaped
-    # staging area (the same mechanism sonic-bgpcfgd's nine excluded suites
-    # want), or an env hatch in the test source. Deselect rather than drop the
-    # file, which would cost the 27 cases that do pass.
-    pytest_args = [
-        # upstream failures, also red under Make
-        "--deselect=tests/libyang-python-tests/test_sonic_yang.py::Test_SonicYang::test_validate_yang_models",
-        "--deselect=tests/libyang-python-tests/test_sonic_yang.py::Test_SonicYang::test_xlate_rev_xlate",
-    ],
     venv = "sonic-yang-mgmt",
     deps = [
         ":pytest_lib",
