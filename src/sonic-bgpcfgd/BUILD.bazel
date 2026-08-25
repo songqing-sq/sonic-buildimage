@@ -1,3 +1,4 @@
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_python//python:packaging.bzl", "py_wheel")
@@ -48,31 +49,69 @@ py_library(
 # a pure-Python fake) and mocks subprocess, so only the first-party bgpcfgd
 # packages + jinja2/netaddr/pyyaml are needed.
 #
-# test_sonic-cfggen.py and eight template/constants suites are excluded: they
-# read fixtures from OTHER parts of the source tree that this standalone module
-# cannot reach --
-#   * ../../dockers/docker-fpm-frr/frr  (51 jinja2 templates, owned by
-#     docker-fpm-frr) rendered by test_bgp/_setsrc/_templates/_bbr_templates/
+# Eight of the suites reach OUT of this module with CWD-relative paths, because
+# Make runs pytest from src/sonic-bgpcfgd inside the monorepo:
+#   * '../../dockers/docker-fpm-frr/frr'  -- 51 jinja2 templates, owned by
+#     docker-fpm-frr, rendered by test_bgp/_setsrc/_templates/_bbr_templates/
 #     _chassis_app_db/_device_global/_ipv6_nexthop_global/_prefix_list;
-#   * ../../files/image_config/constants (constants.yml);
-#   * the sonic-cfggen console script (sonic-config-engine).
-# Bazel modules can only glob their own files, and none of the above is exposed
-# as a cross-module target yet. Wiring them needs docker-fpm-frr / files /
-# sonic-config-engine to publish those dirs as filegroups the tests can take as
-# data (a design decision spanning several components); vendoring copies here
-# would drift from the upstreams. Tracked in
+#   * '../../files/image_config/constants/constants.yml' -- tests/util.py;
+#   * '../sonic-bgpcfgd/tests/data/...' -- the module's OWN fixtures, addressed
+#     through the sibling name (test_chassis_app_db, test_device_global).
+# Both outside dirs belong to the root module, which a dependency module cannot
+# see, so they are vendored under bazel/vendor/ and staged into a
+# monorepo-shaped tree below (:mono_*). That unblocks all eight.
+#
+# test_sonic-cfggen.py stays excluded: it shells out to the `sonic-cfggen`
+# console script, which lives in sonic-config-engine and is not a dependency of
+# this module. Fixtures alone do not help. Tracked in
 # test_docs/module_log/sonic-bgpcfgd_module_log.md.
 _EXCLUDED_TESTS = [
     "tests/test_sonic-cfggen.py",
-    "tests/test_bbr_templates.py",
-    "tests/test_bgp.py",
-    "tests/test_chassis_app_db.py",
-    "tests/test_device_global.py",
-    "tests/test_ipv6_nexthop_global.py",
-    "tests/test_prefix_list.py",
-    "tests/test_setsrc.py",
-    "tests/test_templates.py",
 ]
+
+# Monorepo-shaped staging tree. The suites' paths are relative to the CWD Make
+# uses (src/sonic-bgpcfgd), so the tree has to reproduce two levels above it:
+#
+#   _mono/
+#   |-- dockers/docker-fpm-frr/frr/       <- '../../dockers/...'
+#   |-- files/image_config/constants/     <- '../../files/...'
+#   `-- src/sonic-bgpcfgd/tests/          <- CWD (SONIC_TEST_CHDIR), so both
+#                                            './tests/...' and
+#                                            '../sonic-bgpcfgd/tests/...' work
+#
+# One copy_to_directory per subtree: their `out` paths must not overlap.
+copy_to_directory(
+    name = "mono_self",
+    testonly = True,
+    srcs = glob(["tests/**"]),
+    out = "_mono/src/sonic-bgpcfgd/tests",
+    replace_prefixes = {"tests/": ""},
+)
+
+copy_to_directory(
+    name = "mono_frr",
+    testonly = True,
+    srcs = ["//bazel/vendor:frr_templates"],
+    out = "_mono/dockers/docker-fpm-frr/frr",
+    root_paths = ["bazel/vendor/dockers/docker-fpm-frr/frr"],
+)
+
+copy_to_directory(
+    name = "mono_constants",
+    testonly = True,
+    srcs = ["//bazel/vendor:constants"],
+    out = "_mono/files/image_config/constants",
+    root_paths = ["bazel/vendor/files/image_config/constants"],
+)
+
+_MONO_DATA = [
+    ":mono_constants",
+    ":mono_frr",
+    ":mono_self",
+]
+
+# Runfiles-relative; the canonical repo name of a dependency module carries a '+'.
+_MONO_CHDIR = "sonic-bgpcfgd+/_mono/src/sonic-bgpcfgd"
 
 py_library(
     name = "pytest_lib",
@@ -100,6 +139,10 @@ py_library(
     name = f[len("tests/"):-len(".py")],
     test_file = f,
     venv = "sonic-bgpcfgd",
+    data = _MONO_DATA,
+    # Run from inside the staged tree so every CWD-relative fixture path in the
+    # suites resolves. Harmless for the suites that only import python.
+    env = {"SONIC_TEST_CHDIR": _MONO_CHDIR},
     deps = [":pytest_lib"],
 ) for f in glob(
     ["tests/test_*.py"],

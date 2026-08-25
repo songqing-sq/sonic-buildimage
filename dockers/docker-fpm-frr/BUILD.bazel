@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_deb//distroless:defs.bzl", "flatten", "group", "passwd")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@tar.bzl", "tar")
@@ -319,4 +320,60 @@ exports_files(
         "base_image_files/vtysh",
     ],
     visibility = ["//platform:__subpackages__"],
+)
+
+# =============================================================================
+# Drift guard for the sonic-bgpcfgd vendored fixture copy.
+#
+# Nine of sonic-bgpcfgd's pytest suites render the frr/ jinja2 templates below
+# through the CWD-relative path '../../dockers/docker-fpm-frr/frr' (Make runs
+# them from src/sonic-bgpcfgd). sonic-bgpcfgd is a separate Bazel module, and a
+# dependency module cannot see the root module's files, so it carries a COPY at
+# src/sonic-bgpcfgd/bazel/vendor/ and stages a monorepo-shaped tree from it.
+#
+# This target is the only place that can see BOTH sides, so it is where the copy
+# is kept honest: `bazel test //dockers/docker-fpm-frr:...` fails the moment the
+# two diverge, which is what stops a template change here from silently leaving
+# bgpcfgd's tests validating a stale copy.
+#
+# On failure, resync with:
+#   rm -rf src/sonic-bgpcfgd/bazel/vendor/dockers/docker-fpm-frr/frr \
+#          src/sonic-bgpcfgd/bazel/vendor/files/image_config/constants
+#   cp -a dockers/docker-fpm-frr/frr \
+#         src/sonic-bgpcfgd/bazel/vendor/dockers/docker-fpm-frr/
+#   cp -a files/image_config/constants \
+#         src/sonic-bgpcfgd/bazel/vendor/files/image_config/
+#
+# Delete this guard (and the vendor dir) once frr/ and files/image_config/ are
+# published as filegroups a dependency module can take as `data`.
+_VENDOR = "src/sonic-bgpcfgd/bazel/vendor"
+
+genrule(
+    name = "bgpcfgd_vendor_diff",
+    # Both sides are source files, so the sandbox stages them at their
+    # workspace-relative paths, which is what the cmd below diffs. Declaring
+    # them here is also what makes Bazel re-run this on either side changing.
+    srcs = glob(["frr/**"]) + [
+        "//files/image_config:constants/bmc.json",
+        "//files/image_config:constants/constants.yml",
+        "//src/sonic-bgpcfgd/bazel/vendor:constants",
+        "//src/sonic-bgpcfgd/bazel/vendor:frr_templates",
+    ],
+    outs = ["bgpcfgd_vendor_diff.stamp"],
+    cmd = """
+fail() {{
+    echo "ERROR: sonic-bgpcfgd's vendored fixture copy is out of date." >&2
+    echo "       See the comment on //dockers/docker-fpm-frr:bgpcfgd_vendor_diff" >&2
+    echo "       for the two cp commands that resync it." >&2
+    exit 1
+}}
+diff -r dockers/docker-fpm-frr/frr {vendor}/dockers/docker-fpm-frr/frr || fail
+diff -r files/image_config/constants {vendor}/files/image_config/constants || fail
+touch $@
+""".format(vendor = _VENDOR),
+)
+
+build_test(
+    name = "bgpcfgd_vendor_is_current",
+    targets = [":bgpcfgd_vendor_diff"],
 )

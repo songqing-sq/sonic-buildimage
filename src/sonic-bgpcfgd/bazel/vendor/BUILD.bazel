@@ -1,0 +1,33 @@
+# Vendored copies of fixtures that live OUTSIDE this Bazel module.
+#
+# Nine of the suites reach out of the module with CWD-relative paths, because
+# Make runs pytest from src/sonic-bgpcfgd inside the monorepo:
+#
+#   tests/util.py:4                 '../../files/image_config/constants/constants.yml'
+#   tests/test_bgp.py:11 and 7 more '../../dockers/docker-fpm-frr/frr'
+#
+# Those two directories belong to the root module (@_main). Bazel modules can
+# only glob their own files and a dependency module cannot see the root module,
+# so the only way to satisfy those paths today is to carry a copy here and stage
+# a monorepo-shaped tree from it (see :mono_* in the parent BUILD.bazel).
+#
+# DRIFT WARNING: these are copies, not references. The originals are owned by
+# docker-fpm-frr and files/image_config.
+# //dockers/docker-fpm-frr:bgpcfgd_vendor_is_current (in the ROOT module, the
+# only place that can see both sides) fails as soon as they diverge, and its
+# comment carries the two cp commands that resync them.
+#
+# Remove this directory once docker-fpm-frr and files/ publish those dirs as
+# filegroups a dependency module can take as data.
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "frr_templates",
+    srcs = glob(["dockers/docker-fpm-frr/frr/**"]),
+)
+
+filegroup(
+    name = "constants",
+    srcs = glob(["files/image_config/constants/**"]),
+)
