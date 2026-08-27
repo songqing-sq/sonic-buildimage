@@ -52,7 +52,4 @@ apt.install(
         "trixie-security",
     ],
 )
-apt.lock(
-    into = "iproute2_packages.lock",
-)
 use_repo(apt, "iproute2_apt")

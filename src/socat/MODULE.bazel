@@ -47,7 +47,4 @@ apt.install(
         "trixie-security",
     ],
 )
-apt.lock(
-    into = "socat_packages.lock",
-)
 use_repo(apt, "socat_apt")
