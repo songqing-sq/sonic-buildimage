@@ -3,30 +3,64 @@ module(
     version = "6.15.0-1",
 )
 
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
 bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
 
 # =============================================================================
-# iproute2 — upstream Debian trixie package re-wrapped as a SONiC .deb.
+# iproute2 — trixie's own package, with SONiC's EVPN Multihoming patch rebuilt
+# into the one binary that needs a compiler.
 #
-# The legacy SONiC build (src/iproute2/Makefile) fetches the Debian source,
-# stg-imports patch/0001-bridge-fdb-Add-protocol-field-support.patch (EVPN
-# Multihoming protocol field for bridge fdb), bumps the version to
-# 6.15.0-1+sonic.0, and runs `dpkg-buildpackage`. Approach A re-wraps the
-# trixie apt-extracted data tar into a SONiC-named .deb so the docker-base
-# dpkg-install path keeps working without invoking dpkg-buildpackage in the
-# Bazel sandbox.
+# rules/iproute2.mk is wrapped in `ifeq ($(BLDENV),trixie)`: trixie is the only
+# BLDENV that builds iproute2 at all. Bookworm shipped the distro package
+# untouched, and the trixie recipe pins IPROUTE2_DEBIAN_VERSION = 6.15.0-1 —
+# exactly the version trixie's archive ships. The `+sonic.0` suffix Make appends
+# exists only so the locally built deb outranks the distro one in apt; Bazel
+# installs its own deb so the suffix is dropped.
 #
-# Trade-off: the SONiC EVPN patch (bridge/fdb.c, etc/iproute2/rt_protos,
-# include/uapi/linux/rtnetlink.h, lib/rt_names.c) is NOT applied — this is
-# a functional source patch that Approach A cannot express. See
-# iproute2_bazelmig.md §1 for the impact analysis (EVPN Multihoming
-# bridge-fdb `proto` field lost) and the fallback plan.
+# So the only functional delta between the distro package and Make's package is
+# patch/0001-bridge-fdb-Add-protocol-field-support.patch. Its four hunks are not
+# equally load-bearing:
 #
-# Trixie snapshot 20260409 ships iproute2 6.15.0-1 (matches SONiC's
-# IPROUTE2_DEBIAN_VERSION exactly). The Bazel .deb is named
-# `iproute2_6.15.0-1_amd64.deb`, not `_6.15.0-1+sonic.0_amd64.deb`.
+#   bridge/fdb.c                    parses/prints `bridge fdb ... proto PROTO`
+#                                   -> real code, must be compiled.
+#   include/uapi/linux/rtnetlink.h  #define RTPROT_HW 193
+#   lib/rt_names.c                  rtnl_rtprot_tab[RTPROT_HW] = "hw"
+#                                   -> compiled in as a side effect of the above.
+#   etc/iproute2/rt_protos          +"193 hw" -> pure data, installed to
+#                                   /usr/share/iproute2/rt_protos and read at
+#                                   run time by rtnl_rtprot_initialize().
+#
+# Hence: rebuild `bridge` from the patched source and overlay it, plus the
+# patched rt_protos, onto the archive's data tar. The other 16 binaries are
+# byte-identical to what Debian ships, because they are built from the same
+# 6.15.0-1 source with no SONiC delta.
+#
+# This matters because the patch is load-bearing at run time, not cosmetic:
+# src/sonic-swss/fdbsyncd/fdbsync.cpp:checkFdbProtoSupport() probes
+# `bridge fdb help | grep -q proto` and a live `bridge fdb add ... proto hw`,
+# and on failure silently drops the `proto zebra` / `proto hw` suffixes from
+# every FDB program. Nothing crashes and nothing logs an error, so EVPN MH just
+# stops distinguishing control-plane from data-plane MACs. The feature spans
+# four repos (kernel NDA_PROTOCOL, FRR zebra RTPROT_HW, iproute2, swss); an
+# unpatched iproute2 breaks the chain.
 # =============================================================================
+debian_source = use_repo_rule("@sonic_build_infra//debian_source:debian_source.bzl", "debian_source")
+
+debian_source(
+    name = "iproute2_src",
+    build_file = "//:iproute2_src.BUILD",
+    debian_sha256 = "780375193dffeb85f310a918b806f2f4e480f76b815a1f0f1eac5d0488ea1a8f",
+    debian_urls = ["https://deb.debian.org/debian/pool/main/i/iproute2/iproute2_6.15.0-1.debian.tar.xz"],
+    orig_sha256 = "8041854a882583ad5263466736c9c8c68c74b1a35754ab770d23343f947528fb",
+    orig_urls = ["https://deb.debian.org/debian/pool/main/i/iproute2/iproute2_6.15.0.orig.tar.xz"],
+    # git-format-patch prefixes, same as `stg import` consumes in Make.
+    patch_strip = 1,
+    patches = ["//:patch/0001-bridge-fdb-Add-protocol-field-support.patch"],
+    strip_prefix = "iproute2-6.15.0",
+)
+
 apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
 apt.sources_list(
     architectures = ["amd64", "arm64"],
@@ -43,6 +77,10 @@ apt.sources_list(
     suites = ["trixie-security"],
     uris = ["https://snapshot.debian.org/archive/debian-security/20260409T182303Z"],
 )
+
+# The archive package supplies the 16 binaries, the tc modules, the man pages and
+# the bash completions that carry no SONiC delta; only ./usr/sbin/bridge and
+# ./usr/share/iproute2/rt_protos are replaced.
 apt.install(
     dependency_set = "iproute2_apt",
     packages = ["iproute2"],
@@ -52,4 +90,27 @@ apt.install(
         "trixie-security",
     ],
 )
-use_repo(apt, "iproute2_apt")
+
+# Link deps for `bridge`, matching what ./configure detects in the Debian build
+# (both libs appear in the archive package's Depends):
+#   libmnl  — lib/libnetlink.c's HAVE_LIBMNL block parses netlink extack, which
+#             is what turns kernel errors into readable messages.
+#   libcap  — lib/utils.c's drop_cap().
+# Deliberately absent: libselinux (only ip/ipvrf.c calls into it), libelf and
+# libbpf (only lib/bpf_*.c and tc/ip), libdb (only misc/arpd.c). None of them is
+# reachable from bridge's object closure.
+apt.install(
+    dependency_set = "iproute2_deps",
+    packages = [
+        "libmnl-dev:amd64",
+        "libmnl-dev:arm64",
+        "libcap-dev:amd64",
+        "libcap-dev:arm64",
+    ],
+    suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
+)
+use_repo(apt, "iproute2_apt", "iproute2_deps")

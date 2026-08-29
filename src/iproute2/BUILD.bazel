@@ -1,41 +1,159 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
 
 package(default_visibility = ["//visibility:public"])
 
 VERSION = "6.15.0-1"
 
+exports_files(["iproute2_src.BUILD"])
+
 # =============================================================================
-# iproute2 — upstream Debian trixie package re-wrapped as a SONiC .deb.
+# iproute2 — trixie's package with SONiC's EVPN Multihoming patch rebuilt in.
 #
-# The legacy SONiC build (src/iproute2/Makefile) downloads
-# iproute2_6.15.0-1.{dsc,orig.tar.gz,debian.tar.xz}, initialises a git repo,
-# stg-imports patch/series (bridge-fdb protocol field for EVPN Multihoming),
-# bumps `debian/changelog` to 6.15.0-1+sonic.0, and runs `dpkg-buildpackage`.
-# Approach A re-wraps the trixie apt-extracted data tar into a SONiC-named .deb
-# so docker-base-trixie's dpkg-install path keeps working without invoking
-# dpkg-buildpackage in the Bazel sandbox.
+# Make (src/iproute2/Makefile) runs a full dpkg-buildpackage over all 259 .c
+# files to produce 17 binaries. It does that only as a vehicle for one patch:
+# IPROUTE2_DEBIAN_VERSION is pinned to 6.15.0-1, which is the exact version
+# trixie's archive ships, so upstream source and Debian packaging are identical
+# on both sides and `+sonic.0` is purely an apt-precedence suffix.
 #
-# Trade-offs vs. legacy (see iproute2_bazelmig.md):
-#   - Version skew: trixie apt ships 6.15.0-1 (matches SONiC pin exactly).
-#     Bazel emits `iproute2_6.15.0-1_amd64.deb`; Make emits
-#     `iproute2_6.15.0-1+sonic.0_amd64.deb` (extra `+sonic.0` version suffix
-#     is only used to make the local build win over the distro package,
-#     not needed here since Bazel provides its own package).
-#   - `0001-bridge-fdb-Add-protocol-field-support.patch` is NOT applied.
-#     `bridge fdb ... proto <PROTO>` display + attach is lost.
-#     Impacted callers: EVPN Multihoming setups relying on rt_protos entries
-#     for control-plane vs data-plane MAC classification.
+# The patch reaches exactly one binary. `bridge` is rebuilt here from the patched
+# tree and, together with the patched rt_protos, overlaid onto the archive's data
+# tar; the other 16 binaries come from Debian, where they are built from the same
+# source with no SONiC delta. See MODULE.bazel for the per-hunk analysis.
+#
+# KNOWN DIVERGENCE: the rebuilt `bridge` is compiled by the hermetic SONiC
+# toolchain, not by trixie's gcc under dpkg-buildflags, so its build-id, DWARF
+# and the exact FORTIFY/DT_NEEDED shape differ from its 16 siblings in the same
+# deb. -O2, stack-protector, RELRO and BIND_NOW are matched explicitly below.
 # =============================================================================
 
-# Extract the upstream Debian control tar's md5sums file so sonic_deb can bake
-# it into the SONiC-renamed control tar (dpkg_statusd.sh requires ./md5sums).
-genrule(
-    name = "iproute2_md5sums",
-    srcs = ["@iproute2_apt//iproute2:control"],
-    outs = ["iproute2.md5sums"],
-    cmd = "tar -xf $(SRCS) -O ./md5sums > $@",
+# debian/rules: DEB_BUILD_MAINT_OPTIONS = hardening=+all. The hermetic toolchain
+# supplies -O2/-DNDEBUG but not stack-protector.
+HARDEN_COPTS = [
+    "-fstack-protector-strong",
+    "-Wformat",
+    "-Wformat-security",
+]
+
+HARDEN_LINKOPTS = [
+    "-Wl,-z,relro",
+    "-Wl,-z,now",
+]
+
+# The top-level Makefile's DEFINES, plus the config.mk lines ./configure emits in
+# a trixie build environment. Each HAVE_* below is reachable from bridge's object
+# closure and is set the way Debian's build sets it:
+#
+#   HAVE_SETNS / HAVE_HANDLE_AT   found in glibc, no extra library
+#   HAVE_LIBMNL                   lib/libnetlink.c's netlink extack parser
+#   HAVE_LIBCAP                   lib/utils.c's drop_cap()
+#
+# Not set, matching ./configure on trixie: NEED_STRLCPY and HAVE_LIBBSD (glibc
+# >= 2.38 has strlcpy, and libbsd is absent from the package's Depends).
+#
+# LIBDIR is only read by tc's module loader, so its value is inert here; it is
+# passed anyway so the define list matches Make's.
+_COPTS = [
+    "-D_GNU_SOURCE",
+    "-D_FILE_OFFSET_BITS=64",
+    "-D_LARGEFILE_SOURCE",
+    "-D_LARGEFILE64_SOURCE",
+    "-DRESOLVE_HOSTNAMES",
+    "-DLIBDIR=\\\"/usr/lib\\\"",
+    "-DCONF_USR_DIR=\\\"/usr/share/iproute2\\\"",
+    "-DCONF_ETC_DIR=\\\"/etc/iproute2\\\"",
+    "-DNETNS_RUN_DIR=\\\"/run/netns\\\"",
+    "-DNETNS_ETC_DIR=\\\"/etc/netns\\\"",
+    "-DARPDDIR=\\\"/var/lib/arpd\\\"",
+    "-DCONF_COLOR=COLOR_OPT_AUTO",
+    "-DHAVE_SETNS",
+    "-DHAVE_HANDLE_AT",
+    "-DHAVE_LIBMNL",
+    "-DHAVE_LIBCAP",
+] + HARDEN_COPTS
+
+_DEPS = [
+    "@iproute2_src//:hdrs_lib",
+    "@iproute2_deps//libmnl-dev:mnl",
+    "@iproute2_deps//libcap-dev:cap",
+]
+
+# libutil.a and libnetlink.a merged into one target. Make links them as
+# `$(BROBJ) ../lib/libutil.a ../lib/libnetlink.a` and the two archives reference
+# each other (lib/utils.c calls into libnetlink, lib/libnetlink.c calls
+# rt_names/utils), which as separate cc_library targets would be a dependency
+# cycle. One archive resolves it and produces the same object closure.
+cc_library(
+    name = "iproute2_lib",
+    srcs = [
+        "@iproute2_src//:libnetlink_srcs",
+        "@iproute2_src//:libutil_srcs",
+    ],
+    copts = _COPTS,
+    linkstatic = True,
+    deps = _DEPS,
 )
 
+# bridge/Makefile: `$(CC) $(BROBJ) $(LIBNETLINK) $(LDFLAGS) $(LDLIBS) -o bridge`.
+cc_binary(
+    name = "bridge",
+    srcs = ["@iproute2_src//:bridge_srcs"],
+    copts = _COPTS,
+    # Drops libstdc++/libgcc_s, which cc_binary's C++ driver would otherwise add
+    # to a pure-C program.
+    linkopts = HARDEN_LINKOPTS + ["-Wl,--as-needed"],
+    deps = _DEPS + [":iproute2_lib"],
+)
+
+# ---------------------------------------------------------------------------
+# Overlay the two patched paths onto the archive's data tar.
+#
+# The untouched 174 members are never unpacked: the tar is only gunzipped,
+# the two entries are deleted, and replacements are appended. That keeps every
+# other file's mode, owner and mtime byte-identical to Debian's, which extracting
+# and repacking as a non-root user would not.
+#
+# `bridge.stripped` is cc_binary's implicit stripped output, standing in for
+# dh_strip, which debian/rules gets from dh's default sequence. Shipping the
+# unstripped binary would put ~500 KiB of DWARF into the deb that no sibling
+# binary carries.
+#
+# mtime/owner on the two new entries are pinned to the values the rest of the
+# package carries so `tar -tv` output stays uniform and the tar is reproducible.
+# 1748301360 == 2025-05-26T23:16:00Z, the mtime Debian's own build stamped on
+# every member of this data tar.
+# ---------------------------------------------------------------------------
+genrule(
+    name = "iproute2_data",
+    srcs = [
+        "@iproute2_apt//iproute2:data",
+        ":bridge.stripped",
+        "@iproute2_src//:etc/iproute2/rt_protos",
+    ],
+    outs = ["iproute2_data.tar.gz"],
+    cmd = """set -e
+TMP=$$(mktemp -d)
+trap 'rm -rf $$TMP' EXIT
+mkdir -p $$TMP/ov/usr/sbin $$TMP/ov/usr/share/iproute2
+cp $(location :bridge.stripped) $$TMP/ov/usr/sbin/bridge
+chmod 0755 $$TMP/ov/usr/sbin/bridge
+cp $(location @iproute2_src//:etc/iproute2/rt_protos) $$TMP/ov/usr/share/iproute2/rt_protos
+chmod 0644 $$TMP/ov/usr/share/iproute2/rt_protos
+gzip -dc $(location @iproute2_apt//iproute2:data) > $$TMP/all.tar
+tar --delete -f $$TMP/all.tar ./usr/sbin/bridge ./usr/share/iproute2/rt_protos
+tar -C $$TMP/ov -rf $$TMP/all.tar \
+    --format=gnu --owner=root --group=root --mtime=@1748301360 \
+    ./usr/sbin/bridge ./usr/share/iproute2/rt_protos
+gzip -n -9 < $$TMP/all.tar > $@
+""",
+)
+
+# md5sums is deliberately not taken from the archive's control tar any more: two
+# of its 176 lines would be stale. sonic_deb recomputes it from the data tar
+# below, which is safe here because the package declares no conffiles
+# (debian/iproute2.maintscript removed /etc/iproute2/* in 6.5.0-2~), so md5sums
+# covers every regular file one-for-one.
 sonic_deb(
     name = "iproute2_{}.deb".format(VERSION),
     package = "iproute2",
@@ -43,10 +161,11 @@ sonic_deb(
     # `content` is unused when `data` (a pre-built data tar) is provided;
     # sonic_deb still requires it positionally.
     content = {},
-    data = "@iproute2_apt//iproute2:data",
-    md5sums_file = ":iproute2_md5sums",
+    data = ":iproute2_data",
     # Depends copied verbatim from trixie snapshot Packages.xz for iproute2
-    # 6.15.0-1. `t64` variants reflect Debian's 64-bit time_t transition.
+    # 6.15.0-1. `t64` variants reflect Debian's 64-bit time_t transition. The
+    # rebuilt bridge links a strict subset of these (libc6, libmnl0, libcap2),
+    # so the list still holds.
     depends = [
         "debconf (>= 0.5) | debconf-2.0",
         "libbpf1 (>= 1:0.6.0)",
@@ -67,12 +186,11 @@ sonic_deb(
     visibility = ["//visibility:public"],
 )
 
-# Re-export the upstream apt-extracted data tar under the canonical `_data`
-# label so callers (e.g. docker-base-trixie) can use the same
-# `<deb>_data` + `<deb>_statusd` pair as other sonic-built debs without needing
-# visibility into the @iproute2_apt extension repo.
+# The canonical `<deb>_data` label callers such as docker-base-trixie use. It has
+# to resolve to the patched tar, not the archive's, or the container image would
+# get an unpatched bridge while the host rootfs deb got a patched one.
 alias(
     name = "iproute2_{}.deb_data".format(VERSION),
-    actual = "@iproute2_apt//iproute2:data",
+    actual = ":iproute2_data",
     visibility = ["//visibility:public"],
 )
