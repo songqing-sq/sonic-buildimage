@@ -1,5 +1,4 @@
 load("@rules_bison//bison:bison.bzl", "bison")
-load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_flex//flex:flex.bzl", "flex")
 load("@sonic_build_infra//shared_library:shared_library.bzl", "sonic_shared_library_versioned")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
@@ -549,18 +548,6 @@ EOF
 """,
 )
 
-# Bare cc_import of JUST the trixie libelf .so file -- NO deps -- so the
-# exec-cfg clippy tool doesn't drag in the target trixie libc6/ld-linux (which
-# would clash with the host loader's libm at clippy runtime).  gcc records
-# DT_NEEDED from the .so's SONAME (libelf.so.1); the host loader then resolves
-# libelf via its default search path.  Only clippy uses this; all target-cfg
-# consumers of libelf use the full @frr_deps//libelf-dev:libelf graph.
-cc_import(
-    name = "clippy_libelf_link",
-    shared_library = "@@rules_distroless++apt+trixie_libelf1t64-amd64_0.192-4//:usr/lib/x86_64-linux-gnu/libelf.so.1",
-    visibility = ["//visibility:private"],
-)
-
 cc_binary(
     name = "clippy",
     srcs = [
@@ -599,13 +586,9 @@ cc_binary(
         # libpython3.11 + Python C API via rules_python's hermetic toolchain.
         "@rules_python//python/cc:current_py_cc_libs",
         "@rules_python//python/cc:current_py_cc_headers",
-        # elf_py.c CALLS libelf; link the bare .so directly (see comment above
-        # on :clippy_libelf_link) + headers-only view.  We deliberately AVOID
-        # @frr_deps//libelf-dev:libelf because it transitively cc_imports the
-        # trixie libc6 / ld-linux, which would plant the target sysroot libc
-        # in this exec-cfg host tool's RPATH and clash with the host libm.
-        ":clippy_libelf_link",
-        "@@rules_distroless++apt+trixie_libelf-dev-amd64_0.192-4//:libelf_hdrs",
+        # clippy is an exec-cfg host tool, so use the source-built static
+        # libelf and its headers instead of the trixie target sysroot packages.
+        "@sonic_build_infra//kernel_host_tools:elf",
         # zebra.h drags in <sys/capability.h>, <json-c/json.h>, <openssl/evp.h>
         # transitively; clippy only needs the headers, never the .so.
         "@@rules_distroless++apt+trixie_libcap-dev-amd64_1-2.75-10-b8//:libcap_hdrs",
@@ -616,10 +599,6 @@ cc_binary(
         "-Wl,--export-dynamic",
         "-lpthread",
         "-lm",
-        # libelf .so was packaged against libz; we link it via the bare
-        # cc_import (no transitive deps) so let ld skip verifying those refs --
-        # the host loader pulls libz in via libelf.so.1's own NEEDED at runtime.
-        "-Wl,--unresolved-symbols=ignore-in-shared-libs",
     ],
     visibility = ["//visibility:public"],
 )
