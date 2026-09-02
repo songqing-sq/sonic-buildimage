@@ -7,6 +7,10 @@ common --experimental_isolated_extension_usages
 
 common -c opt
 
+# Keep action keys independent of the invoking client's PATH. Rules that need
+# additional tools prepend their declared Bazel tool directories explicitly.
+common --action_env=PATH=/usr/bin:/bin
+
 common --platforms=@@sonic-build-infra+//platform:x86_64_trixie
 
 common:aarch64 --platforms=@@sonic-build-infra+//platform:aarch64_trixie
