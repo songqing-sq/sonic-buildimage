@@ -1,0 +1,21 @@
+diff --git a/dash-pipeline/SAI/src/dashsai.cpp b/dash-pipeline/SAI/src/dashsai.cpp
+index ea6578f..69b3c82 100644
+--- a/dash-pipeline/SAI/src/dashsai.cpp
++++ b/dash-pipeline/SAI/src/dashsai.cpp
+@@ -5,6 +5,7 @@ extern "C" {
+ }
+ 
+ #include <cstdlib>
++#include <google/protobuf/io/zero_copy_stream_impl.h>
+ 
+ using namespace dash;
+ using namespace dash::utils;
+@@ -556,7 +557,7 @@ std::string DashSai::updateTypeStr(
+ 
+     const google::protobuf::EnumDescriptor *descriptor = p4::v1::Update_Type_descriptor();
+ 
+-    return descriptor->FindValueByNumber(updateType)->name();
++    return std::string(descriptor->FindValueByNumber(updateType)->name());
+ }
+ 
+ // helper methods

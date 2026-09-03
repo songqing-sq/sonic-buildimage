@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 # repository rules can read them as labels.
 exports_files([
     "dash.BUILD",
+    "dash-protobuf31.patch",
     "sai_submodule.BUILD",
     "deb_headers.bzl",
 ])

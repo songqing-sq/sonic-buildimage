@@ -31,10 +31,10 @@ VERSION = "1.0.0"
 #       --toJSON .../dash_pipeline_ir.json
 #
 # p4c-bm2-ss is a host-built binary shipped inside @p4lang//:p4lang-p4c_*.deb
-# (usr/bin/p4c-bm2-ss + usr/share/p4c/p4include). The deb ships no shared libs;
+# (usr/bin/p4c-bm2-ss + usr/share/p4c/*.p4). The deb ships no shared libs;
 # p4c-bm2-ss dynamically links libboost_iostreams + libgc/libgccpp which are
-# staged from apt (dashsai_deps) and put on LD_LIBRARY_PATH. libc/libstdc++ come
-# from the sandbox's read-only host mount (same as every other genrule here).
+# staged from apt (dashsai_deps). The compiler is linked against Trixie, so it
+# must run through Trixie's loader and runtime libraries instead of the host's.
 # =============================================================================
 filegroup(
     name = "p4_srcs",
@@ -47,6 +47,9 @@ genrule(
         "@p4lang//:p4lang-p4c_1.2.4.2-2.deb",
         "@dashsai_deps//libgc1:data",
         "@dashsai_deps//libboost-iostreams1.83.0:data",
+        "@dashsai_deps//libc6:data",
+        "@dashsai_deps//libgcc-s1:data",
+        "@dashsai_deps//libstdc++6:data",
     ],
     outs = [
         "etc/dash/dash_pipeline.json",
@@ -59,6 +62,9 @@ set -eu
 DEB=$(execpath @p4lang//:p4lang-p4c_1.2.4.2-2.deb)
 GC=$(execpath @dashsai_deps//libgc1:data)
 BOOST=$(execpath @dashsai_deps//libboost-iostreams1.83.0:data)
+LIBC=$(execpath @dashsai_deps//libc6:data)
+LIBGCC=$(execpath @dashsai_deps//libgcc-s1:data)
+LIBSTDCPP=$(execpath @dashsai_deps//libstdc++6:data)
 MAIN=$(execpath dash-pipeline/bmv2/dash_pipeline.p4)
 PIPEDIR=$$(cd "$$(dirname "$$MAIN")/.." && pwd)
 WORK=$$(mktemp -d)
@@ -67,10 +73,14 @@ mkdir -p "$$WORK/p4c" "$$WORK/libs" "$$WORK/out"
 dpkg-deb -x "$$DEB" "$$WORK/p4c"
 tar -xf "$$GC" -C "$$WORK/libs"
 tar -xf "$$BOOST" -C "$$WORK/libs"
+tar -xf "$$LIBC" -C "$$WORK/libs"
+tar -xf "$$LIBGCC" -C "$$WORK/libs"
+tar -xf "$$LIBSTDCPP" -C "$$WORK/libs"
 P4C="$$WORK/p4c/usr/bin/p4c-bm2-ss"
-P4INC="$$WORK/p4c/usr/share/p4c/p4include"
+P4INC="$$WORK/p4c/usr/share/p4c"
 LIBDIR=$$(dirname "$$(find "$$WORK/libs" -name 'libgc.so.1' | head -1)")
-( cd "$$PIPEDIR" && LD_LIBRARY_PATH="$$LIBDIR" "$$P4C" \
+LOADER="$$LIBDIR/ld-linux-x86-64.so.2"
+( cd "$$PIPEDIR" && "$$LOADER" --library-path "$$LIBDIR" "$$P4C" \
     -I"$$P4INC" -DTARGET_BMV2_V1MODEL bmv2/dash_pipeline.p4 \
     -o "$$WORK/out/dash_pipeline.json" \
     --p4runtime-files "$$WORK/out/dash_pipeline_p4rt.json,$$WORK/out/dash_pipeline_p4rt.txt" \
@@ -643,17 +653,13 @@ sonic_shared_library(
 # like the Make `g++ -shared` output.
 # =============================================================================
 
-# protobuf 3.21.x + grpc++ + abseil headers (apt) and P4Runtime/PI headers
-# (p4lang-pi.deb), merged into one -isystem root.
+# PI headers come from p4lang-pi.deb. P4Runtime, protobuf, gRPC, and Abseil
+# headers come from @p4lang//:p4runtime_headers so every generated header uses
+# the same BCR dependency graph; mixing apt protobuf 3.21 with generated
+# protobuf 31 headers produces duplicate declarations and incompatible APIs.
 deb_headers(
     name = "libsai_thirdparty_hdrs",
     debs = ["@p4lang//:p4lang-pi_0.1.1-1.deb"],
-    tars = [
-        "@dashsai_deps//libprotobuf-dev:data",
-        "@dashsai_deps//libgrpc++-dev:data",
-        "@dashsai_deps//libgrpc-dev:data",
-        "@dashsai_deps//libabsl-dev:data",
-    ],
 )
 
 # Strict warning set from DASH SAI/src/Makefile (CXXFLAGS_COMMON), kept verbatim
@@ -662,7 +668,7 @@ DASH_SAI_COPTS = [
     "-ansi",
     "-fPIC",
     "-pipe",
-    "-std=c++14",
+    "-std=c++17",
     # Upstream's CXXFLAGS_COMMON carry no -g (only the final `g++ -shared -g`
     # link does, which adds nothing without -g objects). The hermetic toolchain
     # defaults to -g, which would balloon libsai.so to ~19MB of .debug_* vs the
@@ -730,6 +736,7 @@ sonic_shared_library(
     deps = [
         ":libsai_thirdparty_hdrs",
         ":saimetadata_hdrs",
+        "@p4lang//:p4runtime_headers",
     ],
     objects = [":dashsaimetadata"],
 )
