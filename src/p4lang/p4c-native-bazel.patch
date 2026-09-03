@@ -1,0 +1,286 @@
+diff --git a/BUILD.bazel b/BUILD.bazel
+index 6810851..6374a51 100644
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -37,2 +37,2 @@ cc_library(
+-        "@boost//:format",
+-        "@boost//:multiprecision",
++        "@boost_format//:boost.format",
++        "@boost_multiprecision//:boost.multiprecision",
+@@ -146,8 +146,7 @@ filegroup(
+         "backends/bmv2/bmv2.def",
+         "backends/dpdk/dpdk.def",
++        "backends/tc/tc.def",
+-        "//backends/p4tools:p4tools.def",
+         # p4c extensions may set this target to a `filegroup` containing
+         # additional .def files.
+-        "@com_github_p4lang_p4c_extension//:ir_extensions",
+     ],
+ )
+@@ -215,3 +213,3 @@ cc_library(
+-        "@boost//:algorithm",
+-        "@boost//:functional",
+-        "@boost//:iostreams",
++        "@boost_algorithm//:boost.algorithm",
++        "@boost_functional//:boost.functional",
++        "@boost_iostreams//:boost.iostreams",
+@@ -218,5 +216,8 @@ cc_library(
+-        "@com_github_p4lang_p4runtime//:p4info_cc_proto",
+-        "@com_github_p4lang_p4runtime//:p4runtime_cc_proto",
+-        "@com_github_p4lang_p4runtime//:p4types_cc_proto",
+-        "@com_google_protobuf//:protobuf",
++        "@pi_p4runtime//:p4info_cc_proto",
++        "@pi_p4runtime//:p4runtime_cc_proto",
++        "@pi_p4runtime//:p4types_cc_proto",
++        "@protobuf//:protobuf",
+-    ],
++    ] + select({
++        "@platforms//cpu:aarch64": ["@@rules_distroless++apt+trixie_libfl-dev-arm64_2.6.4-8.2-b4//:libfl_hdrs"],
++        "//conditions:default": ["@@rules_distroless++apt+trixie_libfl-dev-amd64_2.6.4-8.2-b4//:libfl_hdrs"],
++    }),
+@@ -260,1 +260,1 @@ genrule(
+-    cmd = "sed 's|@P4C_VERSION@|0.0.0.0|g' $(SRCS) > $(OUTS)",
++    cmd = "sed 's|@P4C_VERSION@|1.2.4.2|g' $(SRCS) > $(OUTS)",
+@@ -289,7 +287,7 @@ proto_library(
+     name = "p4info_dpdk_proto",
+     srcs = ["backends/dpdk/p4/config/p4info.proto"],
+     deps = [
+-        "@com_google_protobuf//:any_proto",
+-        "@com_google_protobuf//:descriptor_proto",
++        "@protobuf//:any_proto",
++        "@protobuf//:descriptor_proto",
+     ],
+ )
+@@ -331,1 +331,1 @@ genrule(
+-    cmd = "sed 's|@P4C_VERSION@|0.0.0.0|g' $(SRCS) > $(OUTS)",
++    cmd = "sed 's|@P4C_VERSION@|1.2.4.2|g' $(SRCS) > $(OUTS)",
+@@ -367,1 +367,1 @@ genrule(
+-    cmd = "sed 's|@P4C_VERSION@|0.0.0.0|g' $(SRCS) > $(OUTS)",
++    cmd = "sed 's|@P4C_VERSION@|1.2.4.2|g' $(SRCS) > $(OUTS)",
+@@ -405,1 +405,1 @@ genrule(
+-    cmd = "sed 's|@P4C_VERSION@|0.0.0.0|g' $(SRCS) > $(OUTS)",
++    cmd = "sed 's|@P4C_VERSION@|1.2.4.2|g' $(SRCS) > $(OUTS)",
+@@ -425,5 +423,0 @@ cc_library(
+-    defines = [
+-        # Disable ADL for boost, otherwise the method resolution for
+-        # `ordered_map` and `graph` clash on method `boost::get`
+-        "BOOST_NO_ARGUMENT_DEPENDENT_LOOKUP",
+-    ],
+@@ -434,1 +427,1 @@ cc_library(
+-        "@boost//:graph",
++        "@boost_graph//:boost.graph",
+@@ -436,0 +437,180 @@ cc_library(
++
++exports_files([
++    "tools/driver/p4c.in",
++    "tools/driver/p4c_src/__init__.py",
++    "tools/driver/p4c_src/config.py",
++    "tools/driver/p4c_src/driver.py",
++    "tools/driver/p4c_src/main.py",
++    "tools/driver/p4c_src/util.py",
++    "tools/driver/p4c_src/p4c.bmv2.cfg",
++    "tools/driver/p4c_src/p4c.dpdk.cfg",
++    "tools/driver/p4c_src/p4c.ebpf.cfg",
++])
++
++# PSA variant of the BMv2 backend.
++genrule(
++    name = "p4c_bmv2_psa_version",
++    srcs = ["backends/bmv2/psa_switch/version.h.cmake"],
++    outs = ["backends/bmv2/psa_switch/version.h"],
++    cmd = "sed 's|@P4C_VERSION@|1.2.4.2|g' $(SRCS) > $(OUTS)",
++)
++
++cc_library(
++    name = "p4c_bmv2_psa_lib",
++    srcs = [
++        "backends/bmv2/psa_switch/midend.cpp",
++        "backends/bmv2/psa_switch/options.cpp",
++        "backends/bmv2/psa_switch/psaProgramStructure.cpp",
++        "backends/bmv2/psa_switch/psaSwitch.cpp",
++    ],
++    hdrs = [
++        "backends/bmv2/psa_switch/midend.h",
++        "backends/bmv2/psa_switch/options.h",
++        "backends/bmv2/psa_switch/psaProgramStructure.h",
++        "backends/bmv2/psa_switch/psaSwitch.h",
++        "backends/bmv2/psa_switch/version.h",
++    ],
++    deps = [":ir_frontend_midend_control_plane", ":lib", ":p4c_bmv2_common_lib"],
++)
++
++cc_binary(
++    name = "p4c_bmv2_psa",
++    srcs = ["backends/bmv2/psa_switch/main.cpp"],
++    data = [":p4include"],
++    deps = [":ir_frontend_midend_control_plane", ":lib", ":p4c_bmv2_common_lib", ":p4c_bmv2_psa_lib"],
++)
++
++# eBPF backend. This is the exact production source list from backends/ebpf/CMakeLists.txt.
++genrule(
++    name = "p4c_ebpf_version",
++    srcs = ["backends/ebpf/version.h.cmake"],
++    outs = ["backends/ebpf/version.h"],
++    cmd = "sed 's|@P4C_VERSION@|1.2.4.2|g' $(SRCS) > $(OUTS)",
++)
++
++cc_binary(
++    name = "p4c_ebpf",
++    srcs = [
++        "backends/ebpf/p4c-ebpf.cpp",
++        "backends/ebpf/version.h",
++        "backends/ebpf/ebpfBackend.cpp",
++        "backends/ebpf/ebpfProgram.cpp",
++        "backends/ebpf/ebpfTable.cpp",
++        "backends/ebpf/ebpfControl.cpp",
++        "backends/ebpf/ebpfDeparser.cpp",
++        "backends/ebpf/ebpfParser.cpp",
++        "backends/ebpf/ebpfOptions.cpp",
++        "backends/ebpf/target.cpp",
++        "backends/ebpf/ebpfType.cpp",
++        "backends/ebpf/codeGen.cpp",
++        "backends/ebpf/ebpfModel.cpp",
++        "backends/ebpf/midend.cpp",
++        "backends/ebpf/lower.cpp",
++        "backends/bmv2/common/programStructure.cpp",
++        "backends/bmv2/psa_switch/psaProgramStructure.cpp",
++        "backends/ebpf/psa/ebpfPsaGen.cpp",
++        "backends/ebpf/psa/ebpfPipeline.cpp",
++        "backends/ebpf/psa/ebpfPsaParser.cpp",
++        "backends/ebpf/psa/ebpfPsaDeparser.cpp",
++        "backends/ebpf/psa/ebpfPsaControl.cpp",
++        "backends/ebpf/psa/ebpfPsaTable.cpp",
++        "backends/ebpf/psa/backend.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaCounter.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaChecksum.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaDigest.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaHashAlgorithm.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaTableImplementation.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaRandom.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaRegister.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaMeter.cpp",
++    ],
++    data = [":p4include"],
++    deps = [":ir_frontend_midend_control_plane", ":lib"],
++)
++
++# uBPF backend. This is the exact production source list from backends/ubpf/CMakeLists.txt.
++genrule(
++    name = "p4c_ubpf_version",
++    srcs = ["backends/ubpf/version.h.cmake"],
++    outs = ["backends/ubpf/version.h"],
++    cmd = "sed 's|@P4C_VERSION@|1.2.4.2|g' $(SRCS) > $(OUTS)",
++)
++
++cc_binary(
++    name = "p4c_ubpf",
++    srcs = [
++        "backends/ubpf/p4c-ubpf.cpp",
++        "backends/ubpf/version.h",
++        "backends/ubpf/ubpfBackend.cpp",
++        "backends/ubpf/ubpfProgram.cpp",
++        "backends/ubpf/ubpfParser.cpp",
++        "backends/ubpf/ubpfDeparser.cpp",
++        "backends/ubpf/ubpfControl.cpp",
++        "backends/ubpf/ubpfType.cpp",
++        "backends/ubpf/ubpfTable.cpp",
++        "backends/ubpf/ubpfRegister.cpp",
++        "backends/ubpf/ubpfModel.cpp",
++        "backends/ubpf/target.cpp",
++        "backends/ubpf/midend.cpp",
++        "backends/ebpf/ebpfProgram.cpp",
++        "backends/ebpf/ebpfTable.cpp",
++        "backends/ebpf/ebpfParser.cpp",
++        "backends/ebpf/ebpfControl.cpp",
++        "backends/ebpf/ebpfOptions.cpp",
++        "backends/ebpf/target.cpp",
++        "backends/ebpf/codeGen.cpp",
++        "backends/ebpf/ebpfType.cpp",
++        "backends/ebpf/ebpfModel.cpp",
++        "backends/ebpf/midend.cpp",
++        "backends/ebpf/lower.cpp",
++    ],
++    data = [":p4include"],
++    deps = [":ir_frontend_midend_control_plane", ":lib"],
++)
++
++# PNA/P4TC backend. This is the exact production source list from backends/tc/CMakeLists.txt.
++cc_binary(
++    name = "p4c_pna_p4tc",
++    srcs = [
++        "backends/tc/backend.cpp",
++        "backends/tc/ebpfCodeGen.cpp",
++        "backends/tc/introspection.cpp",
++        "backends/tc/midend.cpp",
++        "backends/tc/pnaProgramStructure.cpp",
++        "backends/tc/tc.cpp",
++        "backends/tc/tcAnnotations.cpp",
++        "backends/tc/version.cpp",
++        "backends/ebpf/ebpfBackend.cpp",
++        "backends/ebpf/ebpfProgram.cpp",
++        "backends/ebpf/ebpfTable.cpp",
++        "backends/ebpf/ebpfControl.cpp",
++        "backends/ebpf/ebpfDeparser.cpp",
++        "backends/ebpf/ebpfParser.cpp",
++        "backends/ebpf/ebpfOptions.cpp",
++        "backends/ebpf/target.cpp",
++        "backends/ebpf/ebpfType.cpp",
++        "backends/ebpf/codeGen.cpp",
++        "backends/ebpf/ebpfModel.cpp",
++        "backends/ebpf/midend.cpp",
++        "backends/ebpf/lower.cpp",
++        "backends/bmv2/common/programStructure.cpp",
++        "backends/bmv2/psa_switch/psaProgramStructure.cpp",
++        "backends/ebpf/psa/ebpfPsaGen.cpp",
++        "backends/ebpf/psa/ebpfPipeline.cpp",
++        "backends/ebpf/psa/ebpfPsaParser.cpp",
++        "backends/ebpf/psa/ebpfPsaDeparser.cpp",
++        "backends/ebpf/psa/ebpfPsaControl.cpp",
++        "backends/ebpf/psa/ebpfPsaTable.cpp",
++        "backends/ebpf/psa/backend.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaCounter.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaChecksum.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaDigest.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaHashAlgorithm.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaTableImplementation.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaRandom.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaRegister.cpp",
++        "backends/ebpf/psa/externs/ebpfPsaMeter.cpp",
++    ],
++    data = [":p4include"],
++    deps = [":ir_frontend_midend_control_plane", ":lib"],
++)
+diff --git a/bazel/flex.bzl b/bazel/flex.bzl
+index 4f75dc1..7a14814 100644
+--- a/bazel/flex.bzl
++++ b/bazel/flex.bzl
+@@ -17,2 +17,2 @@ def genlex(name, src, out, prefix, includes = [], visibility = None):
+-    cmd = "flex -o $(location %s) -P %s $(location %s)" % (out, prefix, src)
++    cmd = "M4=$(M4) $(FLEX) -o $(location %s) -P %s $(location %s)" % (out, prefix, src)
+     native.genrule(
+@@ -25,4 +25,8 @@ def genlex(name, src, out, prefix, includes = [], visibility = None):
+         srcs = [src] + includes,
+         cmd = cmd,
++        toolchains = [
++            "@rules_flex//flex:current_flex_toolchain",
++            "@rules_m4//m4:current_m4_toolchain",
++        ],
+         visibility = visibility,
+     )
+diff --git a/bazel/bison.bzl b/bazel/bison.bzl
+index 3a52f92..d3a029c 100644
+--- a/bazel/bison.bzl
++++ b/bazel/bison.bzl
+@@ -22,4 +22,5 @@ def _genyacc_impl(ctx):
+-    ctx.actions.run_shell(
++    ctx.actions.run(
+         use_default_shell_env = True,
+-        command = "bison " + " ".join(args),
++        executable = ctx.toolchains["@rules_bison//bison:toolchain_type"].bison_toolchain.bison_tool,
++        arguments = args,
+         inputs = ctx.files.src,
+@@ -66,3 +68,4 @@ genyacc = rule(
+     },
++    toolchains = ["@rules_bison//bison:toolchain_type"],
+     output_to_genfiles = True,
+ )

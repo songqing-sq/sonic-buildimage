@@ -273,6 +273,8 @@ bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
 git_override(
     module_name = "rules_distroless",
     commit = "579be0a0adcf7945f354fde25af382614126900e",
+    patches = ["//src/p4lang:rules-distroless-tcc.patch"],
+    patch_strip = 1,
     remote = "https://github.com/songqing-sq/rules_distroless.git",
 )
 
@@ -661,14 +663,21 @@ local_path_override(
     path = "src/sonic-sairedis/SAI-bazel",
 )
 
-# p4lang: PI + bmv2 + p4c. Bridged via a "local make" genrule (see
-# src/p4lang/BUILD.bazel) that runs SONiC's own make and exposes the produced
-# .debs as Bazel targets (user-approved non-hermetic exception, scoped to
-# p4lang). Consumed downstream by dash-sai (p4c-bm2-ss) and docker images.
+# p4lang: PI + BMv2 + P4C, built from pinned sources by native Bazel targets in
+# src/p4lang. Consumed downstream by dash-sai (p4c-bm2-ss) and docker images.
 bazel_dep(name = "p4lang", version = "0.1.1")
 local_path_override(
     module_name = "p4lang",
     path = "src/p4lang",
+)
+# Module overrides declared by dependencies are intentionally ignored by
+# Bzlmod.  Keep P4C's BoringSSL warning policy patch at the root so the root
+# integration build uses the same sources as the standalone p4lang module.
+single_version_override(
+    module_name = "boringssl",
+    patches = ["//src/p4lang:boringssl-no-werror.patch"],
+    patch_strip = 1,
+    version = "0.20241024.0",
 )
 
 # dash-sai (libsai / libsai-dev): the DASH SAI pipeline library. Fetches

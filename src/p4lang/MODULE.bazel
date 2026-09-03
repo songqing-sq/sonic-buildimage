@@ -1,18 +1,118 @@
-# p4lang leaf module — "local make" bridge (see BUILD.bazel).
-#
-# This module intentionally declares no source fetch / build deps: the .deb
-# targets in BUILD.bazel produce their artifacts by running SONiC's own `make`
-# (local, non-hermetic) rather than a Bazel source build. Kept minimal so the
-# root workspace can register it via bazel_dep + local_path_override and
-# downstream targets can depend on @p4lang//:p4lang-*.deb.
-module(
-    name = "p4lang",
-    version = "0.1.1",
+module(name = "p4lang", version = "0.1.1")
+
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "rules_cc", version = "0.2.16")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "protobuf", version = "29.0")
+bazel_dep(name = "grpc", version = "1.71.0", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "abseil-cpp", version = "20240722.0")
+single_version_override(
+    module_name = "abseil-cpp",
+    patches = ["//:abseil-platform-cpu.patch"],
+    patch_strip = 1,
+    version = "20240722.0",
+)
+bazel_dep(name = "boringssl", version = "0.20241024.0")
+single_version_override(
+    module_name = "boringssl",
+    patches = ["//:boringssl-no-werror.patch"],
+    patch_strip = 1,
+    version = "0.20241024.0",
+)
+bazel_dep(name = "tar.bzl", version = "0.10.1")
+bazel_dep(name = "sonic-build-infra", version = "0.0.0", repo_name = "sonic_build_infra")
+bazel_dep(name = "rules_distroless", version = "0.0.0", repo_name = "rules_deb")
+git_override(
+    module_name = "rules_distroless",
+    commit = "579be0a0adcf7945f354fde25af382614126900e",
+    patches = ["//:rules-distroless-tcc.patch"],
+    patch_strip = 1,
+    remote = "https://github.com/songqing-sq/rules_distroless.git",
+)
+bazel_dep(name = "rules_flex", version = "0.4")
+bazel_dep(name = "rules_bison", version = "0.4")
+bazel_dep(name = "rules_m4", version = "0.3")
+bazel_dep(name = "googletest", version = "1.15.2", repo_name = "com_google_googletest")
+bazel_dep(name = "boost", version = "1.83.0.bcr.4")
+bazel_dep(name = "boost.algorithm", version = "1.83.0.bcr.4", repo_name = "boost_algorithm")
+bazel_dep(name = "boost.filesystem", version = "1.83.0.bcr.4", repo_name = "boost_filesystem")
+bazel_dep(name = "boost.format", version = "1.83.0.bcr.4", repo_name = "boost_format")
+bazel_dep(name = "boost.functional", version = "1.83.0.bcr.4", repo_name = "boost_functional")
+bazel_dep(name = "boost.graph", version = "1.83.0.bcr.4", repo_name = "boost_graph")
+bazel_dep(name = "boost.iostreams", version = "1.83.0.bcr.4", repo_name = "boost_iostreams")
+bazel_dep(name = "boost.multiprecision", version = "1.83.0.bcr.4", repo_name = "boost_multiprecision")
+bazel_dep(name = "rules_thrift", version = "0.0.0")
+
+sonic_http_archive = use_repo_rule(
+    "@sonic_build_infra//sonic_http_archive:sonic_http_archive.bzl",
+    "sonic_http_archive",
+)
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "pi_uthash",
+    build_file_content = """
+cc_library(
+    name = "uthash",
+    hdrs = glob(["src/*.h"]),
+    includes = ["src"],
+    visibility = ["//visibility:public"],
+)
+""",
+    sha256 = "c8ad8567f492d7297848c5ee9017fd5c7aa1af095690b53872966fc5ae434eb4",
+    strip_prefix = "uthash-bf15263081be6229be31addd48566df93921cb46",
+    type = "tar.gz",
+    urls = ["https://codeload.github.com/troydhanson/uthash/tar.gz/bf15263081be6229be31addd48566df93921cb46"],
 )
 
-# rules_cc: cc_import facades for libpiprotobuf/libpiprotogrpc (extracted from the
-# p4lang-pi .deb) so @sonic-sairedis syncd_dash can link them. tar.bzl: the
-# pi_runtime_layer image tar shipping those .so into the docker images.
-bazel_dep(name = "rules_cc", version = "0.2.16")
-bazel_dep(name = "tar.bzl", version = "0.8.1")
+sonic_http_archive(
+    name = "pi_googleapis",
+    build_file_template = "//:googleapis-rpc.BUILD",
+    sha256 = "7007eaad67b4afc9014e2646ea9c9e4e3aedf0eae9cd7dc7f38bbafae170ead8",
+    strip_prefix = "googleapis-9fe00a1330817b5ce00919bf2861cd8a9cea1a00/google/rpc",
+    type = "tar.gz",
+    urls = ["https://codeload.github.com/googleapis/googleapis/tar.gz/9fe00a1330817b5ce00919bf2861cd8a9cea1a00"],
+)
 
+sonic_http_archive(
+    name = "pi_p4runtime",
+    build_file_template = "//:p4runtime-proto.BUILD",
+    sha256 = "30b26c0e873af995187677f930a1ea60f722f26a5a5168869bc3f35388511513",
+    strip_prefix = "p4runtime-ec4eb5ef70dbcbcbf2f8357a4b2b8c2f218845a5/proto",
+    type = "tar.gz",
+    urls = ["https://codeload.github.com/p4lang/p4runtime/tar.gz/ec4eb5ef70dbcbcbf2f8357a4b2b8c2f218845a5"],
+)
+
+sonic_http_archive(
+    name = "pi_gnmi",
+    build_file_template = "//:gnmi-proto.BUILD",
+    sha256 = "3701005f28044065608322c179625c8898beadb80c89096b3d8aae1fbac15108",
+    strip_prefix = "gnmi-39cb2fffed5c9a84970bde47b3d39c8c716dc17a/proto",
+    type = "zip",
+    urls = ["https://github.com/openconfig/gnmi/archive/39cb2fffed5c9a84970bde47b3d39c8c716dc17a.zip"],
+)
+
+sonic_http_archive(name = "p4lang_pi_src", build_file_template = "//:p4lang-pi.BUILD", extra_files = ["//:pi_cli_dummy_main.c"], patches = ["//:pi-native-bazel.patch"], sha256 = "aa8ea06707e0220194e2b6a9599e9262225655c0286f047590400901f9f9adca", strip_prefix = "PI-0.1.1", type = "tar.gz", urls = ["https://codeload.github.com/p4lang/PI/tar.gz/refs/tags/v0.1.1"])
+sonic_http_archive(name = "p4lang_bmv2_src", build_file_template = "//:p4lang-bmv2.BUILD", patches = ["//:bmv2-native-bazel.patch"], sha256 = "6690ee1dc1b8fcd4bfdb1b2a95b5c7950aed689dbaa7f279913e004666594299", strip_prefix = "behavioral-model-1.15.0", type = "tar.gz", urls = ["https://codeload.github.com/p4lang/behavioral-model/tar.gz/refs/tags/1.15.0"])
+sonic_http_archive(name = "p4lang_p4c_src", patches = ["//:p4lang-p4c.patch/fix-build-for-boost-1.83.patch", "//:p4c-native-bazel.patch"], patch_strip = 1, patch_tool = "/usr/bin/patch", sha256 = "ba05aac6378cccc23bb3f682073e23e32d1d5fd04063de95f7ee8ce9f5435588", strip_prefix = "p4c-1.2.4.2", type = "tar.gz", urls = ["https://codeload.github.com/p4lang/p4c/tar.gz/refs/tags/v1.2.4.2"])
+
+apt = use_extension("@rules_deb//apt:extensions.bzl", "apt")
+apt.sources_list(architectures = ["amd64", "arm64"], components = ["main"], suites = ["trixie", "trixie-updates", "trixie-security"], uris = ["https://sonic-build.alibaba-inc.com/debian_snapshot/20260410"])
+apt.install(
+    dependency_set = "p4lang_pi_deps",
+    packages = ["libreadline-dev"],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+apt.install(
+    dependency_set = "p4lang_backend_deps",
+    packages = [
+        "libboost-dev", "libboost-filesystem-dev", "libboost-filesystem1.83-dev", "libboost-graph-dev",
+        "libboost-iostreams-dev", "libboost-program-options-dev",
+        "libboost-program-options1.83-dev", "libboost-system-dev", "libboost-thread-dev", "libboost-thread1.83-dev", "libelf-dev",
+        "libfl-dev", "libgc-dev", "libgmp-dev", "libnanomsg-dev", "libpcap-dev", "libpcap0.8-dev",
+        "libssl-dev", "libthrift-dev",
+    ],
+    suites = ["trixie", "trixie-updates", "trixie-security"],
+)
+use_repo(apt, "p4lang_backend_deps", "p4lang_pi_deps")

@@ -1,0 +1,11 @@
+diff --git a/util/util.bzl b/util/util.bzl
+index 2c28a61..2de473c 100644
+--- a/util/util.bzl
++++ b/util/util.bzl
+@@ -22,6 +22,5 @@ gcc_copts = [
+     # This list of warnings should match those in the top-level CMakeLists.txt.
+     "-Wall",
+-    "-Werror",
+     "-Wformat=2",
+     "-Wsign-compare",
+     "-Wmissing-field-initializers",

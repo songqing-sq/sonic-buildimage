@@ -1,0 +1,43 @@
+diff --git a/include/bm/config.h b/include/bm/config.h
+new file mode 100644
+index 0000000..cd93e81
+--- /dev/null
++++ b/include/bm/config.h
+@@ -0,0 +1,14 @@
++#ifndef BM_CONFIG_H_
++#define BM_CONFIG_H_
++#define BM_ELOG_ON 1
++#define BM_NANOMSG_ON 1
++#define BM_THRIFT_ON 1
++#define BM_THRIFT_VERSION 1900
++#define BM_HAVE_THRIFT_STDCXX_H 1
++#define BM_HAVE_DLOPEN 1
++#define BM_HAVE_OPENSSL 1
++#define BM_WP4_16_STACKS 1
++#define BM_LOG_DEBUG_ON 1
++#define BM_LOG_TRACE_ON 1
++#define HAVE_OPENSSL 1
++#endif
+diff --git a/src/bm_sim/version.cpp b/src/bm_sim/version.cpp
+new file mode 100644
+index 0000000..4e44918
+--- /dev/null
++++ b/src/bm_sim/version.cpp
+@@ -0,0 +1,5 @@
++#include "version.h"
++
++namespace bm {
++const char bm_version_str[] = "1.15.0";
++}
+diff --git a/targets/simple_switch_grpc/switch_runner.cpp b/targets/simple_switch_grpc/switch_runner.cpp
+index 58742bd..34d9687 100644
+--- a/targets/simple_switch_grpc/switch_runner.cpp
++++ b/targets/simple_switch_grpc/switch_runner.cpp
+@@ -35,6 +35,6 @@
+ 
+ #include <grpcpp/grpcpp.h>
+ 
+-#include <p4/bm/dataplane_interface.grpc.pb.h>
++#include <services/p4/bm/dataplane_interface.grpc.pb.h>
+ 
+ #include <map>

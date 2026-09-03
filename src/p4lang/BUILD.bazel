@@ -1,141 +1,323 @@
-# p4lang — "local make" bridge (user-directed pragmatic approach)
-#
-# Per explicit user instruction, p4lang is intentionally NOT re-migrated to a
-# hermetic source build. p4lang (PI + bmv2 + p4c) is a top-tier-scale C++ stack
-# (autotools/CMake, LLVM-scale p4c) and the goal here is only to "凑合跑通" so
-# downstream docker migrations that consume these .debs are not blocked.
-#
-# Each .deb target's build ACTION runs SONiC's own `make` (which builds the
-# package inside the sonic-slave-trixie container) and exposes the produced
-# .deb as a Bazel output. This is deliberately NON-HERMETIC:
-#   - runs `make` (SONiC build) + docker inside the action  => local = True
-#   - reaches the real workspace path + network              => no-sandbox / requires-network
-# It is a USER-APPROVED EXCEPTION to the hermetic-build / "no make from bazel"
-# rule, scoped to p4lang only. dash-sai IS migrated properly (see
-# src/dash-sai/DASH-bazel), consuming @p4lang//:p4lang-p4c_1.2.4.2-1.deb's
-# p4c-bm2-ss binary.
-#
-# `manual` tag keeps these out of `bazel build //...` wildcards so an
-# accidental wildcard build never triggers the heavy SONiC make; explicit
-# consumers (docker images) and explicit target builds still work.
+load("@sonic_build_infra//sonic_deb:sonic_deb.bzl", "sonic_deb")
+load("@tar.bzl", "tar")
+load(":python_install_tree.bzl", "pi_python_install_tree")
+load(":bmv2_install.bzl", "bmv2_header_tree", "bmv2_library_links", "bmv2_python_tree", "bmv2_python_wrapper")
+load(":cc_headers_only.bzl", "cc_headers_only")
 
 package(default_visibility = ["//visibility:public"])
 
-load("@rules_cc//cc:cc_import.bzl", "cc_import")
-load("@tar.bzl", "tar")
-
-_DEBDIR = "target/debs/trixie"
-
-# target label  ->  produced .deb filename
-_DEBS = {
-    "p4lang-pi_0.1.1-1.deb": "p4lang-pi_0.1.1-1_amd64.deb",
-    "p4lang-bmv2_1.15.0-9.deb": "p4lang-bmv2_1.15.0-9_amd64.deb",
-    "p4lang-p4c_1.2.4.2-2.deb": "p4lang-p4c_1.2.4.2-2_amd64.deb",
-}
-
-[
-    genrule(
-        name = target,
-        srcs = ["MODULE.bazel"],
-        outs = [deb_file],
-        # Run SONiC make for this deb (no-op if already up-to-date), then copy
-        # the produced artifact into the Bazel output tree. The workspace root
-        # is derived at runtime (no hardcoded machine path): with local +
-        # no-sandbox, $(location MODULE.bazel) is an execroot symlink into the
-        # real source tree, so readlink -f resolves to
-        # <repo>/src/p4lang/MODULE.bazel and three dirnames up is <repo>.
-        #
-        # flock serializes the three bridges. Bazel is free to schedule them in
-        # parallel, but they all drive `make` in the same workspace, and
-        # slave.mk reads a sibling deb's .log to compute its dependency list
-        # (slave.mk:919). Two concurrent makes therefore race on those .log
-        # files and one dies with "open: target/debs/trixie/p4lang-pi_...deb.log:
-        # No such file or directory". Make is incremental, so the serialized
-        # second and third invocations are nearly free.
-        # dpkg/ must exist BEFORE make parses: rules/functions'
-        # SETUP_OVERLAYFS_FOR_DPKG_ADMINDIR calls `mktemp -d -p dpkg` through
-        # $(shell ...), which Make expands at PARSE time -- before the .platform
-        # recipe that would create dpkg/ can run. On a tree that has never been
-        # built by Make those mktemps fail and the overlay mount then dies with
-        # "mount: overlay: can't find in /etc/fstab". (`make configure` also
-        # creates it, but it needs PLATFORM set and truncates .platform when it
-        # is not, so create the directory directly.)
-        cmd = ("set -e; " +
-               "WS=$$(dirname $$(dirname $$(dirname $$(readlink -f $(location MODULE.bazel))))); " +
-               "mkdir -p $$WS/{dir} $$WS/dpkg; " +
-               "flock $$WS/{dir}/.bazel-make.lock make -C $$WS {dir}/{deb} 1>&2; " +
-               "cp $$WS/{dir}/{deb} $@").format(
-            dir = _DEBDIR,
-            deb = deb_file,
-        ),
-        local = True,
-        message = "SONiC make (local) -> " + deb_file,
-        tags = [
-            "no-sandbox",
-            "requires-network",
-            "manual",
-        ],
-    )
-    for target, deb_file in _DEBS.items()
-]
-
-# =============================================================================
-# syncd_dash link/runtime support (Solution B, user-directed).
-#
-# @sonic-sairedis' syncd_dash dynamic-links the DASH libsai.so, which is built
-# allow_undefined=True and leaves the P4Runtime symbols (p4::v1::*), protobuf and
-# gpr/grpc undefined — Make satisfies them with `-lpiprotobuf -lpiprotogrpc
-# -lprotobuf -lgrpc++` (syncd/Makefile.am). libpiprotobuf/libpiprotogrpc exist
-# ONLY in p4lang-pi (no hermetic bazel cc build), so we crack the (non-hermetic)
-# p4lang-pi .deb and expose them as cc_import. Their transitive deps
-# (libprotobuf.so.32 / libgrpc++.so.1.51 / libgpr.so.29 /
-# libabsl_synchronization.so.20240722) are the Debian apt libs already shipped in
-# the docker image, so only these two .so need to be added.
-genrule(
-    name = "pi_runtime_sos",
-    srcs = [":p4lang-pi_0.1.1-1.deb"],
-    outs = [
-        "pi_runtime/libpiprotobuf.so.0.0.0",
-        "pi_runtime/libpiprotogrpc.so.0.0.0",
+cc_headers_only(
+    name = "p4runtime_headers",
+    deps = [
+        "@com_github_grpc_grpc//:grpc++",
+        "@pi_googleapis//:code_cc_proto",
+        "@pi_p4runtime//:p4runtime_cc_grpc",
     ],
-    cmd = ("set -e; d=$$(mktemp -d); " +
-           "dpkg-deb -x $(location :p4lang-pi_0.1.1-1.deb) $$d; " +
-           "cp $$d/usr/lib/x86_64-linux-gnu/libpiprotobuf.so.0.0.0 $(location pi_runtime/libpiprotobuf.so.0.0.0); " +
-           "cp $$d/usr/lib/x86_64-linux-gnu/libpiprotogrpc.so.0.0.0 $(location pi_runtime/libpiprotogrpc.so.0.0.0); " +
-           "rm -rf $$d"),
-    tags = [
-        "no-sandbox",
-        "manual",
-        "requires-network",
-    ],
+    generated = "@pi_p4runtime//:_p4runtime_cc_grpc_grpc_codegen",
+    strip_include_prefix = "p4/v1",
 )
 
-# cc_import facades for linking syncd_dash. SONAME (libpiprotobuf.so.0 /
-# libpiprotogrpc.so.0) is read from the .so, so DT_NEEDED entries are correct.
-cc_import(
-    name = "libpiprotobuf",
-    shared_library = "pi_runtime/libpiprotobuf.so.0.0.0",
-)
+alias(name = "libpiprotobuf", actual = "@p4lang_pi_src//proto:piprotobuf")
+alias(name = "libpiprotogrpc", actual = "@p4lang_pi_src//proto:piprotogrpc")
+alias(name = "pi_CLI_dummy", actual = "@p4lang_pi_src//:pi_CLI_dummy")
+alias(name = "pi_gen_native_json", actual = "@p4lang_pi_src//:pi_gen_native_json")
+alias(name = "pi_gen_fe_defines", actual = "@p4lang_pi_src//:pi_gen_fe_defines")
+alias(name = "pi_convert_p4info", actual = "@p4lang_pi_src//proto/p4info:pi_convert_p4info")
 
-cc_import(
-    name = "libpiprotogrpc",
-    shared_library = "pi_runtime/libpiprotogrpc.so.0.0.0",
-)
-
-# Image layer: the two PI .so + their SONAME symlinks under the multiarch libdir,
-# so syncd_dash + libsai resolve p4::v1 at runtime. Added to the docker-syncd-vs /
-# docker-gbsyncd-vs oci_image tars.
-tar(
-    name = "pi_runtime_layer",
+filegroup(
+    name = "pi_shared_libraries",
     srcs = [
-        "pi_runtime/libpiprotobuf.so.0.0.0",
-        "pi_runtime/libpiprotogrpc.so.0.0.0",
+        "@p4lang_pi_src//:libpi_files",
+        "@p4lang_pi_src//:libpifegeneric_files",
+        "@p4lang_pi_src//:libpi_dummy_files",
+        "@p4lang_pi_src//frontends_extra/cpp:libpifecpp_files",
+        "@p4lang_pi_src//proto:piprotobuf_files",
+        "@p4lang_pi_src//proto:piprotogrpc_files",
+    ],
+)
+
+filegroup(
+    name = "pi_headers",
+    srcs = [
+        "@p4lang_pi_src//:pihdrs",
+        "@p4lang_pi_src//frontends_extra/cpp:libpifecpp_hdr_files",
+        "@p4lang_pi_src//proto:piprotobuf_hdr_files",
+        "@p4lang_pi_src//proto:piprotogrpc_hdr_files",
+    ],
+)
+
+pi_python_install_tree(
+    name = "pi_python_proto_tree",
+    srcs = ["@p4lang_pi_src//:pi_python_proto_tree"],
+)
+
+sonic_deb(
+    name = "p4lang-pi_0.1.1-1.deb",
+    package = "p4lang-pi",
+    version = "0.1.1-1",
+    section = "net",
+    maintainer = "Radostin Stoyanov <radostin@stoyanov.io>",
+    homepage = "https://github.com/p4lang/PI",
+    description = "Implementation framework of a P4Runtime server",
+    depends = [
+        "libc6",
+        "libgcc-s1",
+        "libgrpc++1.51t64",
+        "libprotobuf32t64",
+        "libreadline8",
+        "libstdc++6",
+    ],
+    content = {
+        "${LIBDIR}:*:0644": [
+            "@p4lang_pi_src//:libpi_files",
+            "@p4lang_pi_src//:libpifegeneric_files",
+            "@p4lang_pi_src//:libpi_dummy_files",
+            "@p4lang_pi_src//frontends_extra/cpp:libpifecpp_files",
+            "@p4lang_pi_src//proto:piprotobuf_files",
+            "@p4lang_pi_src//proto:piprotogrpc_files",
+        ],
+        "/usr/include:include:0644": ["@p4lang_pi_src//:pihdrs"],
+        "/usr/include:frontends_extra/cpp:0644": ["@p4lang_pi_src//frontends_extra/cpp:libpifecpp_hdr_files"],
+        "/usr/include:proto:0644": [
+            "@p4lang_pi_src//proto:piprotobuf_hdr_files",
+            "@p4lang_pi_src//proto:piprotogrpc_hdr_files",
+        ],
+        "/usr/bin:*:0755": [
+            ":pi_CLI_dummy",
+            ":pi_convert_p4info",
+            ":pi_gen_fe_defines",
+            ":pi_gen_native_json",
+        ],
+        "/usr/lib/python3/dist-packages:pi_python:0644": [":pi_python_proto_tree"],
+    },
+    content_targets = [
+        "@p4lang_pi_src//:libpi_shared",
+        "@p4lang_pi_src//:libpifegeneric_shared",
+        "@p4lang_pi_src//:libpi_dummy_shared",
+        "@p4lang_pi_src//frontends_extra/cpp:libpifecpp_shared",
+        "@p4lang_pi_src//proto:piprotobuf_shared",
+        "@p4lang_pi_src//proto:piprotogrpc_shared",
+    ],
+)
+
+tar(
+    name = "pi_runtime_layer_amd64",
+    srcs = [
+        "@p4lang_pi_src//proto:piprotobuf_shared",
+        "@p4lang_pi_src//proto:piprotobuf_files",
+        "@p4lang_pi_src//proto:piprotogrpc_shared",
+        "@p4lang_pi_src//proto:piprotogrpc_files",
     ],
     mtree = [
-        "./usr/lib/x86_64-linux-gnu/libpiprotobuf.so.0.0.0 uid=0 gid=0 mode=0644 type=file content=$(location pi_runtime/libpiprotobuf.so.0.0.0)",
+        "./usr/lib/x86_64-linux-gnu/libpiprotobuf.so.0.0.0 uid=0 gid=0 mode=0644 type=file content=$(location @p4lang_pi_src//proto:piprotobuf_shared)",
         "./usr/lib/x86_64-linux-gnu/libpiprotobuf.so.0 uid=0 gid=0 mode=0777 type=link link=libpiprotobuf.so.0.0.0",
-        "./usr/lib/x86_64-linux-gnu/libpiprotogrpc.so.0.0.0 uid=0 gid=0 mode=0644 type=file content=$(location pi_runtime/libpiprotogrpc.so.0.0.0)",
+        "./usr/lib/x86_64-linux-gnu/libpiprotogrpc.so.0.0.0 uid=0 gid=0 mode=0644 type=file content=$(location @p4lang_pi_src//proto:piprotogrpc_shared)",
         "./usr/lib/x86_64-linux-gnu/libpiprotogrpc.so.0 uid=0 gid=0 mode=0777 type=link link=libpiprotogrpc.so.0.0.0",
     ],
 )
 
+tar(
+    name = "pi_runtime_layer_arm64",
+    srcs = [
+        "@p4lang_pi_src//proto:piprotobuf_shared",
+        "@p4lang_pi_src//proto:piprotobuf_files",
+        "@p4lang_pi_src//proto:piprotogrpc_shared",
+        "@p4lang_pi_src//proto:piprotogrpc_files",
+    ],
+    mtree = [
+        "./usr/lib/aarch64-linux-gnu/libpiprotobuf.so.0.0.0 uid=0 gid=0 mode=0644 type=file content=$(location @p4lang_pi_src//proto:piprotobuf_shared)",
+        "./usr/lib/aarch64-linux-gnu/libpiprotobuf.so.0 uid=0 gid=0 mode=0777 type=link link=libpiprotobuf.so.0.0.0",
+        "./usr/lib/aarch64-linux-gnu/libpiprotogrpc.so.0.0.0 uid=0 gid=0 mode=0644 type=file content=$(location @p4lang_pi_src//proto:piprotogrpc_shared)",
+        "./usr/lib/aarch64-linux-gnu/libpiprotogrpc.so.0 uid=0 gid=0 mode=0777 type=link link=libpiprotogrpc.so.0.0.0",
+    ],
+)
+
+alias(
+    name = "pi_runtime_layer",
+    actual = select({
+        "@platforms//cpu:aarch64": ":pi_runtime_layer_arm64",
+        "//conditions:default": ":pi_runtime_layer_amd64",
+    }),
+)
+
+bmv2_python_wrapper(name = "bm_CLI", src = "@p4lang_bmv2_src//:tools/bm_CLI.in", output = "bm_CLI")
+bmv2_python_wrapper(name = "bm_p4dbg", src = "@p4lang_bmv2_src//:tools/bm_p4dbg.in", output = "bm_p4dbg")
+bmv2_python_wrapper(name = "bm_nanomsg_events", src = "@p4lang_bmv2_src//:tools/bm_nanomsg_events.in", output = "bm_nanomsg_events")
+bmv2_python_wrapper(name = "simple_switch_CLI", src = "@p4lang_bmv2_src//:targets/simple_switch/simple_switch_CLI.in", output = "simple_switch_CLI")
+bmv2_python_wrapper(name = "psa_switch_CLI", src = "@p4lang_bmv2_src//:targets/psa_switch/psa_switch_CLI.in", output = "psa_switch_CLI")
+
+bmv2_python_tree(
+    name = "bmv2_python_generated",
+    srcs = [
+        "@p4lang_bmv2_src//:standard_thrift_py",
+        "@p4lang_bmv2_src//:simple_pre_thrift_py",
+        "@p4lang_bmv2_src//:simple_pre_lag_thrift_py",
+        "@p4lang_bmv2_src//:simple_switch_thrift_py",
+        "@p4lang_bmv2_src//:psa_switch_thrift_py",
+        "@p4lang_bmv2_src//:pdfixed_res_thrift_py",
+        "@p4lang_bmv2_src//:pdfixed_conn_mgr_thrift_py",
+        "@p4lang_bmv2_src//:pdfixed_mc_thrift_py",
+        "@p4lang_bmv2_src//:pdfixed_sswitch_thrift_py",
+        "@p4lang_bmv2_src//:dataplane_interface_py_proto",
+        "@p4lang_bmv2_src//:dataplane_interface_py_grpc",
+    ],
+)
+
+bmv2_header_tree(
+    name = "bmv2_headers",
+    srcs = [
+        "@p4lang_bmv2_src//:bmv2_install_header_sources",
+        "@p4lang_bmv2_src//:standard_thrift_gen",
+        "@p4lang_bmv2_src//:simple_pre_thrift_gen",
+        "@p4lang_bmv2_src//:simple_pre_lag_thrift_gen",
+        "@p4lang_bmv2_src//:simple_switch_thrift_gen",
+        "@p4lang_bmv2_src//:psa_switch_thrift_gen",
+        "@p4lang_bmv2_src//:dataplane_install_headers",
+    ],
+)
+
+filegroup(
+    name = "bmv2_shared_libraries",
+    srcs = [
+        "@p4lang_bmv2_src//:libbmpi_files",
+        "@p4lang_bmv2_src//:libsimpleswitch_runner_files",
+        "@p4lang_bmv2_src//:libbmpdfixed_files",
+        "@p4lang_bmv2_src//:libbmpdfixedthrift_files",
+        "@p4lang_bmv2_src//:libbmall_files",
+        "@p4lang_bmv2_src//:libbmp4apps_files",
+        "@p4lang_bmv2_src//:libruntimestubs_files",
+        "@p4lang_bmv2_src//:libsimpleswitch_thrift_files",
+        "@p4lang_bmv2_src//:libpsaswitch_thrift_files",
+        "@p4lang_bmv2_src//:libbm_grpc_dataplane_files",
+    ],
+)
+
+bmv2_library_links(
+    name = "bmv2_library_links",
+    links = {
+        "libbmpi.so.0": "libbmpi.so.0.0.0",
+        "libsimpleswitch_runner.so.0": "libsimpleswitch_runner.so.0.0.0",
+        "libbmpdfixed.so.0": "libbmpdfixed.so.0.0.0",
+        "libbmpdfixedthrift.so.0": "libbmpdfixedthrift.so.0.0.0",
+        "libbmall.so.0": "libbmall.so.0.0.0",
+        "libbmp4apps.so.0": "libbmp4apps.so.0.0.0",
+        "libruntimestubs.so.0": "libruntimestubs.so.0.0.0",
+        "libsimpleswitch_thrift.so.0": "libsimpleswitch_thrift.so.0.0.0",
+        "libpsaswitch_thrift.so.0": "libpsaswitch_thrift.so.0.0.0",
+        "libbm_grpc_dataplane.so.0": "libbm_grpc_dataplane.so.0.0.0",
+    },
+)
+
+sonic_deb(
+    name = "p4lang-bmv2_1.15.0-9.deb",
+    package = "p4lang-bmv2",
+    version = "1.15.0-9",
+    section = "net",
+    maintainer = "SONiC Build Team <sonic-build@lists.01.org>",
+    homepage = "https://github.com/p4lang/behavioral-model",
+    description = "P4 behavioral model version 2 switch and tools",
+    depends = [
+        "libboost-filesystem1.83.0",
+        "libboost-program-options1.83.0",
+        "libboost-system1.83.0",
+        "libboost-thread1.83.0",
+        "libc6",
+        "libgcc-s1",
+        "libgrpc++1.51t64",
+        "libnanomsg5",
+        "libpcap0.8t64",
+        "libprotobuf32t64",
+        "libssl3t64",
+        "libstdc++6",
+        "libthrift-0.19.0t64",
+        "python3",
+        "python3-grpcio",
+        "python3-protobuf",
+        "python3-thrift",
+    ],
+    content = {
+        "${LIBDIR}:*:0644": [
+            "@p4lang_bmv2_src//:libbmpi_shared",
+            "@p4lang_bmv2_src//:libsimpleswitch_runner_shared",
+            "@p4lang_bmv2_src//:libbmpdfixed_shared",
+            "@p4lang_bmv2_src//:libbmpdfixedthrift_shared",
+            "@p4lang_bmv2_src//:libbmall_shared",
+            "@p4lang_bmv2_src//:libbmp4apps_shared",
+            "@p4lang_bmv2_src//:libruntimestubs_shared",
+            "@p4lang_bmv2_src//:libsimpleswitch_thrift_shared",
+            "@p4lang_bmv2_src//:libpsaswitch_thrift_shared",
+            "@p4lang_bmv2_src//:libbm_grpc_dataplane_shared",
+        ],
+        "${LIBDIR}:bmv2_library_links:0777": [":bmv2_library_links"],
+        "/usr/bin:*:0755": [
+            "@p4lang_bmv2_src//:simple_switch",
+            "@p4lang_bmv2_src//:simple_switch_grpc",
+            "@p4lang_bmv2_src//:psa_switch",
+            ":bm_CLI", ":bm_p4dbg", ":bm_nanomsg_events",
+            ":simple_switch_CLI", ":psa_switch_CLI",
+        ],
+        "/usr/include:bmv2_headers:0644": [":bmv2_headers"],
+        "/usr/lib/python3/dist-packages:bmv2_python_generated:0644": [":bmv2_python_generated"],
+        "/usr/lib/python3/dist-packages:tools:0644": [
+            "@p4lang_bmv2_src//:tools/bmpy_utils.py",
+            "@p4lang_bmv2_src//:tools/runtime_CLI.py",
+            "@p4lang_bmv2_src//:tools/p4dbg.py",
+            "@p4lang_bmv2_src//:tools/nanomsg_client.py",
+        ],
+        "/usr/lib/python3/dist-packages:targets/simple_switch:0644": ["@p4lang_bmv2_src//:targets/simple_switch/sswitch_CLI.py"],
+        "/usr/lib/python3/dist-packages:targets/psa_switch:0644": ["@p4lang_bmv2_src//:targets/psa_switch/pswitch_CLI.py"],
+    },
+)
+
+genrule(
+    name = "p4c_driver",
+    srcs = ["@p4lang_p4c_src//:tools/driver/p4c.in"],
+    outs = ["p4c"],
+    cmd = "sed -e 's|@datarootdir@|$${prefix}/share|g' -e 's|@exec_prefix@|$${prefix}|g' -e 's|@prefix@|/usr|g' -e 's|@P4C_VERSION@|1.2.4.2|g' $(SRCS) > $@ && chmod 0755 $@",
+)
+
+genrule(name = "p4c_bm2_ss_bin", srcs = ["@p4lang_p4c_src//:p4c_bmv2"], outs = ["p4c-bm2-ss"], cmd = "cp $(SRCS) $@ && chmod 0755 $@")
+genrule(name = "p4c_bm2_psa_bin", srcs = ["@p4lang_p4c_src//:p4c_bmv2_psa"], outs = ["p4c-bm2-psa"], cmd = "cp $(SRCS) $@ && chmod 0755 $@")
+genrule(name = "p4c_dpdk_bin", srcs = ["@p4lang_p4c_src//:p4c_dpdk"], outs = ["p4c-dpdk"], cmd = "cp $(SRCS) $@ && chmod 0755 $@")
+genrule(name = "p4c_ebpf_bin", srcs = ["@p4lang_p4c_src//:p4c_ebpf"], outs = ["p4c-ebpf"], cmd = "cp $(SRCS) $@ && chmod 0755 $@")
+genrule(name = "p4c_ubpf_bin", srcs = ["@p4lang_p4c_src//:p4c_ubpf"], outs = ["p4c-ubpf"], cmd = "cp $(SRCS) $@ && chmod 0755 $@")
+genrule(name = "p4c_pna_p4tc_bin", srcs = ["@p4lang_p4c_src//:p4c_pna_p4tc"], outs = ["p4c-pna-p4tc"], cmd = "cp $(SRCS) $@ && chmod 0755 $@")
+genrule(name = "p4test_bin", srcs = ["@p4lang_p4c_src//:p4c_backend_p4test"], outs = ["p4test"], cmd = "cp $(SRCS) $@ && chmod 0755 $@")
+genrule(name = "p4c_graphs_bin", srcs = ["@p4lang_p4c_src//:p4c_graphs"], outs = ["p4c-graphs"], cmd = "cp $(SRCS) $@ && chmod 0755 $@")
+
+filegroup(
+    name = "p4c_driver_files",
+    srcs = [
+        "@p4lang_p4c_src//:tools/driver/p4c_src/__init__.py",
+        "@p4lang_p4c_src//:tools/driver/p4c_src/config.py",
+        "@p4lang_p4c_src//:tools/driver/p4c_src/driver.py",
+        "@p4lang_p4c_src//:tools/driver/p4c_src/main.py",
+        "@p4lang_p4c_src//:tools/driver/p4c_src/util.py",
+        "@p4lang_p4c_src//:tools/driver/p4c_src/p4c.bmv2.cfg",
+        "@p4lang_p4c_src//:tools/driver/p4c_src/p4c.dpdk.cfg",
+        "@p4lang_p4c_src//:tools/driver/p4c_src/p4c.ebpf.cfg",
+    ],
+)
+
+sonic_deb(
+    name = "p4lang-p4c_1.2.4.2-2.deb",
+    package = "p4lang-p4c",
+    version = "1.2.4.2-2",
+    section = "net",
+    maintainer = "SONiC Build Team <sonic-build@lists.01.org>",
+    homepage = "https://github.com/p4lang/p4c",
+    description = "P4 reference compiler with production backends",
+    depends = [
+        "cpp", "iproute2", "libc6", "libgcc-s1", "libstdc++6",
+        "python3", "python3-ply", "python3-pyroute2",
+        "python3-scapy", "python3-thrift",
+    ],
+    content = {
+        "/usr/bin:*:0755": [
+            ":p4c_driver", ":p4c_bm2_ss_bin", ":p4c_bm2_psa_bin", ":p4c_dpdk_bin",
+            ":p4c_ebpf_bin", ":p4c_ubpf_bin", ":p4c_pna_p4tc_bin", ":p4test_bin", ":p4c_graphs_bin",
+        ],
+        "/usr/share/p4c:tools/driver:0644": [":p4c_driver_files"],
+        "/usr/share/p4c:p4include:0644": ["@p4lang_p4c_src//:p4include"],
+    },
+)

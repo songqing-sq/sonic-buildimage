@@ -1,0 +1,27 @@
+diff --git a/apt/private/deb_import.bzl b/apt/private/deb_import.bzl
+index 4724841..fa1eb0d 100644
+--- a/apt/private/deb_import.bzl
++++ b/apt/private/deb_import.bzl
+@@ -218,7 +218,7 @@ def get_info(rctx, directory, package, repo_prefix, package_metadata):
+             h_files.append(line)
+         elif line.endswith(".hpp"):
+             hpp_files.append(line)
+-        elif line.endswith(".ipp"):
++        elif line.endswith(".ipp") or line.endswith(".tcc"):
+             ipp_files.append(line)
+         elif line.find("include/c++") != -1 or (line.find("usr/include/") != -1 and line[line.rfind("/") + 1:].find(".") == -1):
+             hpp_files_woext.append(line)
+@@ -728,11 +728,13 @@ def _generate_dev_package_content(rctx, so_files, symlinks, h_files, hpp_files,
+     lines.append('        "usr/include/**/*.h",')
+     lines.append('        "usr/include/**/*.hpp",')
+     lines.append('        "usr/include/**/*.ipp",')
++    lines.append('        "usr/include/**/*.tcc",')
+     # Some -dev packages ship arch-specific headers under usr/lib/.../include
+     # (e.g. libdbus-1-dev: usr/lib/x86_64-linux-gnu/dbus-1.0/include/dbus/dbus-arch-deps.h).
+     # The .pc Cflags reference this dir and consumers `#include <dbus/dbus-arch-deps.h>`.
+     lines.append('        "usr/lib/**/*.h",')
+     lines.append('        "usr/lib/**/*.hpp",')
+     lines.append('        "usr/lib/**/*.ipp",')
++    lines.append('        "usr/lib/**/*.tcc",')
+     lines.append('    ],')
+     lines.append('    allow_empty = True,')
