@@ -1501,8 +1501,8 @@ tar(
 # .pem) and the concatenated ca-certificates.crt bundle. Without this, anything
 # doing TLS against the system trust store fails.
 #
-# openssl for the subject hashes is the same pinned Debian-snapshot binary the
-# kernel module signing uses — nothing from the host.
+# OpenSSL for the subject hashes is the same BCR source-built binary the kernel
+# module signing uses.
 # -----------------------------------------------------------------------------
 genrule(
     name = "ca_certificates_layer",
@@ -1515,15 +1515,7 @@ genrule(
            "tar -xzf $(location @trixie//ca-certificates:data) -C $$W/src; " +
            "cp $(location @sonic_build_infra//kernel_host_tools:openssl_bin) $$W/bin/openssl; " +
            "chmod +x $$W/bin/openssl; " +
-           "for f in $(locations @sonic_build_infra//kernel_host_tools:openssl_libs); do " +
-           "  cp $$f $$W/bin/; done; " +
-           # openssl is a trixie binary. LD_LIBRARY_PATH alone would supply
-           # libssl/libcrypto but still resolve libc.so.6 against the BUILD
-           # HOST's /lib64, so it dies wherever the host glibc is older than
-           # trixie's. Run it through the UNPACKED ld.so with an explicit
-           # --library-path instead, so nothing here depends on the host libc.
-           "OPENSSL=\"$$W/bin/ld-linux-x86-64.so.2 --library-path $$W/bin " +
-           "  $$W/bin/openssl\"; " +
+           "OPENSSL=\"$$W/bin/openssl\"; " +
            "CONF=$$W/root/etc/ca-certificates.conf; " +
            "{ echo '# This file lists certificates that you wish to use or to ignore to be'; " +
            "  echo '# installed in /etc/ssl/certs.'; " +
@@ -1557,7 +1549,6 @@ genrule(
            "rm -rf $$W"),
     tools = [
         "@sonic_build_infra//kernel_host_tools:openssl_bin",
-        "@sonic_build_infra//kernel_host_tools:openssl_libs",
     ],
     visibility = ["//visibility:public"],
 )

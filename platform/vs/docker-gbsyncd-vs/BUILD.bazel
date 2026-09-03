@@ -12,10 +12,8 @@ load("@tar.bzl", "tar")
 # (dockers/docker-base-trixie/base_trixie.MODULE.bazel).
 #
 # The remaining 3 (p4lang-bmv2 / p4lang-p4c / p4lang-pi) are intentionally NOT
-# shipped: they are NOT Debian apt packages (absent from the trixie snapshot) and
-# their only source is the non-hermetic @p4lang make-bridge (src/p4lang/BUILD.bazel
-# uses local=True + no-sandbox to shell out to SONiC `make`), which the hermetic
-# rules-of-migration forbid for image assembly. They are also NOT runtime deps:
+# shipped: they are not part of the runtime dependency closure. The native
+# @p4lang targets provide them for compile-time use, but the libsai deb has an
 # the libsai deb has an empty Depends field and libsai.so's DT_NEEDED is only
 # libstdc++ / libgcc_s / libc (verified on the Make image). They are build-time
 # baggage left in the runtime image (like the gcc/clang/llvm toolchain the
